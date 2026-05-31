@@ -3299,6 +3299,11 @@ textarea {
   grid-template-columns: minmax(180px, 1fr) auto 120px minmax(120px, 0.55fr) 140px auto;
 }
 
+.youtube-account-row {
+  grid-template-columns: minmax(180px, 1fr) auto auto minmax(150px, 0.7fr) minmax(170px, 0.8fr) minmax(140px, 0.55fr) auto;
+}
+
+.youtube-account-row .editable-action-bar,
 .publishing-target-row .editable-action-bar,
 .video-row .editable-action-bar {
   grid-column: 1 / -1;
@@ -3632,6 +3637,7 @@ textarea {
   .workflow-route-row,
   .workflow-readiness-row,
   .publishing-target-row,
+  .youtube-account-row,
   .trend-video-header,
   .trend-video-row,
   .key-settings-row {
@@ -3686,6 +3692,7 @@ textarea {
   .automation-target-row,
   .publish-target-row,
   .publishing-target-row,
+  .youtube-account-row,
   .workflow-table-header,
   .agent-tool-permission-row,
   .agent-create-strip,

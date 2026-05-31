@@ -148,27 +148,7 @@ export function YouTubePage(props: {
         {props.accounts.length === 0 ? <EmptyState title="No YouTube accounts" body="Register a channel, then connect real OAuth credentials before private upload is available." /> : null}
         <div className="settings-table">
           {props.accounts.map((account) => (
-            <article className="settings-row" key={account.id}>
-              <div>
-                <strong>{account.channelName}</strong>
-                <span>{account.youtubeChannelId}</span>
-              </div>
-              <StatusPill tone={account.status === "connected" ? "success" : "danger"}>{account.status}</StatusPill>
-              <span>{account.defaultPrivacy}</span>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() =>
-                  props.updateAccount(account.id, (current) => ({
-                    ...current,
-                    status: "needs_reconnect",
-                    updatedAt: new Date().toISOString()
-                  }))
-                }
-              >
-                OAuth required
-              </button>
-            </article>
+            <YouTubeAccountSettingsRow key={account.id} account={account} updateAccount={props.updateAccount} />
           ))}
         </div>
       </div>
@@ -213,6 +193,73 @@ export function YouTubePage(props: {
         </div>
       </div>
     </section>
+  );
+}
+
+function YouTubeAccountSettingsRow(props: {
+  account: YouTubeAccount;
+  updateAccount: (id: string, updater: (account: YouTubeAccount) => YouTubeAccount) => void;
+}) {
+  const editor = useEditableDraft(props.account, `${props.account.id}:${props.account.updatedAt}`);
+  const draft = editor.draft ?? props.account;
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  function patchDraft(patch: Partial<YouTubeAccount>) {
+    editor.setDraftPatch(patch);
+    setSavedMessage(null);
+  }
+
+  function saveDraft() {
+    const nextDraft: YouTubeAccount = {
+      ...draft,
+      channelName: draft.channelName.trim() || props.account.channelName,
+      defaultPrivacy: "private",
+      updatedAt: new Date().toISOString(),
+      youtubeChannelId: draft.youtubeChannelId.trim() || props.account.youtubeChannelId
+    };
+    const patch = createDraftPatch(props.account, nextDraft);
+
+    if (Object.keys(patch).length > 0) {
+      props.updateAccount(props.account.id, (current) => ({ ...current, ...patch, defaultPrivacy: "private" }));
+    }
+
+    editor.markSaved(nextDraft);
+    setSavedMessage("åˆšåˆšä¿å­˜");
+  }
+
+  return (
+    <article className="settings-row youtube-account-row">
+      <div>
+        <strong>{draft.channelName || "æœªå‘½åé¢‘é“"}</strong>
+        <span>{draft.youtubeChannelId || "ç¼ºå°‘ YouTube Channel ID"}</span>
+      </div>
+      <StatusPill tone={draft.status === "connected" ? "success" : "danger"}>{draft.status === "connected" ? "å·²è¿žæŽ¥" : "éœ€é‡è¿ž"}</StatusPill>
+      <StatusPill tone="success">{draft.defaultPrivacy}</StatusPill>
+      <Field label="é¢‘é“åç§°">
+        <input value={draft.channelName} onChange={(event) => patchDraft({ channelName: event.target.value })} />
+      </Field>
+      <Field label="Channel ID">
+        <input value={draft.youtubeChannelId} onChange={(event) => patchDraft({ youtubeChannelId: event.target.value })} />
+      </Field>
+      <Field label="OAuth çŠ¶æ€">
+        <select value={draft.status} onChange={(event) => patchDraft({ status: event.target.value as YouTubeAccount["status"] })}>
+          <option value="connected">å·²è¿žæŽ¥</option>
+          <option value="needs_reconnect">éœ€è¦é‡è¿ž</option>
+        </select>
+      </Field>
+      <button className="secondary-button" type="button" onClick={() => patchDraft({ status: "needs_reconnect" })}>
+        标记需要重连
+      </button>
+      <EditableActionBar
+        isDirty={editor.isDirty}
+        onCancel={() => {
+          editor.resetDraft();
+          setSavedMessage(null);
+        }}
+        onSave={saveDraft}
+        savedMessage={savedMessage}
+      />
+    </article>
   );
 }
 
