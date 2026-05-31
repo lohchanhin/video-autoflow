@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@ai-content-factory/config": ["packages/config/src/index.ts"],
+      "@ai-content-factory/database": ["packages/database/src/index.ts"],
+      "@ai-content-factory/logger": ["packages/logger/src/index.ts"],
+      "@ai-content-factory/storage": ["packages/storage/src/index.ts"],
+      "@ai-content-factory/shared-types": ["packages/shared-types/src/index.ts"]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "**/dist/**",
+    "**/dist-types/**",
+    "**/node_modules/**",
+    "coverage/**",
+    "output/**"
+  ]
+}

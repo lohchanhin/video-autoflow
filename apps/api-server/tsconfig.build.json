@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules", "tests/**/*.ts"],
+  "references": [
+    { "path": "../../packages/shared-types/tsconfig.build.json" },
+    { "path": "../../packages/config/tsconfig.build.json" },
+    { "path": "../../packages/database/tsconfig.build.json" },
+    { "path": "../../packages/logger/tsconfig.build.json" },
+    { "path": "../../packages/storage/tsconfig.build.json" }
+  ]
+}

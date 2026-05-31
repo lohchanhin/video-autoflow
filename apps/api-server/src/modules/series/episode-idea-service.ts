@@ -1,0 +1,226 @@
+import type { ContentSeries } from "@ai-content-factory/shared-types";
+import type { SeriesEpisodeIdeaCreateInput } from "@ai-content-factory/database";
+import { MissingGenerationDependencyError } from "../../errors.js";
+
+export interface OpenAISeriesIdeaOptions {
+  apiKey?: string | undefined;
+  baseUrl: string;
+  model: string;
+  usdToMyrRate: number;
+}
+
+export interface SeriesEpisodeIdeaServiceOptions {
+  openai: OpenAISeriesIdeaOptions;
+}
+
+export interface GenerateSeriesEpisodeIdeasInput {
+  count: number;
+  series: ContentSeries;
+}
+
+export interface GeneratedSeriesEpisodeIdeas {
+  costRM: number;
+  ideas: SeriesEpisodeIdeaCreateInput[];
+  model: string;
+  provider: "openai";
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+}
+
+export interface SeriesEpisodeIdeaService {
+  generateEpisodeIdeas(input: GenerateSeriesEpisodeIdeasInput): Promise<GeneratedSeriesEpisodeIdeas>;
+}
+
+interface OpenAIResponseBody {
+  output?: Array<{
+    content?: Array<{
+      text?: string;
+      type?: string;
+    }>;
+    type?: string;
+  }>;
+  output_text?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  };
+}
+
+interface ParsedIdeas {
+  ideas: Array<{
+    ageRange?: string;
+    moralLesson?: string;
+    promptSeed?: string;
+    riskNotes?: string;
+    sourceStory?: string;
+    synopsis?: string;
+    title?: string;
+  }>;
+}
+
+export function createSeriesEpisodeIdeaService(options: SeriesEpisodeIdeaServiceOptions): SeriesEpisodeIdeaService {
+  return {
+    async generateEpisodeIdeas(input: GenerateSeriesEpisodeIdeasInput): Promise<GeneratedSeriesEpisodeIdeas> {
+      if (!options.openai.apiKey) {
+        throw new MissingGenerationDependencyError("Missing OPENAI_API_KEY. Configure the OpenAI key before generating series episode ideas.");
+      }
+
+      const prompt = buildEpisodeIdeaPrompt(input.series, input.count);
+      const response = await fetch(`${options.openai.baseUrl.replace(/\/$/u, "")}/responses`, {
+        body: JSON.stringify({
+          input: prompt,
+          max_output_tokens: Math.min(4200, 800 + input.count * 180),
+          model: options.openai.model,
+          text: {
+            format: {
+              name: "series_episode_ideas",
+              schema: episodeIdeasJsonSchema,
+              strict: true,
+              type: "json_schema"
+            }
+          }
+        }),
+        headers: {
+          Authorization: `Bearer ${options.openai.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const body = (await response.json().catch(() => ({}))) as OpenAIResponseBody & { error?: { message?: string } };
+
+      if (!response.ok) {
+        throw new Error(`OpenAI series idea generation failed: ${body.error?.message ?? response.statusText}`);
+      }
+
+      const parsed = parseEpisodeIdeasJson(extractResponseText(body));
+      const ideas = normalizeIdeas(parsed, input.count);
+      const usage = {
+        inputTokens: body.usage?.input_tokens ?? 0,
+        outputTokens: body.usage?.output_tokens ?? 0
+      };
+
+      return {
+        costRM: estimateOpenAICostRM(options.openai.model, usage.inputTokens, usage.outputTokens, options.openai.usdToMyrRate),
+        ideas,
+        model: options.openai.model,
+        provider: "openai",
+        usage
+      };
+    }
+  };
+}
+
+function buildEpisodeIdeaPrompt(series: ContentSeries, count: number): string {
+  return [
+    "你是 AI Content Factory 的系列题库策划。请为一个短视频系列生成可审核、可转成生产 Case 的单集题库。",
+    "",
+    "必须严格遵守：",
+    "- 只输出 JSON，不要 markdown。",
+    "- 每条题目都要能直接转成短视频 Case，并适配该系列设定的时长、场景数、受众和风格。",
+    "- 不要把某个固定题材强加到系列里；必须以系列设定为最高优先级。",
+    "- 如果系列没有明确指定某个内容方向，不要自动套任何固定模板。",
+    "- 安全与禁忌只按「系列安全规则」执行，另外遵守项目底线：原创、不侵权、不使用真实人物肖像、不写露骨性内容或血腥 gore。",
+    "- 可以参考公共文化、行业知识、生活场景或原创设定，但必须写成可拍、原创、可审核的版本，不要逐字复刻现有内容。",
+    "",
+    `系列名称：${series.name}`,
+    `语言：${series.language}`,
+    `目标观众：${series.audience}`,
+    `内容类型：${series.contentType}`,
+    `系列定位：${series.description}`,
+    `核心价值观：${series.values}`,
+    `叙事语气：${series.tone}`,
+    `视觉风格：${series.visualStyle}`,
+    `BGM 风格：${series.musicStyle}`,
+    `每集时长：${series.durationSeconds} 秒`,
+    `场景数：${series.sceneCount}`,
+    `安全规则：${series.safetyRules}`,
+    "",
+    `请生成 ${count} 条单集选题。每条必须包含：标题、核心看点/价值、来源/灵感、剧情梗概、promptSeed、目标受众/年龄层、风险提示。`,
+    "字段语义说明：moralLesson 表示该集的核心看点、观点、价值或知识点，不一定是道德说教；sourceStory 表示来源/灵感；ageRange 表示目标受众或年龄层。"
+  ].join("\n");
+}
+
+function parseEpisodeIdeasJson(text: string): ParsedIdeas {
+  try {
+    const parsed = JSON.parse(text) as ParsedIdeas;
+
+    if (!Array.isArray(parsed.ideas)) {
+      throw new Error("ideas must be an array.");
+    }
+
+    return parsed;
+  } catch (error) {
+    throw new Error(`OpenAI series idea response was not valid JSON: ${error instanceof Error ? error.message : "unknown parse error"}`);
+  }
+}
+
+function normalizeIdeas(parsed: ParsedIdeas, count: number): SeriesEpisodeIdeaCreateInput[] {
+  return parsed.ideas
+    .map((idea): SeriesEpisodeIdeaCreateInput => ({
+      ageRange: normalizeText(idea.ageRange, ""),
+      moralLesson: normalizeText(idea.moralLesson, "核心看点待补充"),
+      promptSeed: normalizeText(idea.promptSeed, idea.synopsis ?? idea.title ?? ""),
+      riskNotes: normalizeText(idea.riskNotes, "按系列安全规则复核。"),
+      sourceStory: normalizeText(idea.sourceStory, "原创灵感"),
+      status: "draft",
+      synopsis: normalizeText(idea.synopsis, ""),
+      title: normalizeText(idea.title, "未命名单集")
+    }))
+    .filter((idea) => idea.title && idea.synopsis && idea.promptSeed)
+    .slice(0, count);
+}
+
+function extractResponseText(body: OpenAIResponseBody): string {
+  if (typeof body.output_text === "string" && body.output_text.trim()) {
+    return body.output_text;
+  }
+
+  const text = body.output
+    ?.flatMap((item) => item.content ?? [])
+    .map((content) => content.text ?? "")
+    .join("")
+    .trim();
+
+  if (!text) {
+    throw new Error("OpenAI series idea response did not include output text.");
+  }
+
+  return text;
+}
+
+function normalizeText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function estimateOpenAICostRM(model: string, inputTokens: number, outputTokens: number, usdToMyrRate: number): number {
+  const pricing = model === "gpt-4.1-mini" ? { inputPerMillionUSD: 0.4, outputPerMillionUSD: 1.6 } : { inputPerMillionUSD: 0, outputPerMillionUSD: 0 };
+  const usd = (inputTokens / 1_000_000) * pricing.inputPerMillionUSD + (outputTokens / 1_000_000) * pricing.outputPerMillionUSD;
+  return Number((usd * usdToMyrRate).toFixed(4));
+}
+
+const episodeIdeasJsonSchema = {
+  additionalProperties: false,
+  properties: {
+    ideas: {
+      items: {
+        additionalProperties: false,
+        properties: {
+          ageRange: { type: "string" },
+          moralLesson: { type: "string" },
+          promptSeed: { type: "string" },
+          riskNotes: { type: "string" },
+          sourceStory: { type: "string" },
+          synopsis: { type: "string" },
+          title: { type: "string" }
+        },
+        required: ["title", "moralLesson", "sourceStory", "synopsis", "promptSeed", "ageRange", "riskNotes"],
+        type: "object"
+      },
+      type: "array"
+    }
+  },
+  required: ["ideas"],
+  type: "object"
+} as const;

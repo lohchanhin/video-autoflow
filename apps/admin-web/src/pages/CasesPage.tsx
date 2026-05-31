@@ -1,0 +1,1714 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Sparkles, Square, UserRound, X } from "lucide-react";
+import type { ContentSeries, ProductionAsset, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
+import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
+import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo } from "../lib/admin-data.js";
+import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
+import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
+import type { ProductionStageId } from "../lib/production.js";
+import type { CaseDraftPreview } from "../App.js";
+
+interface CasesPageProps {
+  agents: StaffAgent[];
+  apiState: "checking" | "online" | "offline";
+  costLimitRM: number;
+  characters: CharacterProfile[];
+  draftBackgroundAssetId: string | null;
+  draftCharacterId: string | null;
+  draftCharacterAssetId: string | null;
+  draftReferenceAssets: ProductionAsset[];
+  jobs: AdminJob[];
+  language: AdminJob["language"];
+  prompt: string;
+  records: JobProcessRecord[];
+  sceneCount: number;
+  selectedJob: AdminJob | null;
+  selectedActivities: CaseActivity[];
+  selectedPublishTargets: CasePublishTarget[];
+  selectedCharacter: CharacterProfile | null;
+  selectedProductionAssets: ProductionAsset[];
+  selectedSceneReviews: SceneReviewItem[];
+  selectedQcReport: CaseQcReport | null;
+  selectedRecords: JobProcessRecord[];
+  series: ContentSeries[];
+  seriesEpisodes: SeriesEpisodeIdea[];
+  publishingTargets: PublishingTarget[];
+  productionSchedules: ProductionSchedule[];
+  storedVideos: StoredVideo[];
+  templateType: AdminJob["templateType"];
+  topic: string;
+  addVideoForJob: (job: AdminJob) => void;
+  approveCaseForPublishing: (job: AdminJob) => void;
+  autoGenerateCase: () => void;
+  autoGenerateStep: string | null;
+  clearCases: () => void;
+  clearDraftPreview: () => void;
+  confirmDraftCase: () => void;
+  createCase: () => void;
+  draftPreview: CaseDraftPreview | null;
+  generateBgmForJob: (job: AdminJob) => void;
+  generateDraftScriptStory: () => void;
+  generateImagesForJob: (job: AdminJob) => void;
+  generateScriptStoryForJob: (job: AdminJob) => void;
+  generateTtsForJob: (job: AdminJob) => void;
+  generateVideoClipForJob: (job: AdminJob) => void;
+  generateVideoForJob: (job: AdminJob) => void;
+  generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
+  runQcForJob: (job: AdminJob) => void;
+  generatingCaseIds: string[];
+  generatingBgmCaseIds: string[];
+  generatingImageCaseIds: string[];
+  generatingSceneImageIds: string[];
+  generatingQcCaseIds: string[];
+  generatingScriptCaseIds: string[];
+  generatingTtsCaseIds: string[];
+  generatingVideoClipCaseIds: string[];
+  generationError: string | null;
+  genreText: string;
+  isGeneratingDraftPreview: boolean;
+  isAutoGeneratingCase: boolean;
+  selectCase: (id: string) => void;
+  setCostLimitRM: (value: number) => void;
+  setGenreText: (value: string) => void;
+  setLanguage: (value: AdminJob["language"]) => void;
+  setPrompt: (value: string) => void;
+  setSceneCount: (value: number) => void;
+  setTemplateType: (value: AdminJob["templateType"]) => void;
+  setTopic: (value: string) => void;
+  setDraftBackgroundAssetId: (id: string | null) => void;
+  setDraftCharacterAssetId: (id: string | null) => void;
+  setDraftCharacterId: (id: string | null) => void;
+  updateCaseDetails: (id: string, patch: Partial<Pick<AdminJob, "backgroundAssetId" | "characterAssetId" | "characterId" | "costLimitRM" | "prompt" | "sceneCount" | "topic">>) => void;
+  updateJob: (id: string, updater: (job: AdminJob) => AdminJob) => void;
+  updateProcessRecord: (id: string, updater: (record: JobProcessRecord) => JobProcessRecord) => void;
+  updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
+  openAssetPlanForJob: (jobId: string) => void;
+  uploadPrivateTarget: (job: AdminJob, targetId: string) => void;
+}
+
+type CaseTab = "new" | "queue" | "production";
+type ProductionWorkbenchTab = "overview" | "pipeline" | "script" | "assets" | "voice" | "music" | "clips" | "final" | "publish" | "activity";
+
+const processStatusOptions: ProcessRecordStatus[] = ["pending", "working", "done", "failed", "skipped"];
+
+function isSelectableDraftAsset(asset: ProductionAsset): boolean {
+  return Boolean(asset.url.trim()) && (asset.status === "approved" || asset.status === "ready");
+}
+
+export function CasesPage(props: CasesPageProps) {
+  const [activeTab, setActiveTab] = useState<CaseTab>(props.selectedJob ? "production" : "new");
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(props.selectedRecords[0]?.id ?? null);
+
+  useEffect(() => {
+    if (!props.selectedRecords.some((record) => record.id === selectedRecordId)) {
+      setSelectedRecordId(props.selectedRecords[0]?.id ?? null);
+    }
+  }, [props.selectedRecords, selectedRecordId]);
+
+  useEffect(() => {
+    if (!props.selectedJob && activeTab === "production") {
+      setActiveTab(props.jobs.length > 0 ? "queue" : "new");
+    }
+  }, [activeTab, props.jobs.length, props.selectedJob]);
+
+  useEffect(() => {
+    if (props.isAutoGeneratingCase && props.selectedJob) {
+      setActiveTab("production");
+    }
+  }, [props.isAutoGeneratingCase, props.selectedJob]);
+
+  const selectedRecord = props.selectedRecords.find((record) => record.id === selectedRecordId) ?? props.selectedRecords[0] ?? null;
+  const blockedCases = props.jobs.filter((job) => job.status === "FAILED").length;
+
+  function openCase(id: string) {
+    props.selectCase(id);
+    setActiveTab("production");
+  }
+
+  function createCase() {
+    props.createCase();
+    setActiveTab("production");
+  }
+
+  function clearCases() {
+    props.clearCases();
+    setActiveTab("new");
+  }
+
+  return (
+    <section className="cases-workbench">
+      <div className="case-tabs" role="tablist" aria-label="Case workspace tabs">
+        <CaseTabButton active={activeTab === "new"} label="New Case" meta="Brief" onClick={() => setActiveTab("new")} />
+        <CaseTabButton active={activeTab === "queue"} label="Queue" meta={`${props.jobs.length} cases`} onClick={() => setActiveTab("queue")} />
+        <CaseTabButton active={activeTab === "production"} disabled={!props.selectedJob} label="Production" meta={props.selectedJob?.id ?? "Select case"} onClick={() => setActiveTab("production")} />
+      </div>
+
+      {activeTab === "new" ? <CreateCaseTab {...props} createCase={createCase} /> : null}
+
+      {activeTab === "queue" ? (
+        <CaseQueueTab blockedCases={blockedCases} clearCases={clearCases} jobs={props.jobs} openCase={openCase} selectedJob={props.selectedJob} />
+      ) : null}
+
+      {activeTab === "production" ? (
+        <ProductionTab
+          {...props}
+          selectedRecord={selectedRecord}
+          setSelectedRecordId={setSelectedRecordId}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function CaseTabButton(props: { active: boolean; disabled?: boolean; label: string; meta: string; onClick: () => void }) {
+  return (
+    <button className={`case-tab ${props.active ? "active" : ""}`} disabled={props.disabled} type="button" onClick={props.onClick}>
+      <strong>{props.label}</strong>
+      <span>{props.meta}</span>
+    </button>
+  );
+}
+
+function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
+  const apiUnavailable = props.apiState !== "online";
+  const hasTopic = Boolean(props.topic.trim());
+  const canGeneratePreview = hasTopic && !props.isGeneratingDraftPreview && !apiUnavailable;
+  const canAutoGenerate = hasTopic && !props.isAutoGeneratingCase && !props.isGeneratingDraftPreview && !apiUnavailable;
+  const characterAssets = props.draftReferenceAssets
+    .filter((asset) => isSelectableDraftAsset(asset) && asset.type === "character_design")
+    .sort((left, right) => left.label.localeCompare(right.label));
+  const backgroundAssets = props.draftReferenceAssets
+    .filter((asset) => isSelectableDraftAsset(asset) && (asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame"))
+    .sort((left, right) => left.label.localeCompare(right.label));
+  const selectedCharacterAsset = characterAssets.find((asset) => asset._id === props.draftCharacterAssetId) ?? null;
+  const selectedBackgroundAsset = backgroundAssets.find((asset) => asset._id === props.draftBackgroundAssetId) ?? null;
+
+  return (
+    <section className="case-create-workspace">
+      <div className="case-create-panel panel">
+      <form
+        className="case-create-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.generateDraftScriptStory();
+        }}
+      >
+        <SectionHeader eyebrow="Create case" title="输入一句话，AI 自动产出大纲" />
+        <div className="simple-case-form">
+          <Field label="你想做什么影片？">
+            <textarea
+              autoFocus
+              placeholder="随便输入：123、雨夜便利店、喜剧、爱情、科幻知识、一个老板被咖啡机误会的故事..."
+              rows={5}
+              value={props.topic}
+              onChange={(event) => props.setTopic(event.target.value)}
+            />
+          </Field>
+          <div className="draft-reference-grid">
+            <DraftReferenceSelect
+              assets={characterAssets}
+              emptyText="不指定角色，AI 自动设计"
+              icon={<UserRound size={17} />}
+              label="角色参考图（可选）"
+              selectedAsset={selectedCharacterAsset}
+              value={props.draftCharacterAssetId ?? ""}
+              onChange={(id) => props.setDraftCharacterAssetId(id || null)}
+            />
+            <DraftReferenceSelect
+              assets={backgroundAssets}
+              emptyText="不指定背景，AI 自动设计"
+              icon={<ImageIcon size={17} />}
+              label="背景 / 场景参考图（可选）"
+              selectedAsset={selectedBackgroundAsset}
+              value={props.draftBackgroundAssetId ?? ""}
+              onChange={(id) => props.setDraftBackgroundAssetId(id || null)}
+            />
+          </div>
+          {characterAssets.length === 0 && backgroundAssets.length === 0 ? (
+            <div className="draft-reference-help">
+              还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设计；这里不选择也能继续生成。
+            </div>
+          ) : null}
+          <div className="simple-case-actions">
+            <button className="primary-button" disabled={!canGeneratePreview || props.isAutoGeneratingCase} type="button" onClick={props.generateDraftScriptStory}>
+              {props.isGeneratingDraftPreview ? <Loader2 size={16} className="spin" /> : <FilePenLine size={16} />}
+              {props.isGeneratingDraftPreview ? "生成中" : props.draftPreview ? "重新生成标题 / 脚本 / 分镜" : "生成标题 / 脚本 / 分镜"}
+            </button>
+            <button className="secondary-button" disabled={!canAutoGenerate} type="button" onClick={props.autoGenerateCase}>
+              {props.isAutoGeneratingCase ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+              {props.isAutoGeneratingCase ? props.autoGenerateStep ?? "Generating" : "直接生成 MP4"}
+            </button>
+          </div>
+        </div>
+      </form>
+      </div>
+
+      {apiUnavailable ? <ServiceIssueBanner apiState={props.apiState} action="Autopilot generation" /> : null}
+      {props.isAutoGeneratingCase ? (
+        <div className="pipeline-gate-note autopilot-progress">
+          <Loader2 size={16} className="spin" />
+          <span>{props.autoGenerateStep ?? "Autopilot is running the production pipeline."}</span>
+        </div>
+      ) : null}
+      {props.generationError ? <div className="inline-error">{props.generationError}</div> : null}
+
+      <DraftPreviewPanel
+        draftPreview={props.draftPreview}
+        clearDraftPreview={props.clearDraftPreview}
+        confirmDraftCase={props.confirmDraftCase}
+        generateDraftScriptStory={props.generateDraftScriptStory}
+        isGeneratingDraftPreview={props.isGeneratingDraftPreview}
+      />
+    </section>
+  );
+}
+
+function DraftReferenceSelect(props: {
+  assets: ProductionAsset[];
+  emptyText: string;
+  icon: ReactNode;
+  label: string;
+  onChange: (id: string) => void;
+  selectedAsset: ProductionAsset | null;
+  value: string;
+}) {
+  return (
+    <div className="draft-reference-card">
+      <label>
+        <span>{props.icon}{props.label}</span>
+        <select value={props.value} onChange={(event) => props.onChange(event.target.value)}>
+          <option value="">{props.emptyText}</option>
+          {props.assets.map((asset) => (
+            <option key={asset._id} value={asset._id}>
+              {asset.folderName ? `${asset.folderName} / ${asset.label}` : asset.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {props.selectedAsset ? (
+        <div className="draft-reference-preview">
+          <img alt={props.selectedAsset.label} src={props.selectedAsset.url} />
+          <div>
+            <strong>{props.selectedAsset.label}</strong>
+            <span>{props.selectedAsset.type} / {props.selectedAsset.status}</span>
+            <small>{props.selectedAsset.prompt || props.selectedAsset.notes || "已选参考图会写入大纲，并绑定到 Case 的资产规划。"}</small>
+          </div>
+        </div>
+      ) : (
+        <div className="draft-reference-empty">可留空，让 AI 根据一句话自动生成视觉设定。</div>
+      )}
+    </div>
+  );
+}
+
+function DraftPreviewPanel(props: {
+  clearDraftPreview: () => void;
+  confirmDraftCase: () => void;
+  draftPreview: CaseDraftPreview | null;
+  generateDraftScriptStory: () => void;
+  isGeneratingDraftPreview: boolean;
+}) {
+  if (!props.draftPreview) {
+    return (
+      <section className="case-preview-panel panel">
+        <EmptyState title="还没有生成内容" body="输入一句话，点击生成。AI 会直接产出标题、脚本、分镜、图片提示词、音效和背景音乐要求。" />
+      </section>
+    );
+  }
+
+  const backgroundMusic = props.draftPreview.result.backgroundMusic ?? {
+    enabled: true,
+    instrumentation: "minimal cinematic pads, soft pulses, subtle percussion",
+    mood: "cinematic, restrained, narration-friendly",
+    prompt: `Instrumental background music for "${props.draftPreview.result.script.title}". No vocals, no copyrighted melody, leave space for narration.`,
+    style: "cinematic underscore",
+    tempo: "slow to medium"
+  };
+
+  return (
+    <section className="case-preview-panel panel">
+      <SectionHeader
+        eyebrow={`${props.draftPreview.result.provider} / ${props.draftPreview.result.model}`}
+        title="Review AI Outline"
+        action={
+          <>
+            <button className="secondary-button" disabled={props.isGeneratingDraftPreview} type="button" onClick={props.generateDraftScriptStory}>
+              {props.isGeneratingDraftPreview ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+              重新写大纲
+            </button>
+            <button className="secondary-button" type="button" onClick={props.clearDraftPreview}>
+              <X size={15} />
+              放弃
+            </button>
+            <button className="primary-button" type="button" onClick={props.confirmDraftCase}>
+              <CheckCircle2 size={15} />
+              确认并创建 Case
+            </button>
+          </>
+        }
+      />
+      <div className="draft-preview-summary">
+        <div>
+          <span>Cost</span>
+          <strong>RM {props.draftPreview.result.costRM.toFixed(4)}</strong>
+        </div>
+        <div>
+          <span>Scenes</span>
+          <strong>{props.draftPreview.result.storyboard.length}</strong>
+        </div>
+        <div>
+          <span>Draft case ID</span>
+          <strong>{props.draftPreview.result.jobId}</strong>
+        </div>
+      </div>
+      <InterpretedIdeaCard draftPreview={props.draftPreview} />
+      <OutlineQcCard draftPreview={props.draftPreview} />
+      <div className="draft-script-card">
+        <span>标题</span>
+        <strong>{props.draftPreview.result.script.title}</strong>
+        <span>开场 Hook</span>
+        <p>{props.draftPreview.result.script.hook}</p>
+        <span>完整脚本 / 旁白</span>
+        <textarea readOnly rows={7} value={props.draftPreview.result.script.voiceover} />
+      </div>
+      <VisualBibleCard visualBible={props.draftPreview.result.visualBible} />
+      <div className="draft-script-card">
+        <span>背景音乐要求</span>
+        <strong>{backgroundMusic.enabled ? "需要 BGM" : "不需要 BGM"}</strong>
+        <p>{backgroundMusic.style} / {backgroundMusic.tempo} / {backgroundMusic.mood}</p>
+        <span>Instrumentation</span>
+        <p>{backgroundMusic.instrumentation}</p>
+        <span>BGM prompt</span>
+        <textarea readOnly rows={4} value={backgroundMusic.prompt} />
+      </div>
+      <div className="draft-scene-list">
+        {props.draftPreview.result.storyboard.map((scene) => (
+          <article className="draft-scene-card" key={scene.sceneId}>
+            <div>
+              <strong>Scene {scene.sceneId}</strong>
+              <span>{scene.durationSeconds}s / {scene.camera}</span>
+            </div>
+            <span>场景内容</span>
+            <p>{scene.visual}</p>
+            <span>旁白</span>
+            <p>{scene.voiceText}</p>
+            <span>图片提示词</span>
+            <textarea readOnly rows={3} value={scene.imagePrompt} />
+            <span>SFX</span>
+            <p>{scene.sfx.join(", ") || "none"}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function InterpretedIdeaCard(props: { draftPreview: CaseDraftPreview }) {
+  const idea = props.draftPreview.result.interpretedIdea;
+
+  return (
+    <div className="draft-script-card">
+      <span>AI interpreted idea</span>
+      <strong>{idea.expandedPremise}</strong>
+      <p>{idea.logline}</p>
+      <span>Story engine</span>
+      <p>{idea.protagonist} / {idea.setting} / {idea.centralObject}</p>
+      <span>Conflict / rule / twist</span>
+      <p>{idea.conflict} / {idea.ruleOrConstraint} / {idea.twist}</p>
+      <span>Ending hook</span>
+      <p>{idea.endingHook}</p>
+    </div>
+  );
+}
+
+function OutlineQcCard(props: { draftPreview: CaseDraftPreview }) {
+  const qc = props.draftPreview.result.outlineQc;
+
+  return (
+    <div className="draft-script-card">
+      <span>Outline QC</span>
+      <div className="qc-summary-strip">
+        <StatusPill tone={qc.status === "pass" ? "success" : "danger"}>{qc.status}</StatusPill>
+        <strong>{qc.summary}</strong>
+      </div>
+      {qc.checks.map((check) => (
+        <p key={check.label}>
+          <strong>{check.status === "pass" ? "PASS" : "FIX"} / {check.label}</strong>: {check.detail}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function VisualBibleCard(props: { visualBible: CaseDraftPreview["result"]["visualBible"] }) {
+  return (
+    <div className="draft-script-card visual-bible-card">
+      <span>Visual Bible / role consistency</span>
+      <strong>{props.visualBible.character.name} / {props.visualBible.character.role}</strong>
+      <p>{props.visualBible.character.ageRange} / {props.visualBible.character.bodyType} / {props.visualBible.character.hair}</p>
+      <span>Wardrobe lock</span>
+      <p>{props.visualBible.character.wardrobe}</p>
+      <span>Identity lock</span>
+      <p>{props.visualBible.character.signatureDetails}</p>
+      <span>Environment</span>
+      <p>{props.visualBible.environment.location} / {props.visualBible.environment.lighting} / {props.visualBible.environment.palette}</p>
+      <span>Negative prompt</span>
+      <p>{props.visualBible.negativePrompt}</p>
+    </div>
+  );
+}
+
+function CaseQueueTab(props: {
+  blockedCases: number;
+  clearCases: () => void;
+  jobs: AdminJob[];
+  openCase: (id: string) => void;
+  selectedJob: AdminJob | null;
+}) {
+  return (
+    <section className="case-queue-page panel">
+      <SectionHeader
+        eyebrow="Work queue"
+        title="Video Cases"
+        action={
+          <button className="secondary-button" type="button" onClick={props.clearCases}>
+            <Square size={15} />
+            Clear
+          </button>
+        }
+      />
+      <div className="queue-stats">
+        <span>{props.jobs.length} total</span>
+        <span>{props.blockedCases} blocked</span>
+      </div>
+      {props.jobs.length === 0 ? <EmptyState title="No cases" body="Create a video case to start the production flow." /> : null}
+      <div className="case-queue-table">
+        {props.jobs.map((job) => (
+          <button
+            className={`case-table-row case-queue-row ${props.selectedJob?.id === job.id ? "selected" : ""}`}
+            key={job.id}
+            type="button"
+            onClick={() => props.openCase(job.id)}
+          >
+            <div>
+              <strong>{job.topic}</strong>
+              <span>{job.id} / {job.source}</span>
+            </div>
+            <StatusPill tone={getStatusTone(job.status)}>{statusLabels[job.status]}</StatusPill>
+            <span>{job.sceneCount} scenes</span>
+            <span>RM {job.actualCostRM.toFixed(2)}</span>
+            <span className="case-time-cell">
+              <Clock3 size={13} />
+              {formatTime(job.updatedAt)}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductionTab(
+  props: CasesPageProps & {
+    selectedRecord: JobProcessRecord | null;
+    setSelectedRecordId: (id: string) => void;
+  }
+) {
+  const [activeProductionTab, setActiveProductionTab] = useState<ProductionWorkbenchTab>("overview");
+
+  if (!props.selectedJob) {
+    return (
+      <section className="panel">
+        <EmptyState title="No case selected" body="Select a case from the queue to inspect production steps." />
+      </section>
+    );
+  }
+
+  const isWriting = props.generatingScriptCaseIds.includes(props.selectedJob.id);
+  const isGeneratingImages = props.generatingImageCaseIds.includes(props.selectedJob.id);
+  const isGeneratingTts = props.generatingTtsCaseIds.includes(props.selectedJob.id);
+  const isGeneratingBgm = props.generatingBgmCaseIds.includes(props.selectedJob.id);
+  const isGeneratingVideoClip = props.generatingVideoClipCaseIds.includes(props.selectedJob.id);
+  const isRendering = props.generatingCaseIds.includes(props.selectedJob.id);
+  const isRunningQc = props.generatingQcCaseIds.includes(props.selectedJob.id);
+  const isStored = props.storedVideos.some((video) => video.jobId === props.selectedJob?.id);
+  const imageRecord = props.selectedRecords.find((record) => record.stageId === "image");
+  const ttsRecord = props.selectedRecords.find((record) => record.stageId === "tts");
+  const bgmRecord = props.selectedRecords.find((record) => record.stageId === "bgm");
+  const composeRecord = props.selectedRecords.find((record) => record.stageId === "compose");
+  const scriptStoryReady = ["script", "storyboard", "prompt"].every((stageId) => props.selectedRecords.some((record) => record.stageId === stageId && record.status === "done"));
+  const hasBlockedSceneReview = props.selectedSceneReviews.some((review) => review.status === "needs_review" || review.status === "rejected" || review.qcStatus === "fail");
+  const imageReadyForCompose = Boolean(imageRecord?.status === "done" && splitArtifactPaths(imageRecord.artifactPath).some(isRasterImagePath) && !hasBlockedSceneReview);
+  const voiceoverReadyForCompose = Boolean(ttsRecord?.status === "done" && splitArtifactPaths(ttsRecord.artifactPath).some(isAudioPath));
+  const bgmReadyForCompose = Boolean(bgmRecord?.status === "done" && splitArtifactPaths(bgmRecord.artifactPath).some(isAudioPath));
+  const finalMp4Ready = Boolean(composeRecord?.status === "done" && splitArtifactPaths(composeRecord.artifactPath).some(isVideoPath));
+  const canApproveMp4 = finalMp4Ready && voiceoverReadyForCompose && ["QC_PASSED", "READY_TO_UPLOAD", "COMPOSED"].includes(props.selectedJob.status);
+  const schedule = props.productionSchedules.find((candidate) => candidate.id === props.selectedJob?.scheduleId);
+  const sourceSeries = props.selectedJob.seriesId ? props.series.find((series) => series._id === props.selectedJob?.seriesId) ?? null : null;
+  const sourceEpisode = props.selectedJob.episodeId ? props.seriesEpisodes.find((episode) => episode._id === props.selectedJob?.episodeId) ?? null : null;
+  const apiUnavailable = props.apiState !== "online";
+  const tabRecord = getRecordForProductionTab(activeProductionTab, props.selectedRecords, props.selectedRecord);
+  const nextAction = getNextCaseAction({
+    apiUnavailable,
+    canApproveMp4,
+    finalMp4Ready,
+    imageReadyForCompose,
+    isGeneratingImages,
+    isGeneratingTts,
+    isRendering,
+    isRunningQc,
+    isWriting,
+    job: props.selectedJob,
+    scriptStoryReady,
+    voiceoverReadyForCompose,
+    handlers: {
+      approve: () => props.approveCaseForPublishing(props.selectedJob!),
+      generateImages: () => props.generateImagesForJob(props.selectedJob!),
+      generateScript: () => props.generateScriptStoryForJob(props.selectedJob!),
+      generateTts: () => props.generateTtsForJob(props.selectedJob!),
+      generateVideo: () => props.generateVideoForJob(props.selectedJob!),
+      runQc: () => props.runQcForJob(props.selectedJob!)
+    }
+  });
+
+  return (
+    <section className="production-tab">
+      <div className="case-production-header panel">
+        <div>
+          <p className="eyebrow">Production case</p>
+          <h2>{props.selectedJob.topic}</h2>
+          <div className="case-meta-strip">
+            <span>{props.selectedJob.id}</span>
+            <span>{props.selectedJob.source}</span>
+            <span>{schedule?.name ?? "Manual case"}</span>
+            <span>{props.selectedJob.reviewStatus}</span>
+            <span>{props.selectedCharacter ? `Character: ${props.selectedCharacter.name}` : "No character lock"}</span>
+            <span>{props.selectedJob.sceneCount} scenes</span>
+            <span>RM {props.selectedJob.actualCostRM.toFixed(2)} / {props.selectedJob.costLimitRM.toFixed(2)}</span>
+            <span>{formatDateTime(props.selectedJob.updatedAt)}</span>
+          </div>
+        </div>
+        <StatusPill tone={getStatusTone(props.selectedJob.status)}>{statusLabels[props.selectedJob.status]}</StatusPill>
+      </div>
+
+      {sourceSeries || sourceEpisode ? (
+        <section className="case-source-panel panel">
+          <SectionHeader eyebrow="Series source" title={sourceSeries?.name ?? "系列来源"} action={<StatusPill tone="active">Series</StatusPill>} />
+          <div className="case-source-grid">
+            <div>
+              <span>系列</span>
+              <strong>{sourceSeries?.name ?? props.selectedJob.seriesId}</strong>
+            </div>
+            <div>
+              <span>单集</span>
+              <strong>{sourceEpisode?.title ?? props.selectedJob.episodeId}</strong>
+            </div>
+            <div>
+              <span>核心看点</span>
+              <strong>{sourceEpisode?.moralLesson ?? "已从系列题库转入 Case"}</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="case-action-bar production-actions">
+        <button className="primary-button" type="button" disabled={nextAction.disabled} onClick={nextAction.onClick}>
+          {nextAction.loading ? <Loader2 size={16} className="spin" /> : nextAction.icon}
+          {nextAction.label}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => setActiveProductionTab("overview")}>
+          Overview
+        </button>
+        {props.selectedJob.status === "FAILED" ? (
+          <button className="secondary-button" type="button" onClick={() => props.updateJob(props.selectedJob!.id, retryCase)}>
+            <RotateCcw size={16} />
+            Retry
+          </button>
+        ) : (
+          <button className="secondary-button" type="button" onClick={() => props.updateJob(props.selectedJob!.id, advanceCase)}>
+            <Play size={16} />
+            Advance
+          </button>
+        )}
+        <button className="danger-button" type="button" onClick={() => props.updateJob(props.selectedJob!.id, failCase)}>
+          <AlertTriangle size={16} />
+          Mark failed
+        </button>
+        {["QC_PASSED", "READY_TO_UPLOAD", "UPLOADED_PRIVATE"].includes(props.selectedJob.status) ? (
+          <button className="secondary-button" type="button" disabled={isStored} onClick={() => props.selectedJob && props.addVideoForJob(props.selectedJob)}>
+            <Save size={16} />
+            {isStored ? "Stored" : "Store"}
+          </button>
+        ) : null}
+      </div>
+
+      {!scriptStoryReady ? (
+        <div className="pipeline-gate-note">
+          <FilePenLine size={16} />
+          <span>Image generation is locked until script/storyboard/image prompts are generated. Missing stages show as setup blockers instead of using mock data.</span>
+        </div>
+      ) : null}
+
+      {scriptStoryReady && !imageReadyForCompose ? (
+        <div className="pipeline-gate-note">
+          <ImageIcon size={16} />
+          <span>{hasBlockedSceneReview ? "Compose is locked because one or more scene images failed visual QC. Regenerate or approve the scene images first." : "Compose is locked until Image stage has real PNG/JPG/WebP assets. Click Generate images, inspect the thumbnails, then generate video."}</span>
+        </div>
+      ) : null}
+
+      {scriptStoryReady && imageReadyForCompose && !voiceoverReadyForCompose ? (
+        <div className="pipeline-gate-note">
+          <Music2 size={16} />
+          <span>Compose is locked until Voiceover has a real OpenAI TTS audio file. Click Generate voiceover, listen to the audio, then generate video.</span>
+        </div>
+      ) : null}
+
+      {scriptStoryReady && imageReadyForCompose && voiceoverReadyForCompose && !bgmReadyForCompose ? (
+        <div className="pipeline-gate-note">
+          <Music2 size={16} />
+          <span>BGM is optional. Click Generate BGM to create ElevenLabs background music before composing, or generate video now without music.</span>
+        </div>
+      ) : null}
+
+      {apiUnavailable ? <ServiceIssueBanner apiState={props.apiState} action="Generation" /> : null}
+      {props.generationError ? <div className="inline-error">{props.generationError}</div> : null}
+
+      <div className="production-workbench-tabs" role="tablist" aria-label="Production workbench sections">
+        {(["overview", "pipeline", "script", "assets", "voice", "music", "clips", "final", "publish", "activity"] as ProductionWorkbenchTab[]).map((tab) => (
+          <button className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`} key={tab} type="button" onClick={() => setActiveProductionTab(tab)}>
+            {formatProductionTab(tab)}
+          </button>
+        ))}
+      </div>
+
+      {activeProductionTab === "overview" ? (
+        <CaseOverviewPanel
+          assets={props.selectedProductionAssets}
+          finalMp4Ready={finalMp4Ready}
+          imageReadyForCompose={imageReadyForCompose}
+          job={props.selectedJob}
+          nextAction={nextAction}
+          scriptStoryReady={scriptStoryReady}
+          voiceoverReadyForCompose={voiceoverReadyForCompose}
+        />
+      ) : null}
+
+      {activeProductionTab === "pipeline" ? (
+        <section className="production-tab-grid two">
+          <section className="case-step-section panel">
+            <SectionHeader eyebrow="Pipeline" title="Production Steps" />
+            <div className="case-step-rail">
+              {props.selectedRecords.map((record) => (
+                <button
+                  className={`case-step-card ${props.selectedRecord?.id === record.id ? "selected" : ""}`}
+                  key={record.id}
+                  type="button"
+                  onClick={() => props.setSelectedRecordId(record.id)}
+                >
+                  <span className={`timeline-dot ${record.status}`} />
+                  <div>
+                    <strong>{record.order}. {record.stageName}</strong>
+                    <span>{record.queueName}</span>
+                    {record.status === "failed" && record.notes ? <small className="stage-failure-text">{record.notes}</small> : null}
+                  </div>
+                  <StatusPill tone={getRecordTone(record.status)}>{record.status}</StatusPill>
+                </button>
+              ))}
+            </div>
+          </section>
+          <StageEditorPanel
+            agents={props.agents}
+            characters={props.characters}
+            job={props.selectedJob}
+            record={props.selectedRecord}
+            updateCaseDetails={props.updateCaseDetails}
+            updateProcessRecord={props.updateProcessRecord}
+          />
+        </section>
+      ) : null}
+
+      {activeProductionTab === "script" || activeProductionTab === "voice" || activeProductionTab === "music" || activeProductionTab === "clips" || activeProductionTab === "final" ? (
+        <StageOutputPanel
+          characters={props.characters}
+          generateBgmForJob={props.generateBgmForJob}
+          generateImagesForJob={props.generateImagesForJob}
+          generateSceneImageForJob={props.generateSceneImageForJob}
+          generateTtsForJob={props.generateTtsForJob}
+          generateVideoClipForJob={props.generateVideoClipForJob}
+          runQcForJob={props.runQcForJob}
+          isGeneratingBgm={isGeneratingBgm}
+          isGeneratingImages={isGeneratingImages}
+          generatingSceneImageIds={props.generatingSceneImageIds}
+          isGeneratingTts={isGeneratingTts}
+          isGeneratingVideoClip={isGeneratingVideoClip}
+          isRunningQc={isRunningQc}
+          record={tabRecord}
+          sceneReviews={props.selectedSceneReviews}
+          qcReport={props.selectedQcReport}
+          storedVideos={props.storedVideos}
+          job={props.selectedJob}
+          updateSceneReview={props.updateSceneReview}
+        />
+      ) : null}
+
+      {activeProductionTab === "assets" ? (
+        <section className="production-tab-grid two">
+          <AssetPlanSummaryPanel assets={props.selectedProductionAssets} job={props.selectedJob} openAssetPlan={props.openAssetPlanForJob} />
+          <CaseAssetsPanel job={props.selectedJob} qcReport={props.selectedQcReport} records={props.selectedRecords} sceneReviews={props.selectedSceneReviews} storedVideos={props.storedVideos} />
+          <StageOutputPanel
+            characters={props.characters}
+            generateBgmForJob={props.generateBgmForJob}
+            generateImagesForJob={props.generateImagesForJob}
+            generateSceneImageForJob={props.generateSceneImageForJob}
+            generateTtsForJob={props.generateTtsForJob}
+            generateVideoClipForJob={props.generateVideoClipForJob}
+            runQcForJob={props.runQcForJob}
+            isGeneratingBgm={isGeneratingBgm}
+            isGeneratingImages={isGeneratingImages}
+            generatingSceneImageIds={props.generatingSceneImageIds}
+            isGeneratingTts={isGeneratingTts}
+            isGeneratingVideoClip={isGeneratingVideoClip}
+            isRunningQc={isRunningQc}
+            record={props.selectedRecords.find((record) => record.stageId === "image") ?? null}
+            sceneReviews={props.selectedSceneReviews}
+            qcReport={props.selectedQcReport}
+            storedVideos={props.storedVideos}
+            job={props.selectedJob}
+            updateSceneReview={props.updateSceneReview}
+          />
+        </section>
+      ) : null}
+
+      {activeProductionTab === "publish" ? (
+        <PublishTargetMatrix
+          caseTargets={props.selectedPublishTargets}
+          job={props.selectedJob}
+          publishingTargets={props.publishingTargets}
+          uploadPrivateTarget={props.uploadPrivateTarget}
+        />
+      ) : null}
+
+      {activeProductionTab === "activity" ? <ActivityLogPanel activities={props.selectedActivities} /> : null}
+    </section>
+  );
+}
+
+interface CaseNextAction {
+  disabled: boolean;
+  icon: ReactNode;
+  label: string;
+  loading: boolean;
+  onClick: () => void;
+}
+
+function getNextCaseAction(input: {
+  apiUnavailable: boolean;
+  canApproveMp4: boolean;
+  finalMp4Ready: boolean;
+  imageReadyForCompose: boolean;
+  isGeneratingImages: boolean;
+  isGeneratingTts: boolean;
+  isRendering: boolean;
+  isRunningQc: boolean;
+  isWriting: boolean;
+  job: AdminJob;
+  scriptStoryReady: boolean;
+  voiceoverReadyForCompose: boolean;
+  handlers: {
+    approve: () => void;
+    generateImages: () => void;
+    generateScript: () => void;
+    generateTts: () => void;
+    generateVideo: () => void;
+    runQc: () => void;
+  };
+}): CaseNextAction {
+  if (!input.scriptStoryReady) {
+    return {
+      disabled: input.apiUnavailable || input.isWriting,
+      icon: <FilePenLine size={16} />,
+      label: input.isWriting ? "Writing script/story" : "Generate script/story",
+      loading: input.isWriting,
+      onClick: input.handlers.generateScript
+    };
+  }
+
+  if (!input.imageReadyForCompose) {
+    return {
+      disabled: input.apiUnavailable || input.isGeneratingImages,
+      icon: <ImageIcon size={16} />,
+      label: input.isGeneratingImages ? "Generating images" : "Generate images",
+      loading: input.isGeneratingImages,
+      onClick: input.handlers.generateImages
+    };
+  }
+
+  if (!input.voiceoverReadyForCompose) {
+    return {
+      disabled: input.apiUnavailable || input.isGeneratingTts,
+      icon: <Music2 size={16} />,
+      label: input.isGeneratingTts ? "Generating voiceover" : "Generate voiceover",
+      loading: input.isGeneratingTts,
+      onClick: input.handlers.generateTts
+    };
+  }
+
+  if (!input.finalMp4Ready) {
+    return {
+      disabled: input.apiUnavailable || input.isRendering,
+      icon: <FileVideo size={16} />,
+      label: input.isRendering ? "Generating MP4" : "Generate full MP4",
+      loading: input.isRendering,
+      onClick: input.handlers.generateVideo
+    };
+  }
+
+  if (input.job.status !== "QC_PASSED" && input.job.status !== "READY_TO_UPLOAD") {
+    return {
+      disabled: input.apiUnavailable || input.isRunningQc,
+      icon: <CheckCircle2 size={16} />,
+      label: input.isRunningQc ? "Running QC" : "Run QC",
+      loading: input.isRunningQc,
+      onClick: input.handlers.runQc
+    };
+  }
+
+  return {
+    disabled: !input.canApproveMp4 || input.job.reviewStatus === "approved",
+    icon: <CheckCircle2 size={16} />,
+    label: input.job.reviewStatus === "approved" ? "Approved" : "Approve MP4",
+    loading: false,
+    onClick: input.handlers.approve
+  };
+}
+
+function getRecordForProductionTab(tab: ProductionWorkbenchTab, records: JobProcessRecord[], fallback: JobProcessRecord | null): JobProcessRecord | null {
+  const stageByTab: Partial<Record<ProductionWorkbenchTab, ProductionStageId[]>> = {
+    clips: ["video"],
+    final: ["compose", "qc"],
+    music: ["bgm"],
+    script: ["script", "storyboard", "prompt"],
+    voice: ["tts", "subtitle"]
+  };
+  const stageIds = stageByTab[tab] ?? [];
+  return records.find((record) => stageIds.includes(record.stageId)) ?? fallback;
+}
+
+function formatProductionTab(tab: ProductionWorkbenchTab): string {
+  const labels: Record<ProductionWorkbenchTab, string> = {
+    activity: "Activity",
+    assets: "Assets",
+    clips: "Clips",
+    final: "Final MP4",
+    music: "Music",
+    overview: "Overview",
+    pipeline: "Pipeline",
+    publish: "Publish",
+    script: "Script",
+    voice: "Voice"
+  };
+
+  return labels[tab];
+}
+
+function CaseOverviewPanel(props: {
+  assets: ProductionAsset[];
+  finalMp4Ready: boolean;
+  imageReadyForCompose: boolean;
+  job: AdminJob;
+  nextAction: CaseNextAction;
+  scriptStoryReady: boolean;
+  voiceoverReadyForCompose: boolean;
+}) {
+  const budgetUsedPct = props.job.costLimitRM > 0 ? Math.min(100, Math.round((props.job.actualCostRM / props.job.costLimitRM) * 100)) : 0;
+  const readyAssets = props.assets.filter((asset) => asset.status === "ready" || asset.status === "approved").length;
+  const blockers = [
+    props.scriptStoryReady ? "" : "Script/story is missing.",
+    props.imageReadyForCompose ? "" : "Scene images are not ready or still need review.",
+    props.voiceoverReadyForCompose ? "" : "Voiceover audio is missing.",
+    props.finalMp4Ready ? "" : "Final MP4 has not been composed."
+  ].filter(Boolean);
+
+  return (
+    <section className="case-overview-grid">
+      <section className="panel case-overview-main">
+        <SectionHeader eyebrow="Next action" title={props.nextAction.label} action={<StatusPill tone={blockers.length > 0 ? "warning" : "success"}>{blockers.length > 0 ? "in progress" : "ready"}</StatusPill>} />
+        <button className="primary-button overview-cta" type="button" disabled={props.nextAction.disabled} onClick={props.nextAction.onClick}>
+          {props.nextAction.loading ? <Loader2 size={17} className="spin" /> : props.nextAction.icon}
+          {props.nextAction.label}
+        </button>
+        {blockers.length > 0 ? (
+          <div className="overview-blocker-list">
+            {blockers.map((blocker) => (
+              <span key={blocker}>{blocker}</span>
+            ))}
+          </div>
+        ) : (
+          <div className="reference-asset-note success">
+            <CheckCircle2 size={15} />
+            <span>This case is ready for review or the next publishing gate.</span>
+          </div>
+        )}
+      </section>
+      <section className="panel case-overview-side">
+        <SectionHeader eyebrow="Budget" title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`} />
+        <div className="budget-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
+        <div className="asset-plan-summary-grid compact">
+          <div><span>Script</span><strong>{props.scriptStoryReady ? "ready" : "missing"}</strong></div>
+          <div><span>Images</span><strong>{props.imageReadyForCompose ? "ready" : "blocked"}</strong></div>
+          <div><span>Voice</span><strong>{props.voiceoverReadyForCompose ? "ready" : "missing"}</strong></div>
+          <div><span>Assets</span><strong>{readyAssets}/{props.assets.length}</strong></div>
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob; openAssetPlan: (jobId: string) => void }) {
+  const requiredTypes = ["character_design", "scene_design", "style_reference", "first_frame"] as const;
+  const missingTypes = requiredTypes.filter((type) => !props.assets.some((asset) => asset.type === type));
+  const readyCount = props.assets.filter((asset) => asset.status === "ready" || asset.status === "approved").length;
+  const approvedCount = props.assets.filter((asset) => asset.status === "approved").length;
+  const blockedCount = props.assets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
+  const seedanceReferenceCount = props.assets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && asset.url.trim() && (asset.role === "reference_image" || asset.role === "first_frame" || asset.role === "last_frame")).length;
+
+  return (
+    <section className="asset-plan-summary panel">
+      <SectionHeader
+        eyebrow="MongoDB asset plan"
+        title="Asset Plan Status"
+        action={
+          <button className="secondary-button compact-button" type="button" onClick={() => props.openAssetPlan(props.job.id)}>
+            Open Asset Plan
+          </button>
+        }
+      />
+      <div className="asset-plan-summary-grid">
+        <div>
+          <span>Rows</span>
+          <strong>{props.assets.length}</strong>
+        </div>
+        <div>
+          <span>Ready / approved</span>
+          <strong>{readyCount} / {approvedCount}</strong>
+        </div>
+        <div>
+          <span>Seedance refs</span>
+          <strong>{seedanceReferenceCount}</strong>
+        </div>
+        <div>
+          <span>Blocked</span>
+          <strong>{blockedCount}</strong>
+        </div>
+      </div>
+      {props.assets.length === 0 ? (
+        <EmptyState title="No MongoDB asset plan yet" body="Open Asset Plan and bootstrap this case. Seedance will only use ready or approved reference assets from MongoDB." />
+      ) : null}
+      {missingTypes.length > 0 ? (
+        <div className="reference-asset-note">
+          <AlertTriangle size={15} />
+          <span>Missing required plan rows: {missingTypes.join(", ")}.</span>
+        </div>
+      ) : (
+        <div className="reference-asset-note success">
+          <CheckCircle2 size={15} />
+          <span>Core asset rows exist. Generate and approve references before Seedance video generation.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; records: JobProcessRecord[]; sceneReviews: SceneReviewItem[]; storedVideos: StoredVideo[] }) {
+  const imageRecord = props.records.find((record) => record.stageId === "image");
+  const composeRecord = props.records.find((record) => record.stageId === "compose");
+  const subtitleRecord = props.records.find((record) => record.stageId === "subtitle");
+  const ttsRecord = props.records.find((record) => record.stageId === "tts");
+  const bgmRecord = props.records.find((record) => record.stageId === "bgm");
+  const storedVideo = props.storedVideos.find((video) => video.jobId === props.job.id);
+  const videoPath = firstPath(composeRecord?.artifactPath) ?? storedVideo?.publicUrl ?? storedVideo?.storagePath ?? "";
+  const jobAssetsBaseUrl = inferJobAssetsBaseUrl(videoPath);
+  const imagePaths = splitArtifactPaths(imageRecord?.artifactPath).filter(isImagePath);
+  const resolvedImagePaths = imagePaths.length > 0 ? imagePaths : jobAssetsBaseUrl ? inferSceneImageUrls(jobAssetsBaseUrl, props.job.sceneCount) : [];
+  const subtitlePath = firstPath(subtitleRecord?.artifactPath) ?? (jobAssetsBaseUrl ? `${jobAssetsBaseUrl}/subtitles.srt` : undefined);
+  const audioAndSfxPaths = splitArtifactPaths(ttsRecord?.artifactPath);
+  const voiceoverPath = audioAndSfxPaths.find(isAudioPath) ?? audioAndSfxPaths.find((artifact) => artifact.includes("voiceover"));
+  const bgmPath = splitArtifactPaths(bgmRecord?.artifactPath).find(isAudioPath);
+  const sfxPath = audioAndSfxPaths.find((artifact) => artifact.includes("sfx")) ?? (jobAssetsBaseUrl ? `${jobAssetsBaseUrl}/sfx.json` : undefined);
+  const audioAssetCount = [voiceoverPath && isAudioPath(voiceoverPath) ? voiceoverPath : "", bgmPath ?? "", sfxPath].filter(Boolean).length;
+
+  return (
+    <section className="case-assets-panel panel">
+      <SectionHeader eyebrow="Case assets" title="Artifact Library" action={<StatusPill tone={videoPath ? "success" : "neutral"}>{videoPath ? "MP4 ready" : "waiting"}</StatusPill>} />
+      {props.job.visualBible ? <VisualBibleCard visualBible={props.job.visualBible} /> : null}
+      {videoPath ? (
+        <div className="case-video-preview">
+          {isVideoPath(videoPath) && videoPath.startsWith("http") ? <video controls src={videoPath} /> : null}
+          <a href={videoPath.startsWith("http") ? videoPath : undefined} target="_blank" rel="noreferrer">
+            {videoPath}
+          </a>
+        </div>
+      ) : (
+        <EmptyState title="No final video yet" body="Generate video to create the MP4, images, subtitles, and SFX manifest." />
+      )}
+
+      <div className="asset-library-grid">
+        <AssetCount icon={<ImageIcon size={15} />} label="Images" value={String(resolvedImagePaths.length)} />
+        <AssetCount icon={<Music2 size={15} />} label="Voice / SFX" value={String(audioAssetCount)} />
+        <AssetCount icon={<Captions size={15} />} label="Subtitles" value={subtitlePath ? "1" : "0"} />
+      </div>
+
+      {props.qcReport ? (
+        <div className="qc-summary-strip">
+          <StatusPill tone={props.qcReport.passed ? "success" : "danger"}>{props.qcReport.status}</StatusPill>
+          <strong>{props.qcReport.summary}</strong>
+          <span>{props.qcReport.durationSeconds ? `${props.qcReport.durationSeconds.toFixed(1)}s` : "duration unknown"} / {props.qcReport.resolution ?? "resolution unknown"}</span>
+        </div>
+      ) : null}
+
+      {resolvedImagePaths.length > 0 ? (
+        <div className="image-asset-grid">
+          {resolvedImagePaths.map((path, index) => (
+            <a className="image-asset-tile" href={path.startsWith("http") ? path : undefined} target="_blank" rel="noreferrer" key={`${path}-${index}`}>
+              <img src={path} alt={`Scene ${index + 1}`} />
+              <span>Scene {index + 1} / {props.sceneReviews.find((review) => review.sceneId === index + 1)?.status ?? "unreviewed"}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="asset-link-list">
+        {voiceoverPath && isAudioPath(voiceoverPath) ? (
+          <div className="audio-preview-row">
+            <div>
+              <Music2 size={14} />
+              <span>Voiceover audio</span>
+            </div>
+            <audio controls src={voiceoverPath} />
+            <a href={voiceoverPath.startsWith("http") ? voiceoverPath : undefined} target="_blank" rel="noreferrer">{voiceoverPath}</a>
+          </div>
+        ) : voiceoverPath ? (
+          <ArtifactLink icon={<Music2 size={14} />} label="Voiceover text" path={voiceoverPath} />
+        ) : null}
+        {bgmPath ? (
+          <div className="audio-preview-row">
+            <div>
+              <Music2 size={14} />
+              <span>Background music</span>
+            </div>
+            <audio controls src={bgmPath} />
+            <a href={bgmPath.startsWith("http") ? bgmPath : undefined} target="_blank" rel="noreferrer">{bgmPath}</a>
+          </div>
+        ) : null}
+        {sfxPath ? <ArtifactLink icon={<Music2 size={14} />} label="SFX cues" path={sfxPath} /> : null}
+        {subtitlePath ? <ArtifactLink icon={<Captions size={14} />} label="Subtitles" path={subtitlePath} /> : null}
+      </div>
+    </section>
+  );
+}
+
+function AssetCount(props: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div>
+      {props.icon}
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
+  );
+}
+
+function ArtifactLink(props: { icon: ReactNode; label: string; path: string }) {
+  const isLinkable = props.path.startsWith("http");
+
+  return (
+    <a className="asset-link-row" href={isLinkable ? props.path : undefined} target="_blank" rel="noreferrer">
+      {props.icon}
+      <span>{props.label}</span>
+      <code>{props.path}</code>
+    </a>
+  );
+}
+
+function StageOutputPanel(props: {
+  characters: CharacterProfile[];
+  generateBgmForJob: (job: AdminJob) => void;
+  generateImagesForJob: (job: AdminJob) => void;
+  generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
+  generateTtsForJob: (job: AdminJob) => void;
+  generateVideoClipForJob: (job: AdminJob) => void;
+  runQcForJob: (job: AdminJob) => void;
+  generatingSceneImageIds: string[];
+  isGeneratingBgm: boolean;
+  isGeneratingImages: boolean;
+  isGeneratingTts: boolean;
+  isGeneratingVideoClip: boolean;
+  isRunningQc: boolean;
+  job: AdminJob;
+  qcReport: CaseQcReport | null;
+  record: JobProcessRecord | null;
+  sceneReviews: SceneReviewItem[];
+  storedVideos: StoredVideo[];
+  updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
+}) {
+  const storedVideo = props.storedVideos.find((video) => video.jobId === props.job.id);
+  const isImageStage = props.record?.stageId === "image";
+  const isTtsStage = props.record?.stageId === "tts";
+  const isBgmStage = props.record?.stageId === "bgm";
+  const isVideoStage = props.record?.stageId === "video";
+  const isQcStage = props.record?.stageId === "qc";
+
+  return (
+    <section className="stage-output-panel panel">
+      <SectionHeader
+        eyebrow="Artifact review"
+        title={props.record ? props.record.stageName : "No stage selected"}
+        action={
+          props.record ? (
+            isImageStage ? (
+              <button className="secondary-button compact-button" disabled={props.isGeneratingImages} type="button" onClick={() => props.generateImagesForJob(props.job)}>
+                {props.isGeneratingImages ? <Loader2 size={14} className="spin" /> : <ImageIcon size={14} />}
+                {props.isGeneratingImages ? "Generating" : "Regenerate images"}
+              </button>
+            ) : isTtsStage ? (
+              <button className="secondary-button compact-button" disabled={props.isGeneratingTts} type="button" onClick={() => props.generateTtsForJob(props.job)}>
+                {props.isGeneratingTts ? <Loader2 size={14} className="spin" /> : <Music2 size={14} />}
+                {props.isGeneratingTts ? "Generating" : "Regenerate voiceover"}
+              </button>
+            ) : isBgmStage ? (
+              <button className="secondary-button compact-button" disabled={props.isGeneratingBgm} type="button" onClick={() => props.generateBgmForJob(props.job)}>
+                {props.isGeneratingBgm ? <Loader2 size={14} className="spin" /> : <Music2 size={14} />}
+                {props.isGeneratingBgm ? "Generating" : "Regenerate BGM"}
+              </button>
+            ) : isVideoStage ? (
+              <button className="secondary-button compact-button" disabled={props.isGeneratingVideoClip} type="button" onClick={() => props.generateVideoClipForJob(props.job)}>
+                {props.isGeneratingVideoClip ? <Loader2 size={14} className="spin" /> : <FileVideo size={14} />}
+                {props.isGeneratingVideoClip ? "Seedance running" : "Generate scene clips"}
+              </button>
+            ) : isQcStage ? (
+              <button className="secondary-button compact-button" disabled={props.isRunningQc} type="button" onClick={() => props.runQcForJob(props.job)}>
+                {props.isRunningQc ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                {props.isRunningQc ? "Checking" : "Run QC"}
+              </button>
+            ) : (
+              <StatusPill tone={getRecordTone(props.record.status)}>{props.record.status}</StatusPill>
+            )
+          ) : null
+        }
+      />
+      {props.record ? (
+        <>
+          <div className="artifact-summary-grid">
+            <div>
+              <span>Tool</span>
+              <strong>{props.record.provider}</strong>
+            </div>
+            <div>
+              <span>Queue</span>
+              <strong>{props.record.queueName}</strong>
+            </div>
+            <div>
+              <span>Cost</span>
+              <strong>RM {props.record.costRM.toFixed(2)}</strong>
+            </div>
+          </div>
+          {props.record.status === "failed" && props.record.notes ? (
+            <div className="stage-error-panel">
+              <AlertTriangle size={16} />
+              <div>
+                <strong>Failure reason</strong>
+                <span>{props.record.notes}</span>
+              </div>
+            </div>
+          ) : null}
+          <div className="artifact-output-block">
+            <span>Output</span>
+            <pre>{getRecordOutputForDisplay(props.record) || "No output recorded yet."}</pre>
+          </div>
+          <ArtifactPreview artifactPath={props.record.artifactPath || storedVideo?.publicUrl || storedVideo?.storagePath || ""} />
+          {isImageStage ? (
+            <SceneReviewPanel
+              generatingSceneImageIds={props.generatingSceneImageIds}
+              job={props.job}
+              sceneReviews={props.sceneReviews}
+              generateSceneImageForJob={props.generateSceneImageForJob}
+              updateSceneReview={props.updateSceneReview}
+            />
+          ) : null}
+          {isQcStage && props.qcReport ? <QcReportPanel report={props.qcReport} /> : null}
+        </>
+      ) : (
+        <EmptyState title="No stage selected" body="Choose a production step to review generated output and artifacts." />
+      )}
+    </section>
+  );
+}
+
+function SceneReviewPanel(props: {
+  generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
+  generatingSceneImageIds: string[];
+  job: AdminJob;
+  sceneReviews: SceneReviewItem[];
+  updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
+}) {
+  if (props.sceneReviews.length === 0) {
+    return <EmptyState title="No scene review records" body="Generate images first. Each scene will appear here with prompt, image, approval state, and regenerate controls." />;
+  }
+
+  return (
+    <div className="scene-review-section">
+      <div className="section-heading-row">
+        <div>
+          <span>Scene Review</span>
+          <strong>Inspect and fix each generated image</strong>
+        </div>
+        <small>{props.sceneReviews.length} scene(s)</small>
+      </div>
+      <div className="scene-review-list">
+        {props.sceneReviews.map((scene) => {
+          const operationId = `${props.job.id}_${scene.sceneId}`;
+          const isGenerating = props.generatingSceneImageIds.includes(operationId);
+
+          return (
+            <article className={`scene-review-card ${scene.status}`} key={scene.id}>
+              <div className="scene-review-media">
+                {isImagePath(scene.artifactPath) ? <img src={scene.artifactPath} alt={`Scene ${scene.sceneId}`} /> : <div className="scene-placeholder">Scene {scene.sceneId}</div>}
+              </div>
+              <div className="scene-review-body">
+                <div className="scene-review-title">
+                  <strong>Scene {scene.sceneId}</strong>
+                  <StatusPill tone={scene.status === "approved" ? "success" : scene.status === "rejected" ? "danger" : "warning"}>{scene.status}</StatusPill>
+                </div>
+                <div className={`scene-qc-strip ${scene.qcStatus}`}>
+                  <strong>QC: {scene.qcStatus}</strong>
+                  <span>{scene.qcSummary || "No visual QC result recorded yet."}</span>
+                </div>
+                {scene.qcIssues.length > 0 ? (
+                  <div className="scene-qc-issues">
+                    {scene.qcIssues.map((issue) => <span key={issue}>{issue}</span>)}
+                  </div>
+                ) : null}
+                {scene.referenceImagePath ? <ArtifactLink icon={<UserRound size={14} />} label="Character reference" path={scene.referenceImagePath} /> : null}
+                <Field label="Image prompt">
+                  <textarea
+                    rows={4}
+                    value={scene.prompt}
+                    onChange={(event) => props.updateSceneReview(scene.id, (current) => ({ ...current, prompt: event.target.value, status: current.status === "approved" ? "generated" : current.status }))}
+                  />
+                </Field>
+                <Field label="Review notes">
+                  <input value={scene.notes} onChange={(event) => props.updateSceneReview(scene.id, (current) => ({ ...current, notes: event.target.value }))} />
+                </Field>
+                <div className="scene-review-actions">
+                  <button className="secondary-button compact-button" disabled={isGenerating} type="button" onClick={() => props.generateSceneImageForJob(props.job, scene)}>
+                    {isGenerating ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+                    {isGenerating ? "Regenerating" : "Regenerate this scene"}
+                  </button>
+                  <button className="secondary-button compact-button" type="button" onClick={() => props.updateSceneReview(scene.id, (current) => ({ ...current, status: "approved" }))}>
+                    <LockKeyhole size={14} />
+                    Lock approved
+                  </button>
+                  <button className="danger-button compact-button" type="button" onClick={() => props.updateSceneReview(scene.id, (current) => ({ ...current, status: "rejected" }))}>
+                    <X size={14} />
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function QcReportPanel(props: { report: CaseQcReport }) {
+  return (
+    <div className="qc-report-panel">
+      <div className="qc-report-header">
+        <StatusPill tone={props.report.passed ? "success" : "danger"}>{props.report.status}</StatusPill>
+        <strong>{props.report.summary}</strong>
+        <span>{formatDateTime(props.report.timestamp)}</span>
+      </div>
+      <div className="qc-check-list">
+        {props.report.checks.map((check) => (
+          <div className={`qc-check-row ${check.status}`} key={`${check.label}-${check.detail}`}>
+            <span>{check.status}</span>
+            <strong>{check.label}</strong>
+            <p>{check.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ServiceIssueBanner(props: { action: string; apiState: CasesPageProps["apiState"] }) {
+  return (
+    <div className="service-issue-banner">
+      <AlertTriangle size={17} />
+      <div>
+        <strong>{props.action} is paused</strong>
+        <span>{props.apiState === "checking" ? "Checking API server status. Wait a moment or click the API status badge in the top bar." : "API server is offline. Start or restart the API server, then retry this case."}</span>
+      </div>
+    </div>
+  );
+}
+
+function PublishTargetMatrix(props: {
+  caseTargets: CasePublishTarget[];
+  job: AdminJob;
+  publishingTargets: PublishingTarget[];
+  uploadPrivateTarget: (job: AdminJob, targetId: string) => void;
+}) {
+  return (
+    <section className="publish-target-panel panel">
+      <SectionHeader eyebrow="Private upload matrix" title="YouTube Targets" />
+      {props.caseTargets.length === 0 ? <EmptyState title="No YouTube targets" body="This case will stop at MP4/QC. Add YouTube targets later when you are ready for private upload." /> : null}
+      <div className="publish-target-list">
+        {props.caseTargets.map((caseTarget) => {
+          const target = props.publishingTargets.find((candidate) => candidate.id === caseTarget.targetId);
+          const canUpload = props.job.reviewStatus === "approved" && caseTarget.status === "approved";
+
+          return (
+            <article className="publish-target-row" key={caseTarget.id}>
+              <div>
+                <strong>{target?.channelName ?? "Unknown target"}</strong>
+                <span>{target?.youtubeChannelId ?? caseTarget.targetId}</span>
+              </div>
+              <StatusPill tone={caseTarget.status === "uploaded_private" ? "success" : caseTarget.status === "failed" ? "danger" : caseTarget.status === "approved" ? "active" : "warning"}>
+                {caseTarget.status}
+              </StatusPill>
+              <span>{caseTarget.privacyStatus}</span>
+              <button className="secondary-button compact-button" disabled={!canUpload} type="button" onClick={() => props.uploadPrivateTarget(props.job, caseTarget.targetId)}>
+                Upload private
+              </button>
+              {caseTarget.youtubeVideoId ? <small>{caseTarget.youtubeVideoId}</small> : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function StageEditorPanel(props: {
+  agents: StaffAgent[];
+  characters: CharacterProfile[];
+  job: AdminJob | null;
+  record: JobProcessRecord | null;
+  updateCaseDetails: CasesPageProps["updateCaseDetails"];
+  updateProcessRecord: CasesPageProps["updateProcessRecord"];
+}) {
+  const selectedAgent = props.record ? props.agents.find((agent) => agent.id === props.record?.ownerAgentId) : null;
+
+  if (!props.job) {
+    return (
+      <section className="stage-editor-panel panel">
+        <EmptyState title="No case file" body="Case metadata and selected stage details will appear here." />
+      </section>
+    );
+  }
+
+  return (
+    <section className="stage-editor-panel panel">
+      <SectionHeader eyebrow="Case file" title="Stage Editor" />
+      <div className="inspector-summary">
+        <div>
+          <span>Case ID</span>
+          <strong>{props.job.id}</strong>
+        </div>
+        <div>
+          <span>Created</span>
+          <strong>{formatDateTime(props.job.createdAt)}</strong>
+        </div>
+        <div>
+          <span>Privacy</span>
+          <strong>{props.job.privacy}</strong>
+        </div>
+        <div>
+          <span>Cost</span>
+          <strong>RM {props.job.actualCostRM.toFixed(2)}</strong>
+        </div>
+      </div>
+
+      <div className="stage-editor-grid">
+        <Field label="Case topic">
+          <input value={props.job.topic} onChange={(event) => props.updateCaseDetails(props.job!.id, { topic: event.target.value })} />
+        </Field>
+        <Field label="Character lock">
+          <select value={props.job.characterId ?? ""} onChange={(event) => props.updateCaseDetails(props.job!.id, { characterId: event.target.value || null })}>
+            <option value="">No fixed character</option>
+            {props.characters.map((character) => (
+              <option key={character.id} value={character.id}>
+                {character.name} / {character.status}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Main prompt / production brief">
+          <textarea rows={4} value={props.job.prompt} onChange={(event) => props.updateCaseDetails(props.job!.id, { prompt: event.target.value })} />
+        </Field>
+      </div>
+
+      {props.record ? (
+        <div className="stage-editor">
+          <SectionHeader
+            eyebrow="Selected stage"
+            title={props.record.stageName}
+            action={<StatusPill tone={getRecordTone(props.record.status)}>{props.record.status}</StatusPill>}
+          />
+          <div className="stage-editor-grid">
+            <Field label="Status">
+              <select
+                value={props.record.status}
+                onChange={(event) =>
+                  props.updateProcessRecord(props.record!.id, (current) => ({
+                    ...current,
+                    status: event.target.value as ProcessRecordStatus
+                  }))
+                }
+              >
+                {processStatusOptions.map((status) => (
+                  <option value={status} key={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Cost RM">
+              <input
+                min={0}
+                step={0.01}
+                type="number"
+                value={props.record.costRM}
+                onChange={(event) =>
+                  props.updateProcessRecord(props.record!.id, (current) => ({
+                    ...current,
+                    costRM: Number(event.target.value)
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Controller agent">
+              <select
+                value={props.record.ownerAgentId}
+                onChange={(event) =>
+                  props.updateProcessRecord(props.record!.id, (current) => ({
+                    ...current,
+                    ownerAgentId: event.target.value,
+                    owner: getAgentLabel(event.target.value, props.agents)
+                  }))
+                }
+              >
+                {props.agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name} / {getAgentTypeLabel(agent.type)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Provider / tool">
+              <input
+                value={props.record.provider}
+                onChange={(event) =>
+                  props.updateProcessRecord(props.record!.id, (current) => ({
+                    ...current,
+                    provider: event.target.value
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Queue">
+              <input
+                value={props.record.queueName}
+                onChange={(event) =>
+                  props.updateProcessRecord(props.record!.id, (current) => ({
+                    ...current,
+                    queueName: event.target.value
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Artifact path / record link">
+              <input
+                value={props.record.artifactPath}
+                onChange={(event) =>
+                  props.updateProcessRecord(props.record!.id, (current) => ({
+                    ...current,
+                    artifactPath: event.target.value
+                  }))
+                }
+              />
+            </Field>
+          </div>
+          {selectedAgent ? (
+            <div className="agent-mini-card">
+              <strong>{selectedAgent.role}</strong>
+              <span>{selectedAgent.responsibilities}</span>
+            </div>
+          ) : null}
+          <Field label="Input / instructions">
+            <textarea
+              rows={5}
+              value={props.record.input}
+              onChange={(event) =>
+                props.updateProcessRecord(props.record!.id, (current) => ({
+                  ...current,
+                  input: event.target.value
+                }))
+              }
+            />
+          </Field>
+          <Field label="Output / result">
+            <textarea
+              rows={8}
+              value={getRecordOutputForDisplay(props.record)}
+              onChange={(event) =>
+                props.updateProcessRecord(props.record!.id, (current) => ({
+                  ...current,
+                  output: event.target.value
+                }))
+              }
+            />
+          </Field>
+          <ArtifactPreview artifactPath={props.record.artifactPath} />
+          <Field label="Internal notes">
+            <textarea
+              rows={4}
+              value={props.record.notes}
+              onChange={(event) =>
+                props.updateProcessRecord(props.record!.id, (current) => ({
+                  ...current,
+                  notes: event.target.value
+                }))
+              }
+            />
+          </Field>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ArtifactPreview(props: { artifactPath: string }) {
+  const artifacts = splitArtifactPaths(props.artifactPath);
+  const firstArtifact = artifacts[0];
+
+  if (!firstArtifact) {
+    return null;
+  }
+
+  const videoArtifacts = artifacts.filter(isVideoPath);
+  const imageArtifacts = artifacts.filter(isImagePath);
+  const audioArtifacts = artifacts.filter(isAudioPath);
+
+  return (
+    <div className="artifact-preview">
+      {videoArtifacts.map((artifact) => (artifact.startsWith("http") ? <video controls src={artifact} key={artifact} /> : null))}
+      {audioArtifacts.map((artifact) => (artifact.startsWith("http") ? <audio controls src={artifact} key={artifact} /> : null))}
+      {imageArtifacts.length > 0 ? (
+        <div className="artifact-image-strip">
+          {imageArtifacts.map((artifact, index) => (
+            <a href={artifact.startsWith("http") ? artifact : undefined} target="_blank" rel="noreferrer" key={`${artifact}-${index}`}>
+              <img src={artifact} alt={`Artifact ${index + 1}`} />
+            </a>
+          ))}
+        </div>
+      ) : null}
+      {artifacts.map((artifact) =>
+        artifact.startsWith("http") ? (
+          <a href={artifact} target="_blank" rel="noreferrer" key={artifact}>
+            Open artifact
+          </a>
+        ) : (
+          <code key={artifact}>{artifact}</code>
+        )
+      )}
+    </div>
+  );
+}
+
+function splitArtifactPaths(value: string | undefined): string[] {
+  return (value ?? "")
+    .split("\n")
+    .map((artifact) => artifact.trim())
+    .filter(Boolean);
+}
+
+function firstPath(value: string | undefined): string | undefined {
+  return splitArtifactPaths(value)[0];
+}
+
+function isImagePath(value: string): boolean {
+  return /\.(svg|png|jpe?g|webp|bmp)(\?|$)/iu.test(value);
+}
+
+function isRasterImagePath(value: string): boolean {
+  return /\.(png|jpe?g|webp|bmp)(\?|$)/iu.test(value);
+}
+
+function isVideoPath(value: string): boolean {
+  return /\.(mp4|mov|webm)(\?|$)/iu.test(value);
+}
+
+function isAudioPath(value: string): boolean {
+  return /\.(mp3|wav|m4a|aac|ogg|opus|flac)(\?|$)/iu.test(value);
+}
+
+function inferJobAssetsBaseUrl(videoPath: string): string | null {
+  const match = videoPath.match(/^(.*\/jobs\/[^/]+)\/final\/video\.mp4$/u);
+  return match?.[1] ?? null;
+}
+
+function inferSceneImageUrls(baseUrl: string, sceneCount: number): string[] {
+  return Array.from({ length: sceneCount }, (_, index) => `${baseUrl}/images/scene_${String(index + 1).padStart(2, "0")}.png`);
+}
+
+function getRecordOutputForDisplay(record: JobProcessRecord): string {
+  if (record.stageId !== "image" || !record.output.includes("local SVG scene placeholders")) {
+    return record.output;
+  }
+
+  const artifacts = splitArtifactPaths(record.artifactPath);
+  const rasterCount = artifacts.filter(isRasterImagePath).length;
+
+  if (rasterCount > 0) {
+    return `${rasterCount} generated scene image(s) are ready for review. These PNG/JPG assets are the images used by video compose.`;
+  }
+
+  return "Required OpenAI scene images are missing. Click Generate images to create reviewable PNG scene assets.";
+}
+
+function ActivityLogPanel(props: { activities: CaseActivity[] }) {
+  return (
+    <section className="activity-log-panel panel">
+      <SectionHeader eyebrow="Audit trail" title="Case Activity" />
+      {props.activities.length === 0 ? <EmptyState title="No activity yet" body="Generation, approval, status changes, and storage actions will be recorded here." /> : null}
+      <div className="activity-log-list">
+        {props.activities.map((activity) => (
+          <article className="activity-log-row" key={activity.id}>
+            <span className="timeline-dot done" />
+            <div>
+              <strong>{activity.title}</strong>
+              <p>{activity.detail}</p>
+              <span>{activity.actor} / {formatDateTime(activity.createdAt)}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function advanceCase(job: AdminJob): AdminJob {
+  return advanceJob(job);
+}
+
+function failCase(job: AdminJob): AdminJob {
+  return markFailed(job);
+}
+
+function retryCase(job: AdminJob): AdminJob {
+  return retryJob(job);
+}

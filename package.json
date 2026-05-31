@@ -1,0 +1,33 @@
+{
+  "name": "ai-content-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI Content Operations Factory MVP monorepo.",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "corepack pnpm -r --parallel --stream --filter @ai-content-factory/api-server --filter @ai-content-factory/admin-web dev",
+    "dev:api": "corepack pnpm --filter @ai-content-factory/api-server dev",
+    "dev:web": "corepack pnpm --filter @ai-content-factory/admin-web dev",
+    "build": "tsc -b --pretty false",
+    "type-check": "tsc -p tsconfig.typecheck.json --noEmit --pretty false",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/express": "^5.0.5",
+    "@types/node": "^22.19.0",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.39.1",
+    "globals": "^15.15.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^3.2.4"
+  }
+}

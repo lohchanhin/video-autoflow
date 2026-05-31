@@ -1,0 +1,667 @@
+import { useMemo, useState } from "react";
+import { AlertTriangle, Database, Folder, Image as ImageIcon, Loader2, Plus, RefreshCw, Save, Search, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import {
+  productionAssetProviders,
+  productionAssetRoles,
+  productionAssetStatuses,
+  productionAssetTypes,
+  type ProductionAsset,
+  type ProductionAssetProvider,
+  type ProductionAssetRole,
+  type ProductionAssetStatus,
+  type ProductionAssetType
+} from "@ai-content-factory/shared-types";
+import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import type { AdminJob } from "../lib/jobs.js";
+
+type AssetStudioTab = "generate" | "library" | "case-plan";
+
+interface DesignAssetInput {
+  folderName: string;
+  jobId?: string | undefined;
+  label: string;
+  prompt: string;
+  tags: string[];
+  type: ProductionAssetType;
+}
+
+interface AssetsPageProps {
+  assetError: string | null;
+  assets: ProductionAsset[];
+  bootstrapAssetsForJob: (job: AdminJob) => void;
+  createDesignAsset: (input: DesignAssetInput) => Promise<ProductionAsset | null | void> | ProductionAsset | null | void;
+  createManualAsset: (job: AdminJob | null) => void;
+  deleteAsset: (id: string) => void;
+  filterJobId: string;
+  filterStatus: ProductionAssetStatus | "";
+  filterType: ProductionAssetType | "";
+  generateAsset: (asset: ProductionAsset) => void;
+  generatingAssetIds: string[];
+  importLegacyAssets: () => void;
+  isLoadingAssets: boolean;
+  jobs: AdminJob[];
+  openCase: (jobId: string) => void;
+  refreshAssets: () => void;
+  selectedAssetId: string | null;
+  selectAsset: (id: string | null) => void;
+  setFilterJobId: (value: string) => void;
+  setFilterStatus: (value: ProductionAssetStatus | "") => void;
+  setFilterType: (value: ProductionAssetType | "") => void;
+  updateAsset: (id: string, patch: Partial<Pick<ProductionAsset, "costRM" | "error" | "folderName" | "label" | "notes" | "prompt" | "provider" | "role" | "sceneId" | "scope" | "status" | "storagePath" | "tags" | "type" | "url">>) => void;
+}
+
+export function AssetsPage(props: AssetsPageProps) {
+  const [activeTab, setActiveTab] = useState<AssetStudioTab>("generate");
+  const [searchText, setSearchText] = useState("");
+  const [activeFolder, setActiveFolder] = useState("全部");
+  const [draftType, setDraftType] = useState<ProductionAssetType>("character_design");
+  const [draftFolderName, setDraftFolderName] = useState("角色设计");
+  const [draftJobId, setDraftJobId] = useState("");
+  const [draftLabel, setDraftLabel] = useState(defaultDraftLabelForType("character_design"));
+  const [draftTags, setDraftTags] = useState("");
+  const [draftPrompt, setDraftPrompt] = useState("");
+  const [isSubmittingDraft, setIsSubmittingDraft] = useState(false);
+  const [activeDraftAssetId, setActiveDraftAssetId] = useState<string | null>(null);
+  const selectedFilterJob = props.jobs.find((job) => job.id === props.filterJobId) ?? null;
+  const libraryAssets = useMemo(() => props.assets.filter(isGeneratedDesignAsset), [props.assets]);
+  const folders = useMemo(() => buildFolderStats(libraryAssets), [libraryAssets]);
+  const libraryVisibleAssets = filterAssets(libraryAssets, {
+    activeFolder,
+    filterJobId: props.filterJobId,
+    filterStatus: props.filterStatus,
+    filterType: props.filterType,
+    searchText,
+    useFolder: true
+  });
+  const casePlanVisibleAssets = filterAssets(props.assets, {
+    activeFolder,
+    filterJobId: props.filterJobId,
+    filterStatus: props.filterStatus,
+    filterType: props.filterType,
+    searchText,
+    useFolder: false
+  });
+  const casePlanDisplayAssets = props.filterJobId ? casePlanVisibleAssets : [];
+  const selectedAssetPool = activeTab === "case-plan" ? casePlanDisplayAssets : libraryVisibleAssets;
+  const explicitlySelectedAsset = props.selectedAssetId ? props.assets.find((asset) => asset._id === props.selectedAssetId) ?? null : null;
+  const activeDraftAsset = activeDraftAssetId ? props.assets.find((asset) => asset._id === activeDraftAssetId) ?? null : null;
+  const selectedAsset = activeTab === "generate" ? activeDraftAsset : explicitlySelectedAsset && selectedAssetPool.some((asset) => asset._id === explicitlySelectedAsset._id) ? explicitlySelectedAsset : selectedAssetPool[0] ?? null;
+  const selectedJob = selectedAsset ? props.jobs.find((job) => job.id === selectedAsset.jobId) ?? null : null;
+  const readyReferences = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && asset.role === "reference_image" && isGeneratedDesignAsset(asset)).length;
+  const readyFrames = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && (asset.role === "first_frame" || asset.role === "last_frame") && isGeneratedDesignAsset(asset)).length;
+  const blockedAssets = casePlanVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
+  const generatingDraft = selectedAsset ? props.generatingAssetIds.includes(selectedAsset._id) : false;
+
+  function filterAssets(assets: ProductionAsset[], options: {
+    activeFolder: string;
+    filterJobId: string;
+    filterStatus: ProductionAssetStatus | "";
+    filterType: ProductionAssetType | "";
+    searchText: string;
+    useFolder: boolean;
+  }): ProductionAsset[] {
+    return assets.filter((asset) => {
+      const normalizedSearch = options.searchText.trim().toLowerCase();
+      const matchesFolder = !options.useFolder || options.activeFolder === "全部" || asset.folderName === options.activeFolder;
+      const matchesSearch = !normalizedSearch || [asset.label, asset.prompt, asset.notes, asset.folderName, asset.type, asset.tags.join(" ")].join(" ").toLowerCase().includes(normalizedSearch);
+      const matchesJob = !options.filterJobId || asset.jobId === options.filterJobId;
+      const matchesStatus = !options.filterStatus || asset.status === options.filterStatus;
+      const matchesType = !options.filterType || asset.type === options.filterType;
+
+      return matchesFolder && matchesSearch && matchesJob && matchesStatus && matchesType;
+    });
+  }
+
+  async function submitDraft() {
+    const label = draftLabel.trim() || assetTypeLabel(draftType);
+    const prompt = draftPrompt.trim();
+
+    if (!prompt) {
+      return;
+    }
+
+    props.selectAsset(null);
+    setActiveDraftAssetId(null);
+    setActiveTab("generate");
+    setIsSubmittingDraft(true);
+
+    try {
+      const createdAsset = await props.createDesignAsset({
+        folderName: draftFolderName.trim() || defaultFolderForType(draftType),
+        jobId: draftJobId || undefined,
+        label,
+        prompt: buildDesignPromptForType(draftType, prompt),
+        tags: splitTags(draftTags),
+        type: draftType
+      });
+
+      if (createdAsset && typeof createdAsset === "object" && "_id" in createdAsset) {
+        setActiveDraftAssetId(createdAsset._id);
+      }
+    } finally {
+      setIsSubmittingDraft(false);
+    }
+  }
+
+  function updateDraftType(type: ProductionAssetType) {
+    setDraftType(type);
+    setDraftFolderName(defaultFolderForType(type));
+    setDraftLabel(defaultDraftLabelForType(type));
+    setActiveDraftAssetId(null);
+    props.selectAsset(null);
+  }
+
+  function resetDraftForm(type = draftType) {
+    setDraftType(type);
+    setDraftFolderName(defaultFolderForType(type));
+    setDraftJobId("");
+    setDraftLabel(defaultDraftLabelForType(type));
+    setDraftTags("");
+    setDraftPrompt("");
+    setActiveDraftAssetId(null);
+    props.selectAsset(null);
+  }
+
+  return (
+    <section className="assets-page">
+      <section className="asset-board-toolbar panel">
+        <div>
+          <p className="eyebrow">设计管理</p>
+          <h2>设计资产中心</h2>
+          <span>用 prompt 生成角色设计、场景设计、风格参考和首帧；满意后保存入库，并通过文件夹快速查找。</span>
+        </div>
+        <div className="asset-board-actions">
+          <button className="secondary-button" type="button" onClick={props.refreshAssets}>
+            {props.isLoadingAssets ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+            刷新
+          </button>
+          <button className="secondary-button" type="button" disabled={!selectedFilterJob} onClick={() => selectedFilterJob && props.bootstrapAssetsForJob(selectedFilterJob)}>
+            <Database size={16} />
+            建立 Case 规划
+          </button>
+          <button className="secondary-button" type="button" onClick={props.importLegacyAssets}>
+            <UploadCloud size={16} />
+            导入旧草稿
+          </button>
+          <button className="primary-button" type="button" onClick={() => props.createManualAsset(selectedFilterJob)}>
+            <Plus size={16} />
+            手动新增
+          </button>
+        </div>
+      </section>
+
+      {props.assetError ? <div className="inline-error"><AlertTriangle size={16} />{props.assetError}</div> : null}
+
+      <div className="asset-studio-tabs">
+        <StudioTab active={activeTab === "generate"} label="生成设计" onClick={() => { props.selectAsset(null); setActiveDraftAssetId(null); setActiveTab("generate"); }} />
+        <StudioTab active={activeTab === "library"} label="资产库" onClick={() => setActiveTab("library")} />
+        <StudioTab active={activeTab === "case-plan"} label="Case 规划" onClick={() => setActiveTab("case-plan")} />
+      </div>
+
+      {activeTab === "generate" ? (
+        <section className="design-generator-grid">
+          <section className="design-generator-panel panel">
+            <SectionHeader eyebrow="OpenAI 设计草稿" title="输入需求，生成可保存的设计图" />
+            <div className="asset-two-col">
+              <Field label="设计类型">
+                <select value={draftType} onChange={(event) => updateDraftType(event.target.value as ProductionAssetType)}>
+                  {productionAssetTypes.filter((type) => type !== "bgm_reference").map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
+                </select>
+              </Field>
+              <Field label="文件夹">
+                <input list="asset-folder-list" value={draftFolderName} onChange={(event) => setDraftFolderName(event.target.value)} />
+                <datalist id="asset-folder-list">
+                  {folders.map((folder) => <option key={folder.name} value={folder.name} />)}
+                </datalist>
+              </Field>
+            </div>
+            <div className="asset-two-col">
+              <Field label="资产名称">
+                <input value={draftLabel} onChange={(event) => setDraftLabel(event.target.value)} />
+              </Field>
+              <Field label="绑定 Case（可选）">
+                <select value={draftJobId} onChange={(event) => setDraftJobId(event.target.value)}>
+                  <option value="">通用设计资产</option>
+                  {props.jobs.map((job) => <option key={job.id} value={job.id}>{job.topic || job.id}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="设计 Prompt">
+              <textarea
+                rows={9}
+                value={draftPrompt}
+                placeholder="例如：30 岁亚洲男性主角，便利店夜班员工，疲惫但敏锐，蓝色工作服，固定道具是旧收银机钥匙。系统会自动补成角色三视图规格。"
+                onChange={(event) => setDraftPrompt(event.target.value)}
+              />
+            </Field>
+            <div className="asset-generation-hint">
+              {draftType === "character_design"
+                ? "角色设计会按三视图生成：正面、侧面、背面，同一成年角色、同一服装、无文字标签，方便后续作为 Seedance 参考图。"
+                : "场景、风格、首帧和尾帧会按单张可复用参考图生成，避免表格、字幕、UI 和分镜格。"}
+            </div>
+            <Field label="标签（逗号分隔）">
+              <input value={draftTags} placeholder="便利店, 夜班, 主角" onChange={(event) => setDraftTags(event.target.value)} />
+            </Field>
+            <div className="asset-board-actions left">
+              <button className="primary-button" type="button" disabled={!draftPrompt.trim()} onClick={() => void submitDraft()}>
+                <Sparkles size={16} />
+                生成设计草稿
+              </button>
+              <button className="secondary-button" type="button" onClick={() => resetDraftForm()}>
+                新建空白设计
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setDraftPrompt(examplePromptForType(draftType))}>
+                套用示例 Prompt
+              </button>
+            </div>
+          </section>
+          <AssetInspector
+            asset={selectedAsset}
+            deleteAsset={props.deleteAsset}
+            generateAsset={props.generateAsset}
+            generating={generatingDraft}
+            isWaitingForNewAsset={isSubmittingDraft && !selectedAsset}
+            job={selectedJob}
+            openCase={props.openCase}
+            emptyBody="输入设计 prompt 后点击生成。这里只会显示本次新建的设计草稿，不会自动拿旧资产占位。"
+            emptyTitle="等待新设计草稿"
+            updateAsset={props.updateAsset}
+            protectRegenerate={false}
+          />
+        </section>
+      ) : null}
+
+      {activeTab === "library" ? (
+        <>
+          <section className="asset-board-metrics">
+            <MetricCard label="资产数量" value={libraryVisibleAssets.length.toString()} />
+            <MetricCard label="Seedance 参考图" value={readyReferences.toString()} />
+            <MetricCard label="可用首尾帧" value={readyFrames.toString()} />
+            <MetricCard label="待处理" value={blockedAssets.toString()} danger={blockedAssets > 0} />
+          </section>
+          <section className="asset-library-layout">
+            <FolderRail activeFolder={activeFolder} folders={folders} setActiveFolder={setActiveFolder} totalCount={libraryAssets.length} />
+            <section className="asset-table-panel panel">
+              <div className="asset-filter-row">
+                <Field label="搜索">
+                  <div className="asset-search-input">
+                    <Search size={15} />
+                    <input value={searchText} placeholder="搜索名称、prompt、标签、文件夹" onChange={(event) => setSearchText(event.target.value)} />
+                  </div>
+                </Field>
+                <Field label="类型">
+                  <select value={props.filterType} onChange={(event) => props.setFilterType(event.target.value as ProductionAssetType | "")}>
+                    <option value="">全部类型</option>
+                    {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
+                  </select>
+                </Field>
+                <Field label="状态">
+                  <select value={props.filterStatus} onChange={(event) => props.setFilterStatus(event.target.value as ProductionAssetStatus | "")}>
+                    <option value="">全部状态</option>
+                    {productionAssetStatuses.map((status) => <option key={status} value={status}>{assetStatusLabel(status)}</option>)}
+                  </select>
+                </Field>
+              </div>
+              {libraryVisibleAssets.length === 0 ? (
+                <EmptyState title="暂无设计资产" body="先到「生成设计」输入 prompt 生成角色或场景设计；满意后保存入库，之后就能按文件夹查找。" />
+              ) : (
+                <div className="asset-gallery-grid">
+                  {libraryVisibleAssets.map((asset) => (
+                    <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => props.selectAsset(asset._id)}>
+                      <div className="asset-gallery-thumb">
+                        {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
+                      </div>
+                      <strong>{asset.label}</strong>
+                      <span>{asset.folderName} / {assetTypeLabel(asset.type)}</span>
+                      <StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+            <AssetInspector
+              asset={selectedAsset}
+              deleteAsset={props.deleteAsset}
+              generateAsset={props.generateAsset}
+              generating={generatingDraft}
+              job={selectedJob}
+              openCase={props.openCase}
+              updateAsset={props.updateAsset}
+              protectRegenerate
+            />
+          </section>
+        </>
+      ) : null}
+
+      {activeTab === "case-plan" ? (
+        <section className="asset-board-grid">
+          <section className="asset-table-panel panel">
+            <SectionHeader eyebrow="Case 资产规划" title="为影片建立角色、场景、风格、首帧规划" />
+            <div className="asset-filter-row">
+              <Field label="Case">
+                <select value={props.filterJobId} onChange={(event) => props.setFilterJobId(event.target.value)}>
+                  <option value="">选择 Case</option>
+                  {props.jobs.map((job) => <option key={job.id} value={job.id}>{job.topic || job.id}</option>)}
+                </select>
+              </Field>
+              <Field label="类型">
+                <select value={props.filterType} onChange={(event) => props.setFilterType(event.target.value as ProductionAssetType | "")}>
+                  <option value="">全部类型</option>
+                  {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
+                </select>
+              </Field>
+              <Field label="状态">
+                <select value={props.filterStatus} onChange={(event) => props.setFilterStatus(event.target.value as ProductionAssetStatus | "")}>
+                  <option value="">全部状态</option>
+                  {productionAssetStatuses.map((status) => <option key={status} value={status}>{assetStatusLabel(status)}</option>)}
+                </select>
+              </Field>
+            </div>
+            <button className="primary-button" type="button" disabled={!selectedFilterJob} onClick={() => selectedFilterJob && props.bootstrapAssetsForJob(selectedFilterJob)}>
+              <Database size={16} />
+              为选中 Case 建立资产规划表
+            </button>
+            {!props.filterJobId ? (
+              <EmptyState title="先选择一个 Case" body="Case 规划只显示该影片需要的角色设计、场景设计、风格参考、首帧和尾帧占位，不会混入资产库。" />
+            ) : casePlanDisplayAssets.length === 0 ? (
+              <EmptyState title="这个 Case 还没有资产规划" body="点击「为选中 Case 建立资产规划表」，系统会建立规划占位；生成并保存后才会进入资产库。" />
+            ) : (
+              <div className="asset-gallery-grid">
+                {casePlanDisplayAssets.map((asset) => (
+                  <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => props.selectAsset(asset._id)}>
+                    <div className="asset-gallery-thumb">
+                      {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
+                    </div>
+                    <strong>{asset.label}</strong>
+                    <span>{asset.folderName} / {assetTypeLabel(asset.type)}</span>
+                    <StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+          <AssetInspector
+            asset={selectedAsset}
+            deleteAsset={props.deleteAsset}
+            generateAsset={props.generateAsset}
+            generating={generatingDraft}
+            job={selectedJob}
+            openCase={props.openCase}
+            updateAsset={props.updateAsset}
+            protectRegenerate
+          />
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function AssetInspector(props: {
+  asset: ProductionAsset | null;
+  deleteAsset: (id: string) => void;
+  emptyBody?: string | undefined;
+  emptyTitle?: string | undefined;
+  generateAsset: (asset: ProductionAsset) => void;
+  generating: boolean;
+  isWaitingForNewAsset?: boolean | undefined;
+  job: AdminJob | null;
+  openCase: (jobId: string) => void;
+  protectRegenerate?: boolean | undefined;
+  updateAsset: AssetsPageProps["updateAsset"];
+}) {
+  if (!props.asset) {
+    return (
+      <section className="asset-inspector panel">
+        {props.isWaitingForNewAsset ? (
+          <div className="empty-state asset-inspector-loading">
+            <Loader2 size={22} className="spin" />
+            <strong>正在建立新设计草稿</strong>
+            <span>创建 MongoDB 资产列后会自动开始生成，右侧会显示本次结果。</span>
+          </div>
+        ) : (
+          <EmptyState
+            title={props.emptyTitle ?? "选择一个设计资产"}
+            body={props.emptyBody ?? "右侧会显示预览、prompt、文件夹、状态和保存操作。"}
+          />
+        )}
+      </section>
+    );
+  }
+
+  const asset = props.asset;
+
+  return (
+    <section className="asset-inspector panel">
+      <SectionHeader eyebrow="设计检查" title={asset.label} action={<StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>} />
+      <div className="asset-preview-frame">
+        {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
+      </div>
+      <div className="asset-inspector-actions">
+        <button
+          className="primary-button"
+          type="button"
+          disabled={props.generating || asset.type === "bgm_reference"}
+          onClick={() => {
+            if (props.protectRegenerate && !window.confirm(`重新生成会覆盖「${asset.label}」目前的图片结果。确定要继续吗？`)) {
+              return;
+            }
+
+            props.generateAsset(asset);
+          }}
+        >
+          {props.generating ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
+          {props.generating ? "生成中" : props.protectRegenerate ? "重新生成并覆盖" : "生成草稿"}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => props.updateAsset(asset._id, { status: "approved" })}>
+          <Save size={15} />
+          满意，保存入库
+        </button>
+        <button className="danger-button" type="button" onClick={() => props.updateAsset(asset._id, { status: "rejected" })}>
+          不采用
+        </button>
+        <button className="danger-button" type="button" onClick={() => props.deleteAsset(asset._id)}>
+          <Trash2 size={15} />
+          删除
+        </button>
+      </div>
+      <div className="asset-inspector-form">
+        <Field label="资产名称">
+          <input value={asset.label} onChange={(event) => props.updateAsset(asset._id, { label: event.target.value })} />
+        </Field>
+        <div className="asset-two-col">
+          <Field label="文件夹">
+            <input value={asset.folderName} onChange={(event) => props.updateAsset(asset._id, { folderName: event.target.value })} />
+          </Field>
+          <Field label="标签">
+            <input value={asset.tags.join(", ")} onChange={(event) => props.updateAsset(asset._id, { tags: splitTags(event.target.value) })} />
+          </Field>
+        </div>
+        <div className="asset-two-col">
+          <Field label="类型">
+            <select value={asset.type} onChange={(event) => props.updateAsset(asset._id, { type: event.target.value as ProductionAssetType })}>
+              {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
+            </select>
+          </Field>
+          <Field label="状态">
+            <select value={asset.status} onChange={(event) => props.updateAsset(asset._id, { status: event.target.value as ProductionAssetStatus })}>
+              {productionAssetStatuses.map((status) => <option key={status} value={status}>{assetStatusLabel(status)}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="asset-two-col">
+          <Field label="供应商">
+            <select value={asset.provider} onChange={(event) => props.updateAsset(asset._id, { provider: event.target.value as ProductionAssetProvider })}>
+              {productionAssetProviders.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+            </select>
+          </Field>
+          <Field label="Seedance 用途">
+            <select value={asset.role} onChange={(event) => props.updateAsset(asset._id, { role: event.target.value as ProductionAssetRole })}>
+              {productionAssetRoles.map((role) => <option key={role} value={role}>{assetRoleLabel(role)}</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="设计 Prompt">
+          <textarea rows={6} value={asset.prompt} onChange={(event) => props.updateAsset(asset._id, { prompt: event.target.value })} />
+        </Field>
+        <Field label="图片 URL / artifact">
+          <input value={asset.url} onChange={(event) => props.updateAsset(asset._id, { url: event.target.value })} />
+        </Field>
+        <Field label="备注">
+          <textarea rows={3} value={asset.notes} onChange={(event) => props.updateAsset(asset._id, { notes: event.target.value })} />
+        </Field>
+        {asset.error ? <div className="stage-error-panel"><AlertTriangle size={15} /><span>{asset.error}</span></div> : null}
+      </div>
+      <div className="asset-inspector-footer">
+        {props.job ? <button className="secondary-button compact-button" type="button" onClick={() => props.openCase(props.job!.id)}>打开 Case</button> : null}
+      </div>
+    </section>
+  );
+}
+
+function FolderRail(props: { activeFolder: string; folders: Array<{ count: number; name: string }>; setActiveFolder: (folder: string) => void; totalCount: number }) {
+  return (
+    <section className="asset-folder-rail panel">
+      <SectionHeader eyebrow="文件夹" title="分类浏览" />
+      <button className={props.activeFolder === "全部" ? "active" : ""} type="button" onClick={() => props.setActiveFolder("全部")}>
+        <Folder size={15} />
+        <span>全部</span>
+        <strong>{props.totalCount}</strong>
+      </button>
+      {props.folders.map((folder) => (
+        <button className={props.activeFolder === folder.name ? "active" : ""} key={folder.name} type="button" onClick={() => props.setActiveFolder(folder.name)}>
+          <Folder size={15} />
+          <span>{folder.name}</span>
+          <strong>{folder.count}</strong>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+function StudioTab(props: { active: boolean; label: string; onClick: () => void }) {
+  return <button className={props.active ? "active" : ""} type="button" onClick={props.onClick}>{props.label}</button>;
+}
+
+function MetricCard(props: { danger?: boolean | undefined; label: string; value: string }) {
+  return (
+    <div className={`asset-metric panel ${props.danger ? "danger" : ""}`}>
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
+  );
+}
+
+function buildFolderStats(assets: ProductionAsset[]): Array<{ count: number; name: string }> {
+  const counts = new Map<string, number>();
+
+  assets.forEach((asset) => counts.set(asset.folderName || "未分类", (counts.get(asset.folderName || "未分类") ?? 0) + 1));
+  return [...counts.entries()].map(([name, count]) => ({ count, name })).sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
+}
+
+function splitTags(value: string): string[] {
+  return value.split(/[,，]/u).map((item) => item.trim()).filter(Boolean).slice(0, 20);
+}
+
+function defaultFolderForType(type: ProductionAssetType): string {
+  if (type === "character_design") return "角色设计";
+  if (type === "scene_design") return "场景设计";
+  if (type === "style_reference") return "风格参考";
+  if (type === "first_frame") return "首帧设计";
+  if (type === "last_frame") return "尾帧设计";
+  return "音乐参考";
+}
+
+function defaultDraftLabelForType(type: ProductionAssetType): string {
+  if (type === "character_design") return "新角色三视图";
+  return `新${assetTypeLabel(type)}`;
+}
+
+function buildDesignPromptForType(type: ProductionAssetType, prompt: string): string {
+  const trimmedPrompt = prompt.trim();
+
+  if (type === "character_design") {
+    return [
+      trimmedPrompt,
+      "用户描述是最高优先级：不要改变用户指定的题材、服装、盔甲、武器、发色、瞳色、画风、背景、时代、情绪或固定道具。",
+      "输出规格：角色三视图设定稿，一张图内包含同一原创成年角色的正面、侧面、背面全身视图。",
+      "三视图必须保持同一张脸、同一发型、同一体型、同一服装/盔甲细节、同一固定道具和同一色彩方案。",
+      "画风必须跟随用户描述；如果用户写 anime / 插画 / 写实 / 电影感，就按用户描述执行。",
+      "如果用户指定背景或地点，保留为三视图背后的统一弱背景；如果没有指定，才使用干净中性背景。",
+      "禁止：文字、标签、UI、表格、漫画格、分镜格、多人变体、儿童角色、版权角色。"
+    ].join("\n");
+  }
+
+  return [
+    trimmedPrompt,
+    "用户描述是最高优先级：不要改变用户指定的地点、画风、色彩、物件、灯光或情绪。",
+    "输出规格：单张可复用设计参考图，主体清楚，构图稳定，适合作为后续图片或视频生成参考。",
+    "禁止：文字、标签、UI、表格、漫画格、分镜格、拼贴板、对比图。"
+  ].join("\n");
+}
+
+function assetTypeLabel(type: ProductionAssetType): string {
+  const labels: Record<ProductionAssetType, string> = {
+    bgm_reference: "背景音乐参考",
+    character_design: "角色设计",
+    first_frame: "首帧",
+    last_frame: "尾帧",
+    scene_design: "场景设计",
+    style_reference: "风格参考"
+  };
+  return labels[type];
+}
+
+function assetStatusLabel(status: ProductionAssetStatus): string {
+  const labels: Record<ProductionAssetStatus, string> = {
+    approved: "已保存",
+    failed: "失败",
+    generating: "生成中",
+    planned: "规划中",
+    ready: "待确认",
+    rejected: "不采用"
+  };
+  return labels[status];
+}
+
+function assetRoleLabel(role: ProductionAssetRole): string {
+  const labels: Record<ProductionAssetRole, string> = {
+    bgm_reference: "BGM参考",
+    first_frame: "首帧",
+    last_frame: "尾帧",
+    none: "不传给模型",
+    reference_image: "参考图"
+  };
+  return labels[role];
+}
+
+function assetStatusTone(status: ProductionAssetStatus): "active" | "danger" | "neutral" | "success" | "warning" {
+  if (status === "approved") return "success";
+  if (status === "ready") return "warning";
+  if (status === "generating") return "active";
+  if (status === "failed" || status === "rejected") return "danger";
+  return "neutral";
+}
+
+function examplePromptForType(type: ProductionAssetType): string {
+  if (type === "character_design") {
+    return "生成一个原创成年主角的三视图设定稿。亚洲男性，30岁左右，夜班便利店员工，短黑发，疲惫但敏锐，蓝色制服，固定道具是一串旧收银机钥匙。需要同一角色的正面、侧面、背面全身视图，同一张脸、同一服装、同一体型，中性干净背景，无文字、无标签、无UI。";
+  }
+
+  if (type === "scene_design") {
+    return "生成一个雨夜便利店的场景设计图。冷白荧光灯，玻璃门外有雨水反光，货架排列清楚，收银台、旧监控屏、咖啡机作为固定道具。单张竖屏电影感环境图，无文字、无招牌文字、无分镜格。";
+  }
+
+  if (type === "style_reference") {
+    return "生成一张短片视觉风格参考图。现代城市夜景、低饱和蓝绿色调、真实电影感、浅景深、细雨、柔和噪点。用于保持整支影片色调一致。无文字、无拼贴、无UI。";
+  }
+
+  return "生成一张可作为影片首帧或尾帧的竖屏电影画面。主体动作清楚，角色和环境一致，画面无文字、无字幕、无UI、无分镜格。";
+}
+
+function isImagePath(value: string | undefined): boolean {
+  return /\.(png|jpe?g|webp|gif|svg)(\?|$)/iu.test(value ?? "");
+}
+
+function isGeneratedDesignAsset(asset: ProductionAsset): boolean {
+  return isImagePath(asset.url) || isImagePath(asset.storagePath);
+}

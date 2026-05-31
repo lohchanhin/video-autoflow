@@ -1,0 +1,398 @@
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, Link2, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import type { CostLog, CostSummaryResponse } from "@ai-content-factory/shared-types";
+import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { getCostSummary, listCostLogs } from "../lib/api.js";
+import type { ProviderKeyRecord, PublishingTarget, StorageSettings, StoredVideo, YouTubeAccount } from "../lib/admin-data.js";
+import type { AdminJob } from "../lib/jobs.js";
+
+export function KeysPage(props: {
+  keys: ProviderKeyRecord[];
+  resetKeys: () => void;
+  saveProviderSecret: (id: string) => void;
+  secretDrafts: Record<string, string>;
+  toggleSecretDraftVisibility: (id: string) => void;
+  updateSecretDraft: (id: string, value: string) => void;
+  updateProviderKey: (id: string, updater: (key: ProviderKeyRecord) => ProviderKeyRecord) => void;
+  visibleDrafts: Record<string, boolean>;
+}) {
+  return (
+    <section className="panel table-panel">
+      <SectionHeader
+        eyebrow="Provider access"
+        title="Key Management"
+        action={
+          <button className="secondary-button" type="button" onClick={props.resetKeys}>
+            <RefreshCw size={15} />
+            Reset
+          </button>
+        }
+      />
+      <div className="settings-table">
+        {props.keys.map((key) => (
+          <article className="settings-row key-settings-row" key={key.id}>
+            <div>
+              <strong>{key.provider}</strong>
+              <span>{key.service}</span>
+            </div>
+            <StatusPill tone={key.status === "configured" ? "success" : key.status === "needs_rotation" ? "warning" : "danger"}>{key.status}</StatusPill>
+            <span>{key.keyName}</span>
+            <label className="toggle-line">
+              <input
+                type="checkbox"
+                checked={key.enabled}
+                onChange={(event) => props.updateProviderKey(key.id, (current) => ({ ...current, enabled: event.target.checked }))}
+              />
+              <span>Enabled</span>
+            </label>
+            <div className="secret-control">
+              <input
+                type={props.visibleDrafts[key.id] ? "text" : "password"}
+                value={props.secretDrafts[key.id] ?? ""}
+                placeholder={key.lastFour ? `configured · ${key.lastFour}` : "Paste key locally"}
+                onChange={(event) => props.updateSecretDraft(key.id, event.target.value)}
+              />
+              <button className="icon-button" type="button" onClick={() => props.toggleSecretDraftVisibility(key.id)} aria-label="Toggle secret visibility">
+                {props.visibleDrafts[key.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+              <button className="icon-button primary" type="button" onClick={() => props.saveProviderSecret(key.id)} aria-label="Save key status">
+                <Save size={16} />
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function YouTubePage(props: {
+  accounts: YouTubeAccount[];
+  canUpload: boolean;
+  channelName: string;
+  createPublishingTarget: () => void;
+  handleConnectAccount: () => void;
+  publishingTargets: PublishingTarget[];
+  setChannelName: (value: string) => void;
+  setTargetAccountId: (value: string) => void;
+  setTargetChannelId: (value: string) => void;
+  setTargetChannelName: (value: string) => void;
+  setYoutubeChannelId: (value: string) => void;
+  targetAccountId: string;
+  targetChannelId: string;
+  targetChannelName: string;
+  updateAccount: (id: string, updater: (account: YouTubeAccount) => YouTubeAccount) => void;
+  updatePublishingTarget: (id: string, updater: (target: PublishingTarget) => PublishingTarget) => void;
+  youtubeChannelId: string;
+}) {
+  return (
+    <section className="youtube-console">
+      <form
+        className="panel"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.handleConnectAccount();
+        }}
+      >
+        <SectionHeader eyebrow="YouTube OAuth" title="Connected Channels" action={<StatusPill tone={props.canUpload ? "success" : "danger"}>{props.canUpload ? "Ready" : "Missing"}</StatusPill>} />
+        <Field label="Channel name">
+          <input value={props.channelName} onChange={(event) => props.setChannelName(event.target.value)} />
+        </Field>
+        <Field label="YouTube channel ID">
+          <input value={props.youtubeChannelId} onChange={(event) => props.setYoutubeChannelId(event.target.value)} />
+        </Field>
+        <button className="primary-button" type="submit">
+          <Link2 size={16} />
+          Register channel
+        </button>
+        <div className="policy-note">
+          <ShieldCheck size={18} />
+          <span>MVP uploads are locked to private. Public upload is not available here.</span>
+        </div>
+      </form>
+
+      <div className="panel table-panel">
+        <SectionHeader eyebrow="Publishing accounts" title="Channel Registry" />
+        {props.accounts.length === 0 ? <EmptyState title="No YouTube accounts" body="Register a channel, then connect real OAuth credentials before private upload is available." /> : null}
+        <div className="settings-table">
+          {props.accounts.map((account) => (
+            <article className="settings-row" key={account.id}>
+              <div>
+                <strong>{account.channelName}</strong>
+                <span>{account.youtubeChannelId}</span>
+              </div>
+              <StatusPill tone={account.status === "connected" ? "success" : "danger"}>{account.status}</StatusPill>
+              <span>{account.defaultPrivacy}</span>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() =>
+                  props.updateAccount(account.id, (current) => ({
+                    ...current,
+                    status: "needs_reconnect",
+                    updatedAt: new Date().toISOString()
+                  }))
+                }
+              >
+                OAuth required
+              </button>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <form
+        className="panel youtube-target-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.createPublishingTarget();
+        }}
+      >
+        <SectionHeader eyebrow="Target matrix" title="Add Publishing Target" action={<StatusPill tone="success">private only</StatusPill>} />
+        <Field label="Google / YouTube account">
+          <select value={props.targetAccountId} onChange={(event) => props.setTargetAccountId(event.target.value)}>
+            <option value="">Select registered account</option>
+            {props.accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.channelName}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Target channel name">
+          <input value={props.targetChannelName} onChange={(event) => props.setTargetChannelName(event.target.value)} />
+        </Field>
+        <Field label="Target channel ID">
+          <input value={props.targetChannelId} onChange={(event) => props.setTargetChannelId(event.target.value)} />
+        </Field>
+        <button className="primary-button" type="submit">
+          <Link2 size={16} />
+          Add target
+        </button>
+      </form>
+
+      <div className="panel table-panel youtube-target-panel">
+        <SectionHeader eyebrow="Multi-account publishing" title="Publishing Targets" />
+        {props.publishingTargets.length === 0 ? <EmptyState title="No publishing targets" body="Add real channel targets after registering a YouTube account. Upload remains blocked until OAuth is connected." /> : null}
+        <div className="settings-table">
+          {props.publishingTargets.map((target) => (
+            <article className="settings-row publishing-target-row" key={target.id}>
+              <div>
+                <strong>{target.channelName}</strong>
+                <span>{target.youtubeChannelId}</span>
+              </div>
+              <StatusPill tone={target.enabled ? "success" : "neutral"}>{target.enabled ? "enabled" : "paused"}</StatusPill>
+              <Field label="Daily quota">
+                <input
+                  min={1}
+                  max={50}
+                  type="number"
+                  value={target.dailyQuota}
+                  onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, dailyQuota: Number(event.target.value) }))}
+                />
+              </Field>
+              <Field label="Niche">
+                <input value={target.niche} onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, niche: event.target.value }))} />
+              </Field>
+              <Field label="Upload window">
+                <input value={target.uploadWindow} onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, uploadWindow: event.target.value }))} />
+              </Field>
+              <label className="toggle-line">
+                <input checked={target.enabled} type="checkbox" onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, enabled: event.target.checked }))} />
+                <span>Enabled</span>
+              </label>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function StoragePage(props: {
+  canUpload: boolean;
+  settings: StorageSettings;
+  setSettings: (settings: StorageSettings) => void;
+  storedVideos: StoredVideo[];
+  updateStoredVideo: (id: string, updater: (video: StoredVideo) => StoredVideo) => void;
+}) {
+  return (
+    <section className="settings-grid">
+      <div className="panel">
+        <SectionHeader eyebrow="Video library" title="GCP / GCS Storage" action={<StatusPill tone={props.canUpload ? "success" : "warning"}>{props.settings.driver}</StatusPill>} />
+        <Field label="Storage driver">
+          <select value={props.settings.driver} onChange={(event) => props.setSettings({ ...props.settings, driver: event.target.value as StorageSettings["driver"] })}>
+            <option value="gcs">Google Cloud Storage</option>
+            <option value="minio">MinIO local</option>
+            <option value="local">Project uploads folder</option>
+          </select>
+        </Field>
+        <Field label="Local uploads path">
+          <input value={props.settings.localUploadsPath} onChange={(event) => props.setSettings({ ...props.settings, localUploadsPath: event.target.value })} />
+        </Field>
+        <Field label="GCP project ID">
+          <input value={props.settings.gcpProjectId} onChange={(event) => props.setSettings({ ...props.settings, gcpProjectId: event.target.value })} />
+        </Field>
+        <Field label="GCS bucket">
+          <input value={props.settings.gcsBucket} onChange={(event) => props.setSettings({ ...props.settings, gcsBucket: event.target.value })} />
+        </Field>
+        <Field label="GCS prefix">
+          <input value={props.settings.gcsPrefix} onChange={(event) => props.setSettings({ ...props.settings, gcsPrefix: event.target.value })} />
+        </Field>
+        <Field label="MinIO bucket">
+          <input value={props.settings.minioBucket} onChange={(event) => props.setSettings({ ...props.settings, minioBucket: event.target.value })} />
+        </Field>
+      </div>
+
+      <div className="panel table-panel">
+        <SectionHeader eyebrow="Artifacts" title="Stored Videos" />
+        {props.storedVideos.length === 0 ? <EmptyState title="No stored videos" body="Final MP4 records will appear here after QC." /> : null}
+        <div className="settings-table">
+          {props.storedVideos.map((video) => (
+            <article className="settings-row video-row" key={video.id}>
+              <div>
+                <strong>{video.title}</strong>
+                <span>{video.publicUrl ?? video.storagePath}</span>
+              </div>
+              <StatusPill tone={video.status === "uploaded_private" ? "success" : "active"}>{video.status}</StatusPill>
+              <span>{video.resolution}</span>
+              {video.publicUrl ? (
+                <a className="secondary-button" href={video.publicUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              ) : null}
+              <select value={video.status} onChange={(event) => props.updateStoredVideo(video.id, (current) => ({ ...current, status: event.target.value as StoredVideo["status"] }))}>
+                <option value="draft">draft</option>
+                <option value="ready_to_upload">ready_to_upload</option>
+                <option value="uploaded_private">uploaded_private</option>
+              </select>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function CostPage(props: {
+  jobs: AdminJob[];
+  storedVideos: StoredVideo[];
+  summary: { totalCost: number; activeCases: number };
+}) {
+  const overLimitJobs = props.jobs.filter((job) => job.actualCostRM >= job.costLimitRM);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [ledgerLogs, setLedgerLogs] = useState<CostLog[]>([]);
+  const [ledgerSummary, setLedgerSummary] = useState<CostSummaryResponse | null>(null);
+  const [loadingLedger, setLoadingLedger] = useState(false);
+
+  async function refreshLedger() {
+    setLoadingLedger(true);
+    try {
+      const [summaryResponse, logsResponse] = await Promise.all([
+        getCostSummary(),
+        listCostLogs({ limit: 80 })
+      ]);
+      setLedgerSummary(summaryResponse);
+      setLedgerLogs(logsResponse.logs);
+      setLedgerError(null);
+    } catch (error) {
+      setLedgerError(error instanceof Error ? error.message : "成本记录读取失败。");
+    } finally {
+      setLoadingLedger(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshLedger();
+  }, []);
+
+  return (
+    <section className="settings-grid">
+      <div className="panel">
+        <SectionHeader eyebrow="成本控制" title="真实成本记录" action={<StatusPill tone={ledgerSummary?.pricingMissingCount ? "warning" : overLimitJobs.length > 0 ? "danger" : "success"}>{ledgerSummary?.pricingMissingCount ? "有待补价" : overLimitJobs.length > 0 ? "超预算" : "正常"}</StatusPill>} />
+        <div className="budget-stack">
+          <BudgetLine label="MongoDB 成本总计" value={`RM ${(ledgerSummary?.totalCostRM ?? 0).toFixed(4)}`} />
+          <BudgetLine label="本地 Case 累计" value={`RM ${props.summary.totalCost.toFixed(2)}`} />
+          <BudgetLine label="完成影片档案" value={String(props.storedVideos.length)} />
+          <BudgetLine label="成本记录笔数" value={String(ledgerSummary?.totalLogs ?? 0)} />
+          <BudgetLine label="缺少 RM 单价" value={String(ledgerSummary?.pricingMissingCount ?? 0)} />
+        </div>
+        {ledgerError ? <div className="inline-error">{ledgerError}</div> : null}
+        <button className="secondary-button" type="button" onClick={() => void refreshLedger()}>
+          <RefreshCw size={15} className={loadingLedger ? "spin" : ""} />
+          刷新成本记录
+        </button>
+      </div>
+
+      <div className="panel table-panel">
+        <SectionHeader eyebrow="Provider ledger" title="每次 API 调用记录" />
+        <div className="settings-table">
+          {ledgerLogs.length === 0 ? (
+            <EmptyState title="暂无 MongoDB 成本记录" body="之后脚本、图片、配音、BGM、Seedance 影片生成成功后，会自动写入 cost_logs collection。" />
+          ) : ledgerLogs.map((log) => (
+            <article className="settings-row" key={log._id}>
+              <div>
+                <strong>{costServiceLabel(log.service)} / {log.provider}</strong>
+                <span>{log.jobId} · {log.model}</span>
+              </div>
+              <span>RM {log.costRM.toFixed(4)}</span>
+              <span>{log.quantity} {log.unit}</span>
+              <StatusPill tone={log.pricingStatus === "pricing_missing" ? "warning" : log.pricingStatus === "local_zero" ? "neutral" : "success"}>{costPricingStatusLabel(log.pricingStatus)}</StatusPill>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel table-panel">
+        <SectionHeader eyebrow="Case guard" title="每支影片预算" />
+        <div className="settings-table">
+          {props.jobs.map((job) => (
+            <article className="settings-row" key={job.id}>
+              <div>
+                <strong>{job.topic}</strong>
+                <span>{job.id}</span>
+              </div>
+              <span>RM {job.actualCostRM.toFixed(2)}</span>
+              <span>上限 RM {job.costLimitRM.toFixed(2)}</span>
+              <StatusPill tone={job.actualCostRM >= job.costLimitRM ? "danger" : "success"}>{job.actualCostRM >= job.costLimitRM ? "停止" : "OK"}</StatusPill>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function costServiceLabel(service: CostLog["service"]): string {
+  const labels: Record<CostLog["service"], string> = {
+    bgm: "背景音乐",
+    compose: "合成",
+    image: "图片",
+    other: "其他",
+    qc: "质检",
+    reference_design: "设计图",
+    script: "脚本",
+    tts: "配音",
+    video: "影片"
+  };
+  return labels[service];
+}
+
+function costPricingStatusLabel(status: CostLog["pricingStatus"]): string {
+  const labels: Record<CostLog["pricingStatus"], string> = {
+    actual_usage: "真实用量",
+    configured_rate: "配置单价",
+    local_zero: "本地零成本",
+    pricing_missing: "待补单价"
+  };
+  return labels[status];
+}
+
+function BudgetLine(props: { label: string; value: string }) {
+  return (
+    <div className="budget-line">
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
+  );
+}

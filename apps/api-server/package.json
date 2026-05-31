@@ -1,0 +1,22 @@
+{
+  "name": "@ai-content-factory/api-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --conditions=development src/main.ts",
+    "build": "tsc -b tsconfig.build.json",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/src/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-content-factory/config": "workspace:*",
+    "@ai-content-factory/database": "workspace:*",
+    "@ai-content-factory/logger": "workspace:*",
+    "@ai-content-factory/shared-types": "workspace:*",
+    "@ai-content-factory/storage": "workspace:*",
+    "express": "^5.1.0",
+    "ffmpeg-static": "^5.3.0"
+  }
+}
