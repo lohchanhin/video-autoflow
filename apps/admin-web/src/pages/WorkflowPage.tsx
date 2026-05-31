@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Settings2 } from "lucide-react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
@@ -16,7 +16,7 @@ import {
   type ToolProviderType
 } from "../lib/admin-data.js";
 import { listOpenAIModels } from "../lib/api.js";
-import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import { getProductionStage, productionStages, type ProductionStageId } from "../lib/production.js";
 import {
   findWorkflowToolSetting,
@@ -59,11 +59,26 @@ export function WorkflowPage(props: WorkflowPageProps) {
   const [modelSyncStates, setModelSyncStates] = useState<Record<string, ModelSyncState>>({});
   const [selectedStageId, setSelectedStageId] = useState<ProductionStageId>("script");
   const [selectedToolSettingId, setSelectedToolSettingId] = useState<string>(props.settings[0]?.id ?? "");
+  const [dirtyWorkflowDrafts, setDirtyWorkflowDrafts] = useState<Record<string, boolean>>({});
   const selectedStage = getProductionStage(selectedStageId);
   const producerAgent = props.agents[0] ?? null;
   const stageEndpoint = props.endpoints.find((endpoint) => endpoint.stageIds.includes(selectedStage.id)) ?? null;
   const selectedToolSetting = props.settings.find((setting) => setting.id === selectedToolSettingId) ?? props.settings[0] ?? null;
   const selectedModelSyncState = selectedToolSetting ? modelSyncStates[getModelSyncKey(selectedToolSetting)] ?? idleModelSyncState : idleModelSyncState;
+  const hasDirtyWorkflowDraft = Object.values(dirtyWorkflowDrafts).some(Boolean);
+
+  const reportWorkflowDirtyState = useCallback((key: string, isDirty: boolean) => {
+    setDirtyWorkflowDrafts((currentDrafts) => {
+      if (isDirty) {
+        return { ...currentDrafts, [key]: true };
+      }
+
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[key];
+      return nextDrafts;
+    });
+    props.reportDirtyState?.(key, isDirty);
+  }, [props.reportDirtyState]);
 
   const readiness = useMemo(() => {
     const rows = productionStages.map((stage) => {
@@ -142,6 +157,63 @@ export function WorkflowPage(props: WorkflowPageProps) {
     );
   }
 
+  function canLeaveWorkflowDrafts(message = "Workflow 有未保存修改。确定要放弃这些修改并切换吗？") {
+    return confirmDiscardDirtyDraft(hasDirtyWorkflowDraft, message);
+  }
+
+  function openWorkflowTab(tab: WorkflowTab) {
+    if (tab === activeTab) {
+      return;
+    }
+
+    if (!canLeaveWorkflowDrafts()) {
+      return;
+    }
+
+    setActiveTab(tab);
+  }
+
+  function selectWorkflowStage(stageId: ProductionStageId) {
+    if (stageId === selectedStageId) {
+      return;
+    }
+
+    if (!canLeaveWorkflowDrafts("当前流程路由有未保存修改。确定要放弃并切换阶段吗？")) {
+      return;
+    }
+
+    setSelectedStageId(stageId);
+    const endpoint = props.endpoints.find((candidate) => candidate.stageIds.includes(stageId));
+    const setting = props.settings.find((candidate) => endpoint && candidate.toolType === getToolTypeForEndpoint(endpoint));
+    if (setting) setSelectedToolSettingId(setting.id);
+  }
+
+  function selectWorkflowTool(settingId: string) {
+    if (settingId === selectedToolSettingId) {
+      return;
+    }
+
+    if (!canLeaveWorkflowDrafts("当前工具设置有未保存修改。确定要放弃并切换工具吗？")) {
+      return;
+    }
+
+    setSelectedToolSettingId(settingId);
+  }
+
+  function openToolsForEndpoint(endpointId: string) {
+    if (!canLeaveWorkflowDrafts()) {
+      return;
+    }
+
+    const endpoint = props.endpoints.find((candidate) => candidate.id === endpointId);
+    const toolType = endpoint ? getToolTypeForEndpoint(endpoint) : null;
+    const setting = props.settings.find((candidate) => candidate.toolType === toolType);
+    if (setting) {
+      setSelectedToolSettingId(setting.id);
+    }
+    setActiveTab("tools");
+  }
+
   return (
     <section className="workflow-shell">
       <section className="panel workflow-command-panel">
@@ -175,9 +247,9 @@ export function WorkflowPage(props: WorkflowPageProps) {
           <WorkflowStat label="阻塞问题" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
         </div>
         <div className="workflow-tabs" role="tablist" aria-label="Workflow sections">
-          <TabButton active={activeTab === "pipeline"} label="流程路由" onClick={() => setActiveTab("pipeline")} />
-          <TabButton active={activeTab === "tools"} label="工具设置" onClick={() => setActiveTab("tools")} />
-          <TabButton active={activeTab === "readiness"} label="就绪检查" onClick={() => setActiveTab("readiness")} />
+          <TabButton active={activeTab === "pipeline"} label="流程路由" onClick={() => openWorkflowTab("pipeline")} />
+          <TabButton active={activeTab === "tools"} label="工具设置" onClick={() => openWorkflowTab("tools")} />
+          <TabButton active={activeTab === "readiness"} label="就绪检查" onClick={() => openWorkflowTab("readiness")} />
         </div>
       </section>
 
@@ -207,12 +279,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                       <button
                         className="secondary-button compact-button"
                         type="button"
-                        onClick={() => {
-                          setSelectedStageId(stage.id);
-                          const endpoint = props.endpoints.find((candidate) => candidate.stageIds.includes(stage.id));
-                          const setting = props.settings.find((candidate) => endpoint && candidate.toolType === getToolTypeForEndpoint(endpoint));
-                          if (setting) setSelectedToolSettingId(setting.id);
-                        }}
+                        onClick={() => selectWorkflowStage(stage.id)}
                       >
                         <Settings2 size={14} />
                         设置
@@ -229,18 +296,10 @@ export function WorkflowPage(props: WorkflowPageProps) {
               endpoints={props.endpoints}
               selectedStage={selectedStage}
               stageEndpoint={stageEndpoint}
-              reportDirtyState={props.reportDirtyState}
+              reportDirtyState={reportWorkflowDirtyState}
               updateStageEndpoint={updateStageEndpoint}
               producerAgent={producerAgent}
-              openTools={(endpointId) => {
-                const endpoint = props.endpoints.find((candidate) => candidate.id === endpointId);
-                const toolType = endpoint ? getToolTypeForEndpoint(endpoint) : null;
-                const setting = props.settings.find((candidate) => candidate.toolType === toolType);
-                if (setting) {
-                  setSelectedToolSettingId(setting.id);
-                }
-                setActiveTab("tools");
-              }}
+              openTools={openToolsForEndpoint}
             />
           </aside>
         </section>
@@ -265,7 +324,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                       className={`workflow-tool-row ${selectedToolSetting?.id === setting.id ? "selected" : ""}`}
                       key={setting.id}
                       type="button"
-                      onClick={() => setSelectedToolSettingId(setting.id)}
+                      onClick={() => selectWorkflowTool(setting.id)}
                     >
                       <div>
                         <strong title={formatToolType(setting.toolType)}>{formatToolType(setting.toolType)}</strong>
@@ -292,7 +351,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                 <ToolProviderEditor
                   modelSyncState={selectedModelSyncState}
                   onSyncModels={syncOpenAIModels}
-                  reportDirtyState={props.reportDirtyState}
+                  reportDirtyState={reportWorkflowDirtyState}
                   setting={selectedToolSetting}
                   updateToolSetting={props.updateToolSetting}
                 />
