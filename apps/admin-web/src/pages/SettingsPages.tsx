@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Link2, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import type { CostLog, CostSummaryResponse } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
@@ -110,48 +110,62 @@ function ProviderKeyEnabledDraft(props: {
 export function YouTubePage(props: {
   accounts: YouTubeAccount[];
   canUpload: boolean;
-  channelName: string;
-  createPublishingTarget: () => void;
-  handleConnectAccount: () => void;
+  createPublishingTarget: (input: { accountId: string; channelName: string; youtubeChannelId: string }) => void;
+  handleConnectAccount: (input: { channelName: string; youtubeChannelId: string }) => void;
   publishingTargets: PublishingTarget[];
   reportDirtyState?: (key: string, isDirty: boolean) => void;
-  setChannelName: (value: string) => void;
-  setTargetAccountId: (value: string) => void;
-  setTargetChannelId: (value: string) => void;
-  setTargetChannelName: (value: string) => void;
-  setYoutubeChannelId: (value: string) => void;
-  targetAccountId: string;
-  targetChannelId: string;
-  targetChannelName: string;
   updateAccount: (id: string, updater: (account: YouTubeAccount) => YouTubeAccount) => void;
   updatePublishingTarget: (id: string, updater: (target: PublishingTarget) => PublishingTarget) => void;
-  youtubeChannelId: string;
 }) {
+  const accountCreateEditor = useEditableDraft({ channelName: "", youtubeChannelId: "" }, "youtube-account-create");
+  const accountCreateDraft = accountCreateEditor.draft ?? { channelName: "", youtubeChannelId: "" };
+  const defaultTargetDraft = { accountId: props.accounts[0]?.id ?? "", channelName: "", youtubeChannelId: "" };
+  const targetCreateEditor = useEditableDraft(defaultTargetDraft, `publishing-target-create:${defaultTargetDraft.accountId}`);
+  const targetCreateDraft = targetCreateEditor.draft ?? defaultTargetDraft;
+  const reportDirtyState = props.reportDirtyState;
+
+  useEffect(() => {
+    reportDirtyState?.("youtube-create-account", accountCreateEditor.isDirty);
+    return () => reportDirtyState?.("youtube-create-account", false);
+  }, [accountCreateEditor.isDirty, reportDirtyState]);
+
+  useEffect(() => {
+    reportDirtyState?.("youtube-create-target", targetCreateEditor.isDirty);
+    return () => reportDirtyState?.("youtube-create-target", false);
+  }, [reportDirtyState, targetCreateEditor.isDirty]);
+
+  function saveAccountDraft() {
+    props.handleConnectAccount(accountCreateDraft);
+    accountCreateEditor.markSaved({ channelName: "", youtubeChannelId: "" });
+  }
+
+  function saveTargetDraft() {
+    props.createPublishingTarget(targetCreateDraft);
+    targetCreateEditor.markSaved({ accountId: targetCreateDraft.accountId, channelName: "", youtubeChannelId: "" });
+  }
+
   return (
     <section className="youtube-console">
-      <form
-        className="panel"
-        onSubmit={(event) => {
-          event.preventDefault();
-          props.handleConnectAccount();
-        }}
-      >
+      <section className="panel">
         <SectionHeader eyebrow="YouTube OAuth" title="Connected Channels" action={<StatusPill tone={props.canUpload ? "success" : "danger"}>{props.canUpload ? "Ready" : "Missing"}</StatusPill>} />
         <Field label="Channel name">
-          <input value={props.channelName} onChange={(event) => props.setChannelName(event.target.value)} />
+          <input value={accountCreateDraft.channelName} onChange={(event) => accountCreateEditor.setDraftPatch({ channelName: event.target.value })} />
         </Field>
         <Field label="YouTube channel ID">
-          <input value={props.youtubeChannelId} onChange={(event) => props.setYoutubeChannelId(event.target.value)} />
+          <input value={accountCreateDraft.youtubeChannelId} onChange={(event) => accountCreateEditor.setDraftPatch({ youtubeChannelId: event.target.value })} />
         </Field>
-        <button className="primary-button" type="submit">
-          <Link2 size={16} />
-          Register channel
-        </button>
+        <EditableActionBar
+          disabled={!accountCreateDraft.channelName.trim() || !accountCreateDraft.youtubeChannelId.trim()}
+          isDirty={accountCreateEditor.isDirty}
+          onCancel={accountCreateEditor.resetDraft}
+          onSave={saveAccountDraft}
+          saveLabel="Register channel"
+        />
         <div className="policy-note">
           <ShieldCheck size={18} />
           <span>MVP uploads are locked to private. Public upload is not available here.</span>
         </div>
-      </form>
+      </section>
 
       <div className="panel table-panel">
         <SectionHeader eyebrow="Publishing accounts" title="Channel Registry" />
@@ -163,16 +177,10 @@ export function YouTubePage(props: {
         </div>
       </div>
 
-      <form
-        className="panel youtube-target-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          props.createPublishingTarget();
-        }}
-      >
+      <section className="panel youtube-target-form">
         <SectionHeader eyebrow="Target matrix" title="Add Publishing Target" action={<StatusPill tone="success">private only</StatusPill>} />
         <Field label="Google / YouTube account">
-          <select value={props.targetAccountId} onChange={(event) => props.setTargetAccountId(event.target.value)}>
+          <select value={targetCreateDraft.accountId} onChange={(event) => targetCreateEditor.setDraftPatch({ accountId: event.target.value })}>
             <option value="">Select registered account</option>
             {props.accounts.map((account) => (
               <option key={account.id} value={account.id}>
@@ -182,16 +190,19 @@ export function YouTubePage(props: {
           </select>
         </Field>
         <Field label="Target channel name">
-          <input value={props.targetChannelName} onChange={(event) => props.setTargetChannelName(event.target.value)} />
+          <input value={targetCreateDraft.channelName} onChange={(event) => targetCreateEditor.setDraftPatch({ channelName: event.target.value })} />
         </Field>
         <Field label="Target channel ID">
-          <input value={props.targetChannelId} onChange={(event) => props.setTargetChannelId(event.target.value)} />
+          <input value={targetCreateDraft.youtubeChannelId} onChange={(event) => targetCreateEditor.setDraftPatch({ youtubeChannelId: event.target.value })} />
         </Field>
-        <button className="primary-button" type="submit">
-          <Link2 size={16} />
-          Add target
-        </button>
-      </form>
+        <EditableActionBar
+          disabled={!targetCreateDraft.accountId && props.accounts.length === 0}
+          isDirty={targetCreateEditor.isDirty}
+          onCancel={targetCreateEditor.resetDraft}
+          onSave={saveTargetDraft}
+          saveLabel="Add target"
+        />
+      </section>
 
       <div className="panel table-panel youtube-target-panel">
         <SectionHeader eyebrow="Multi-account publishing" title="Publishing Targets" />

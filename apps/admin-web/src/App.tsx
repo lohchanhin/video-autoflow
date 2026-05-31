@@ -1164,11 +1164,6 @@ export function App() {
   const [language, setLanguage] = useState<AdminJob["language"]>("zh-CN");
   const [sceneCount, setSceneCount] = useState(5);
   const [costLimitRM, setCostLimitRM] = useState(7.5);
-  const [channelName, setChannelName] = useState("");
-  const [youtubeChannelId, setYoutubeChannelId] = useState("");
-  const [targetAccountId, setTargetAccountId] = useState(() => loadYouTubeAccounts()[0]?.id ?? "");
-  const [targetChannelName, setTargetChannelName] = useState("");
-  const [targetChannelId, setTargetChannelId] = useState("");
 
   useEffect(() => {
     saveStaffAgents(staffAgents);
@@ -3544,9 +3539,9 @@ export function App() {
     }
   }
 
-  function handleConnectAccount() {
-    const normalizedName = channelName.trim();
-    const normalizedChannelId = youtubeChannelId.trim();
+  function handleConnectAccount(input: { channelName: string; youtubeChannelId: string }) {
+    const normalizedName = input.channelName.trim();
+    const normalizedChannelId = input.youtubeChannelId.trim();
 
     if (!normalizedName || !normalizedChannelId) {
       return;
@@ -3554,19 +3549,16 @@ export function App() {
 
     const account = createYouTubeAccount(normalizedName, normalizedChannelId);
     setAccounts((currentAccounts) => [account, ...currentAccounts.filter((currentAccount) => currentAccount.youtubeChannelId !== normalizedChannelId)]);
-    setTargetAccountId(account.id);
-    setTargetChannelName(normalizedName);
-    setTargetChannelId(normalizedChannelId);
   }
 
   function updateAccount(id: string, updater: (account: YouTubeAccount) => YouTubeAccount) {
     setAccounts((currentAccounts) => currentAccounts.map((account) => (account.id === id ? updater(account) : account)));
   }
 
-  function handleCreatePublishingTarget() {
-    const account = accounts.find((candidate) => candidate.id === targetAccountId) ?? accounts[0];
-    const normalizedChannelName = targetChannelName.trim() || account?.channelName || "Untitled Channel";
-    const normalizedChannelId = targetChannelId.trim() || account?.youtubeChannelId || "UC_missing";
+  function handleCreatePublishingTarget(input: { accountId: string; channelName: string; youtubeChannelId: string }) {
+    const account = accounts.find((candidate) => candidate.id === input.accountId) ?? accounts[0];
+    const normalizedChannelName = input.channelName.trim() || account?.channelName || "Untitled Channel";
+    const normalizedChannelId = input.youtubeChannelId.trim() || account?.youtubeChannelId || "UC_missing";
 
     if (!account) {
       return;
@@ -4140,22 +4132,12 @@ export function App() {
           <YouTubePage
             accounts={accounts}
             canUpload={canUpload}
-            channelName={channelName}
             createPublishingTarget={handleCreatePublishingTarget}
             handleConnectAccount={handleConnectAccount}
             publishingTargets={publishingTargets}
             reportDirtyState={reportDirtyDraft}
-            setChannelName={setChannelName}
-            setTargetAccountId={setTargetAccountId}
-            setTargetChannelId={setTargetChannelId}
-            setTargetChannelName={setTargetChannelName}
-            setYoutubeChannelId={setYoutubeChannelId}
-            targetAccountId={targetAccountId}
-            targetChannelId={targetChannelId}
-            targetChannelName={targetChannelName}
             updateAccount={updateAccount}
             updatePublishingTarget={updatePublishingTarget}
-            youtubeChannelId={youtubeChannelId}
           />
         ) : null}
 
