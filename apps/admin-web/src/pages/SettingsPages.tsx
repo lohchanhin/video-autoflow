@@ -23,7 +23,11 @@ export function KeysPage(props: {
         eyebrow="Provider access"
         title="Key Management"
         action={
-          <button className="secondary-button" type="button" onClick={props.resetKeys}>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => window.confirm("确定重置密钥状态记录？已保存到 API server 的真实密钥不会显示在前端，但本地状态会被覆盖。") && props.resetKeys()}
+          >
             <RefreshCw size={15} />
             Reset
           </button>

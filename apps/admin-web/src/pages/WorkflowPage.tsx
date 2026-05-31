@@ -147,11 +147,19 @@ export function WorkflowPage(props: WorkflowPageProps) {
           title="路由、工具、就绪检查"
           action={
             <div className="workflow-header-actions">
-              <button className="secondary-button" type="button" onClick={props.resetSettings}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => window.confirm("确定重置所有工具模型设置？这会覆盖当前工具配置。") && props.resetSettings()}
+              >
                 <RefreshCw size={15} />
                 重置模型设置
               </button>
-              <button className="secondary-button" type="button" onClick={props.resetEndpoints}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => window.confirm("确定重置生产流程路由？这会覆盖当前阶段与工具绑定。") && props.resetEndpoints()}
+              >
                 <RefreshCw size={15} />
                 重置流程路由
               </button>

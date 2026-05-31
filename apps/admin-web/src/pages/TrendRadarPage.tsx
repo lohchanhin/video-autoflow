@@ -51,7 +51,12 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
                 <Sparkles size={15} />
                 AI niche preset
               </button>
-              <button className="secondary-button" type="button" onClick={props.clearReports} disabled={props.reports.length === 0}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => window.confirm("确定清空趋势扫描历史？") && props.clearReports()}
+                disabled={props.reports.length === 0}
+              >
                 <Trash2 size={15} />
                 Clear history
               </button>

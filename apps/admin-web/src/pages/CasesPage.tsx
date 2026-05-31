@@ -133,6 +133,10 @@ export function CasesPage(props: CasesPageProps) {
   }
 
   function clearCases() {
+    if (!window.confirm("确定清空当前浏览器里的 Case 历史、阶段记录、活动记录和相关本地状态？这个动作不能撤销。")) {
+      return;
+    }
+
     props.clearCases();
     setActiveTab("new");
   }
@@ -627,12 +631,20 @@ function ProductionTab(
             Retry
           </button>
         ) : (
-          <button className="secondary-button" type="button" onClick={() => props.updateJob(props.selectedJob!.id, advanceCase)}>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => window.confirm("确定手动推进这个 Case 的生产状态？这会写入活动记录。") && props.updateJob(props.selectedJob!.id, advanceCase)}
+          >
             <Play size={16} />
             Advance
           </button>
         )}
-        <button className="danger-button" type="button" onClick={() => props.updateJob(props.selectedJob!.id, failCase)}>
+        <button
+          className="danger-button"
+          type="button"
+          onClick={() => window.confirm("确定把这个 Case 标记为失败？这会影响 Dashboard、队列和后续自动化判断。") && props.updateJob(props.selectedJob!.id, failCase)}
+        >
           <AlertTriangle size={16} />
           Mark failed
         </button>
