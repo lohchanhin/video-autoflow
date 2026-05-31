@@ -34,9 +34,8 @@ interface AssetsPageProps {
   createDesignAsset: (input: DesignAssetInput) => Promise<ProductionAsset | null | void> | ProductionAsset | null | void;
   createManualAsset: (job: AdminJob | null) => void;
   deleteAsset: (id: string) => void;
-  filterJobId: string;
   filterStatus: ProductionAssetStatus | "";
-  filterType: ProductionAssetType | "";
+  filterJobId: string;
   generateAsset: (asset: ProductionAsset) => void;
   generatingAssetIds: string[];
   importLegacyAssets: () => void;
@@ -48,7 +47,6 @@ interface AssetsPageProps {
   selectAsset: (id: string | null) => void;
   setFilterJobId: (value: string) => void;
   setFilterStatus: (value: ProductionAssetStatus | "") => void;
-  setFilterType: (value: ProductionAssetType | "") => void;
   updateAsset: (id: string, patch: Partial<Pick<ProductionAsset, "costRM" | "error" | "folderName" | "label" | "notes" | "prompt" | "provider" | "role" | "sceneId" | "scope" | "status" | "storagePath" | "tags" | "type" | "url">>) => Promise<void> | void;
 }
 
@@ -71,7 +69,6 @@ export function AssetsPage(props: AssetsPageProps) {
     activeFolder,
     filterJobId: "",
     filterStatus: props.filterStatus,
-    filterType: "",
     searchText,
     useFolder: true
   });
@@ -79,7 +76,6 @@ export function AssetsPage(props: AssetsPageProps) {
     activeFolder,
     filterJobId: props.filterJobId,
     filterStatus: props.filterStatus,
-    filterType: props.filterType,
     searchText,
     useFolder: false
   });
@@ -156,7 +152,6 @@ export function AssetsPage(props: AssetsPageProps) {
     activeFolder: string;
     filterJobId: string;
     filterStatus: ProductionAssetStatus | "";
-    filterType: ProductionAssetType | "";
     searchText: string;
     useFolder: boolean;
   }): ProductionAsset[] {
@@ -166,9 +161,8 @@ export function AssetsPage(props: AssetsPageProps) {
       const matchesSearch = !normalizedSearch || [asset.label, asset.prompt, asset.notes, asset.folderName, asset.type, asset.tags.join(" ")].join(" ").toLowerCase().includes(normalizedSearch);
       const matchesJob = !options.filterJobId || asset.jobId === options.filterJobId;
       const matchesStatus = !options.filterStatus || asset.status === options.filterStatus;
-      const matchesType = !options.filterType || asset.type === options.filterType;
 
-      return matchesFolder && matchesSearch && matchesJob && matchesStatus && matchesType;
+      return matchesFolder && matchesSearch && matchesJob && matchesStatus;
     });
   }
 
@@ -423,12 +417,6 @@ export function AssetsPage(props: AssetsPageProps) {
                 <select value={props.filterJobId} onChange={(event) => props.setFilterJobId(event.target.value)}>
                   <option value="">选择 Case</option>
                   {props.jobs.map((job) => <option key={job.id} value={job.id}>{job.topic || job.id}</option>)}
-                </select>
-              </Field>
-              <Field label="类型">
-                <select value={props.filterType} onChange={(event) => props.setFilterType(event.target.value as ProductionAssetType | "")}>
-                  <option value="">全部类型</option>
-                  {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
                 </select>
               </Field>
               <Field label="状态">

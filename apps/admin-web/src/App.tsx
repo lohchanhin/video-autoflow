@@ -1114,7 +1114,6 @@ export function App() {
   const [selectedProductionAssetId, setSelectedProductionAssetId] = useState<string | null>(null);
   const [assetFilterJobId, setAssetFilterJobId] = useState("");
   const [assetFilterStatus, setAssetFilterStatus] = useState<ProductionAssetStatus | "">("");
-  const [assetFilterType, setAssetFilterType] = useState<ProductionAssetType | "">("");
   const [isLoadingProductionAssets, setIsLoadingProductionAssets] = useState(false);
   const [assetError, setAssetError] = useState<string | null>(null);
   const [caseQcReports, setCaseQcReports] = useState<CaseQcReport[]>(() => loadCaseQcReports(loadJobs().map((job) => job.id)));
@@ -2404,7 +2403,6 @@ export function App() {
       setProductionAssets((currentAssets) => [response.asset, ...currentAssets.filter((asset) => asset._id !== response.asset._id)]);
       setSelectedProductionAssetId(response.asset._id);
       setAssetFilterJobId(input.jobId ?? "");
-      setAssetFilterType(input.type);
       setAssetError(null);
       await handleGenerateProductionAsset(response.asset);
       return response.asset;
@@ -2426,7 +2424,6 @@ export function App() {
       setProductionAssets((currentAssets) => [response.asset, ...currentAssets.filter((currentAsset) => currentAsset._id !== response.asset._id)]);
       setSelectedProductionAssetId(response.asset._id);
       setAssetFilterJobId(response.asset.jobId === libraryJobId ? "" : response.asset.jobId);
-      setAssetFilterType(response.asset.type);
       setAssetError(null);
       appendCaseActivity(asset.jobId, "stage_updated", "Production asset version draft created", `${response.asset.label} was forked from ${asset.label}; the original approved asset was preserved.`);
       return response.asset;
@@ -4038,7 +4035,6 @@ export function App() {
             deleteAsset={(id) => void handleDeleteProductionAsset(id)}
             filterJobId={assetFilterJobId}
             filterStatus={assetFilterStatus}
-            filterType={assetFilterType}
             generateAsset={(asset) => void handleGenerateProductionAsset(asset)}
             generatingAssetIds={generatingProductionAssetIds}
             importLegacyAssets={() => void handleImportLegacyProductionAssets()}
@@ -4053,7 +4049,6 @@ export function App() {
             selectAsset={setSelectedProductionAssetId}
             setFilterJobId={setAssetFilterJobId}
             setFilterStatus={setAssetFilterStatus}
-            setFilterType={setAssetFilterType}
             updateAsset={(id, patch) => handleUpdateProductionAsset(id, patch)}
           />
         ) : null}
