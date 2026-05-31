@@ -24,6 +24,7 @@ interface CasesPageProps {
   language: AdminJob["language"];
   prompt: string;
   records: JobProcessRecord[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   sceneCount: number;
   selectedJob: AdminJob | null;
   selectedActivities: CaseActivity[];
@@ -770,6 +771,7 @@ function ProductionTab(
             characters={props.characters}
             job={props.selectedJob}
             record={props.selectedRecord}
+            reportDirtyState={props.reportDirtyState}
             updateCaseDetails={props.updateCaseDetails}
             updateProcessRecord={props.updateProcessRecord}
           />
@@ -796,6 +798,7 @@ function ProductionTab(
           qcReport={props.selectedQcReport}
           storedVideos={props.storedVideos}
           job={props.selectedJob}
+          reportDirtyState={props.reportDirtyState}
           updateSceneReview={props.updateSceneReview}
         />
       ) : null}
@@ -823,6 +826,7 @@ function ProductionTab(
             qcReport={props.selectedQcReport}
             storedVideos={props.storedVideos}
             job={props.selectedJob}
+            reportDirtyState={props.reportDirtyState}
             updateSceneReview={props.updateSceneReview}
           />
         </section>
@@ -1206,6 +1210,7 @@ function StageOutputPanel(props: {
   job: AdminJob;
   qcReport: CaseQcReport | null;
   record: JobProcessRecord | null;
+  reportDirtyState?: CasesPageProps["reportDirtyState"];
   sceneReviews: SceneReviewItem[];
   storedVideos: StoredVideo[];
   updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
@@ -1291,6 +1296,7 @@ function StageOutputPanel(props: {
               job={props.job}
               sceneReviews={props.sceneReviews}
               generateSceneImageForJob={props.generateSceneImageForJob}
+              reportDirtyState={props.reportDirtyState}
               updateSceneReview={props.updateSceneReview}
             />
           ) : null}
@@ -1307,6 +1313,7 @@ function SceneReviewPanel(props: {
   generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
   generatingSceneImageIds: string[];
   job: AdminJob;
+  reportDirtyState?: CasesPageProps["reportDirtyState"];
   sceneReviews: SceneReviewItem[];
   updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
 }) {
@@ -1330,6 +1337,7 @@ function SceneReviewPanel(props: {
             isGenerating={props.generatingSceneImageIds.includes(`${props.job.id}_${scene.sceneId}`)}
             job={props.job}
             key={scene.id}
+            reportDirtyState={props.reportDirtyState}
             scene={scene}
             updateSceneReview={props.updateSceneReview}
           />
@@ -1343,11 +1351,19 @@ function SceneReviewCard(props: {
   generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
   isGenerating: boolean;
   job: AdminJob;
+  reportDirtyState?: CasesPageProps["reportDirtyState"];
   scene: SceneReviewItem;
   updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
 }) {
   const sceneEditor = useEditableDraft(props.scene, `${props.scene.id}:${props.scene.updatedAt}`);
   const draft = sceneEditor.draft ?? props.scene;
+  const reportDirtyState = props.reportDirtyState;
+  const sceneDirtyKey = props.scene.id;
+
+  useEffect(() => {
+    reportDirtyState?.(`cases-scene:${sceneDirtyKey}`, sceneEditor.isDirty);
+    return () => reportDirtyState?.(`cases-scene:${sceneDirtyKey}`, false);
+  }, [reportDirtyState, sceneDirtyKey, sceneEditor.isDirty]);
 
   function saveSceneDraft(extraPatch: Partial<SceneReviewItem> = {}) {
     const nextDraft = { ...draft, ...extraPatch };
@@ -1500,6 +1516,7 @@ function StageEditorPanel(props: {
   characters: CharacterProfile[];
   job: AdminJob | null;
   record: JobProcessRecord | null;
+  reportDirtyState?: CasesPageProps["reportDirtyState"];
   updateCaseDetails: CasesPageProps["updateCaseDetails"];
   updateProcessRecord: CasesPageProps["updateProcessRecord"];
 }) {
@@ -1528,6 +1545,19 @@ function StageEditorPanel(props: {
   const caseDraft = caseEditor.draft;
   const recordDraft = recordEditor.draft;
   const selectedAgent = recordDraft ? props.agents.find((agent) => agent.id === recordDraft.ownerAgentId) : null;
+  const reportDirtyState = props.reportDirtyState;
+  const caseDirtyKey = props.job?.id ?? "none";
+  const recordDirtyKey = props.record?.id ?? "none";
+
+  useEffect(() => {
+    reportDirtyState?.(`cases-case:${caseDirtyKey}`, caseEditor.isDirty);
+    return () => reportDirtyState?.(`cases-case:${caseDirtyKey}`, false);
+  }, [caseDirtyKey, caseEditor.isDirty, reportDirtyState]);
+
+  useEffect(() => {
+    reportDirtyState?.(`cases-record:${recordDirtyKey}`, recordEditor.isDirty);
+    return () => reportDirtyState?.(`cases-record:${recordDirtyKey}`, false);
+  }, [recordDirtyKey, recordEditor.isDirty, reportDirtyState]);
 
   function saveCaseDraft() {
     if (!props.job || !caseEditor.baseline || !caseDraft) {

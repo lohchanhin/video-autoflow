@@ -43,6 +43,7 @@ interface AssetsPageProps {
   jobs: AdminJob[];
   openCase: (jobId: string) => void;
   refreshAssets: () => void;
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   selectedAssetId: string | null;
   selectAsset: (id: string | null) => void;
   setFilterJobId: (value: string) => void;
@@ -88,6 +89,8 @@ export function AssetsPage(props: AssetsPageProps) {
   const assetDraft = editableAsset.draft;
   const [assetSaveMessage, setAssetSaveMessage] = useState<string | null>(null);
   const selectedJob = selectedAsset ? props.jobs.find((job) => job.id === selectedAsset.jobId) ?? null : null;
+  const reportDirtyState = props.reportDirtyState;
+  const selectedAssetDirtyKey = selectedAsset?._id ?? "none";
   const readyReferences = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && asset.role === "reference_image" && isGeneratedDesignAsset(asset)).length;
   const readyFrames = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && (asset.role === "first_frame" || asset.role === "last_frame") && isGeneratedDesignAsset(asset)).length;
   const blockedAssets = libraryVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
@@ -110,6 +113,11 @@ export function AssetsPage(props: AssetsPageProps) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [editableAsset.isDirty]);
+
+  useEffect(() => {
+    reportDirtyState?.(`assets:${selectedAssetDirtyKey}`, editableAsset.isDirty);
+    return () => reportDirtyState?.(`assets:${selectedAssetDirtyKey}`, false);
+  }, [editableAsset.isDirty, reportDirtyState, selectedAssetDirtyKey]);
 
   function openStudioTab(tab: AssetStudioTab) {
     if (!confirmDiscardDirtyDraft(editableAsset.isDirty)) {

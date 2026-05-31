@@ -1367,6 +1367,13 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const hasSecretDraft = Object.values(secretDrafts).some((value) => value.trim().length > 0);
+
+    reportDirtyDraft("keys:secret-drafts", hasSecretDraft);
+    return () => reportDirtyDraft("keys:secret-drafts", false);
+  }, [reportDirtyDraft, secretDrafts]);
+
   function switchView(view: ActiveView) {
     if (view === activeView) {
       return;
@@ -3987,6 +3994,7 @@ export function App() {
             language={language}
             prompt={prompt}
             records={jobProcessRecords}
+            reportDirtyState={reportDirtyDraft}
             sceneCount={sceneCount}
             selectCase={setSelectedJobId}
             selectedJob={selectedJob}
@@ -4075,6 +4083,7 @@ export function App() {
               setSelectedJobId(jobId);
               switchView("cases");
             }}
+            reportDirtyState={reportDirtyDraft}
             refreshAssets={() => void refreshProductionAssets()}
             selectedAssetId={selectedProductionAssetId}
             selectAsset={setSelectedProductionAssetId}
@@ -4102,6 +4111,7 @@ export function App() {
         {activeView === "keys" ? (
           <KeysPage
             keys={providerKeys}
+            reportDirtyState={reportDirtyDraft}
             resetKeys={() => {
               setProviderKeys(resetProviderKeys());
               setSecretDrafts({});
@@ -4134,6 +4144,7 @@ export function App() {
             createPublishingTarget={handleCreatePublishingTarget}
             handleConnectAccount={handleConnectAccount}
             publishingTargets={publishingTargets}
+            reportDirtyState={reportDirtyDraft}
             setChannelName={setChannelName}
             setTargetAccountId={setTargetAccountId}
             setTargetChannelId={setTargetChannelId}
@@ -4152,6 +4163,7 @@ export function App() {
           <StoragePage
             canUpload={canUpload}
             settings={storageSettings}
+            reportDirtyState={reportDirtyDraft}
             setSettings={setStorageSettings}
             storedVideos={storedVideos}
             updateStoredVideo={updateStoredVideo}

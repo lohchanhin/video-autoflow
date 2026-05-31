@@ -9,6 +9,7 @@ import type { AdminJob } from "../lib/jobs.js";
 
 export function KeysPage(props: {
   keys: ProviderKeyRecord[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   resetKeys: () => void;
   saveProviderSecret: (id: string) => void;
   secretDrafts: Record<string, string>;
@@ -42,7 +43,7 @@ export function KeysPage(props: {
             </div>
             <StatusPill tone={key.status === "configured" ? "success" : key.status === "needs_rotation" ? "warning" : "danger"}>{key.status}</StatusPill>
             <span>{key.keyName}</span>
-            <ProviderKeyEnabledDraft providerKey={key} updateProviderKey={props.updateProviderKey} />
+            <ProviderKeyEnabledDraft providerKey={key} reportDirtyState={props.reportDirtyState} updateProviderKey={props.updateProviderKey} />
             <div className="secret-control">
               <input
                 type={props.visibleDrafts[key.id] ? "text" : "password"}
@@ -66,10 +67,18 @@ export function KeysPage(props: {
 
 function ProviderKeyEnabledDraft(props: {
   providerKey: ProviderKeyRecord;
+  reportDirtyState?: ((key: string, isDirty: boolean) => void) | undefined;
   updateProviderKey: (id: string, updater: (key: ProviderKeyRecord) => ProviderKeyRecord) => void;
 }) {
   const editor = useEditableDraft(props.providerKey, `${props.providerKey.id}:${props.providerKey.updatedAt ?? ""}:${props.providerKey.enabled}`);
   const draft = editor.draft ?? props.providerKey;
+  const providerKeyId = props.providerKey.id;
+  const reportDirtyState = props.reportDirtyState;
+
+  useEffect(() => {
+    reportDirtyState?.(`keys-provider:${providerKeyId}`, editor.isDirty);
+    return () => reportDirtyState?.(`keys-provider:${providerKeyId}`, false);
+  }, [editor.isDirty, providerKeyId, reportDirtyState]);
 
   function saveDraft() {
     const nextDraft = { ...draft, updatedAt: new Date().toISOString() };
@@ -105,6 +114,7 @@ export function YouTubePage(props: {
   createPublishingTarget: () => void;
   handleConnectAccount: () => void;
   publishingTargets: PublishingTarget[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   setChannelName: (value: string) => void;
   setTargetAccountId: (value: string) => void;
   setTargetChannelId: (value: string) => void;
@@ -148,7 +158,7 @@ export function YouTubePage(props: {
         {props.accounts.length === 0 ? <EmptyState title="No YouTube accounts" body="Register a channel, then connect real OAuth credentials before private upload is available." /> : null}
         <div className="settings-table">
           {props.accounts.map((account) => (
-            <YouTubeAccountSettingsRow key={account.id} account={account} updateAccount={props.updateAccount} />
+            <YouTubeAccountSettingsRow key={account.id} account={account} reportDirtyState={props.reportDirtyState} updateAccount={props.updateAccount} />
           ))}
         </div>
       </div>
@@ -188,7 +198,7 @@ export function YouTubePage(props: {
         {props.publishingTargets.length === 0 ? <EmptyState title="No publishing targets" body="Add real channel targets after registering a YouTube account. Upload remains blocked until OAuth is connected." /> : null}
         <div className="settings-table">
           {props.publishingTargets.map((target) => (
-            <PublishingTargetSettingsRow key={target.id} target={target} updatePublishingTarget={props.updatePublishingTarget} />
+            <PublishingTargetSettingsRow key={target.id} reportDirtyState={props.reportDirtyState} target={target} updatePublishingTarget={props.updatePublishingTarget} />
           ))}
         </div>
       </div>
@@ -198,11 +208,19 @@ export function YouTubePage(props: {
 
 function YouTubeAccountSettingsRow(props: {
   account: YouTubeAccount;
+  reportDirtyState?: ((key: string, isDirty: boolean) => void) | undefined;
   updateAccount: (id: string, updater: (account: YouTubeAccount) => YouTubeAccount) => void;
 }) {
   const editor = useEditableDraft(props.account, `${props.account.id}:${props.account.updatedAt}`);
   const draft = editor.draft ?? props.account;
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const accountId = props.account.id;
+  const reportDirtyState = props.reportDirtyState;
+
+  useEffect(() => {
+    reportDirtyState?.(`youtube-account:${accountId}`, editor.isDirty);
+    return () => reportDirtyState?.(`youtube-account:${accountId}`, false);
+  }, [accountId, editor.isDirty, reportDirtyState]);
 
   function patchDraft(patch: Partial<YouTubeAccount>) {
     editor.setDraftPatch(patch);
@@ -264,11 +282,19 @@ function YouTubeAccountSettingsRow(props: {
 }
 
 function PublishingTargetSettingsRow(props: {
+  reportDirtyState?: ((key: string, isDirty: boolean) => void) | undefined;
   target: PublishingTarget;
   updatePublishingTarget: (id: string, updater: (target: PublishingTarget) => PublishingTarget) => void;
 }) {
   const editor = useEditableDraft(props.target, `${props.target.id}:${props.target.updatedAt}`);
   const draft = editor.draft ?? props.target;
+  const reportDirtyState = props.reportDirtyState;
+  const targetId = props.target.id;
+
+  useEffect(() => {
+    reportDirtyState?.(`publishing-target:${targetId}`, editor.isDirty);
+    return () => reportDirtyState?.(`publishing-target:${targetId}`, false);
+  }, [editor.isDirty, reportDirtyState, targetId]);
 
   function patchDraft(patch: Partial<PublishingTarget>) {
     editor.setDraftPatch(patch);
@@ -319,6 +345,7 @@ function PublishingTargetSettingsRow(props: {
 
 export function StoragePage(props: {
   canUpload: boolean;
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   settings: StorageSettings;
   setSettings: (settings: StorageSettings) => void;
   storedVideos: StoredVideo[];
@@ -326,6 +353,12 @@ export function StoragePage(props: {
 }) {
   const settingsEditor = useEditableDraft(props.settings, JSON.stringify(props.settings));
   const settingsDraft = settingsEditor.draft ?? props.settings;
+  const reportDirtyState = props.reportDirtyState;
+
+  useEffect(() => {
+    reportDirtyState?.("storage:settings", settingsEditor.isDirty);
+    return () => reportDirtyState?.("storage:settings", false);
+  }, [reportDirtyState, settingsEditor.isDirty]);
 
   function patchSettingsDraft(patch: Partial<StorageSettings>) {
     settingsEditor.setDraftPatch(patch);
@@ -374,7 +407,7 @@ export function StoragePage(props: {
         {props.storedVideos.length === 0 ? <EmptyState title="No stored videos" body="Final MP4 records will appear here after QC." /> : null}
         <div className="settings-table">
           {props.storedVideos.map((video) => (
-            <StoredVideoSettingsRow key={video.id} updateStoredVideo={props.updateStoredVideo} video={video} />
+            <StoredVideoSettingsRow key={video.id} reportDirtyState={props.reportDirtyState} updateStoredVideo={props.updateStoredVideo} video={video} />
           ))}
         </div>
       </div>
@@ -383,11 +416,19 @@ export function StoragePage(props: {
 }
 
 function StoredVideoSettingsRow(props: {
+  reportDirtyState?: ((key: string, isDirty: boolean) => void) | undefined;
   updateStoredVideo: (id: string, updater: (video: StoredVideo) => StoredVideo) => void;
   video: StoredVideo;
 }) {
   const editor = useEditableDraft(props.video, `${props.video.id}:${props.video.status}`);
   const draft = editor.draft ?? props.video;
+  const reportDirtyState = props.reportDirtyState;
+  const videoId = props.video.id;
+
+  useEffect(() => {
+    reportDirtyState?.(`stored-video:${videoId}`, editor.isDirty);
+    return () => reportDirtyState?.(`stored-video:${videoId}`, false);
+  }, [editor.isDirty, reportDirtyState, videoId]);
 
   function saveDraft() {
     const patch = createDraftPatch(props.video, draft);
