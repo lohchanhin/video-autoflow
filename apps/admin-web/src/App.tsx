@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   BookOpen,
@@ -1088,6 +1088,9 @@ function defaultProductionAssetRole(type: ProductionAssetType): ProductionAsset[
 export function App() {
   const [activeView, setActiveView] = useState<ActiveView>(() => getInitialView());
   const [dirtyDrafts, setDirtyDrafts] = useState<Record<string, boolean>>({});
+  const hasUnsavedDrafts = useMemo(() => Object.values(dirtyDrafts).some(Boolean), [dirtyDrafts]);
+  const activeViewRef = useRef(activeView);
+  const hasUnsavedDraftsRef = useRef(hasUnsavedDrafts);
   const [apiState, setApiState] = useState<ApiState>("checking");
   const [databaseState, setDatabaseState] = useState<ServiceState>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -1265,8 +1268,43 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
+
+  useEffect(() => {
+    hasUnsavedDraftsRef.current = hasUnsavedDrafts;
+  }, [hasUnsavedDrafts]);
+
+  useEffect(() => {
+    if (!hasUnsavedDrafts) {
+      return;
+    }
+
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasUnsavedDrafts]);
+
+  useEffect(() => {
     function onHashChange() {
-      setActiveView(getInitialView());
+      const nextView = getInitialView();
+      const currentView = activeViewRef.current;
+
+      if (nextView === currentView) {
+        return;
+      }
+
+      if (hasUnsavedDraftsRef.current && !window.confirm("当前页面还有未保存修改。切换页面会放弃这些草稿，确定继续吗？")) {
+        window.history.replaceState(null, "", `#${currentView}`);
+        return;
+      }
+
+      activeViewRef.current = nextView;
+      setActiveView(nextView);
     }
 
     window.addEventListener("hashchange", onHashChange);
@@ -1342,8 +1380,6 @@ export function App() {
     }
   }
 
-  const hasUnsavedDrafts = useMemo(() => Object.values(dirtyDrafts).some(Boolean), [dirtyDrafts]);
-
   const reportDirtyDraft = useCallback((key: string, isDirty: boolean) => {
     setDirtyDrafts((currentDrafts) => {
       if (currentDrafts[key] === isDirty) {
@@ -1378,6 +1414,7 @@ export function App() {
       return;
     }
 
+    activeViewRef.current = view;
     setActiveView(view);
     window.location.hash = view;
   }
