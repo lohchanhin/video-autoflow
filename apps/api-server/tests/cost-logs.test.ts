@@ -1,8 +1,9 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import type { CostLog, GenerateScriptStoryResponse } from "@ai-content-factory/shared-types";
+import type { CostLog, GenerateScriptStoryResponse, GenerateVideoResponse } from "@ai-content-factory/shared-types";
 import type { CostLogsRepository } from "@ai-content-factory/database";
 import type { ScriptStoryService } from "../src/modules/generation/script-story-service.js";
+import type { VideoGenerationService } from "../src/modules/generation/local-pipeline.js";
 import { createApp } from "../src/app.js";
 
 describe("cost logging", () => {
@@ -65,6 +66,47 @@ describe("cost logging", () => {
       totalLogs: 2
     });
     expect(costLogsRepository.summary).toHaveBeenCalledWith({ jobId: "job_cost_test" });
+  });
+
+  it("records compose ledger rows after final MP4 generation", async () => {
+    const costLogsRepository = createCostLogsRepositoryMock();
+    const generationService = {
+      generateVideo: vi.fn().mockResolvedValue(createVideoResponse())
+    } as unknown as VideoGenerationService;
+
+    await request(createApp({ costLogsRepository, generationService }))
+      .post("/generation/video")
+      .send({
+        costLimitRM: 7.5,
+        durationSeconds: 23,
+        jobId: "job_compose_cost",
+        language: "zh-CN",
+        model: "ffmpeg-local",
+        prompt: "合成已生成素材",
+        provider: "local_ffmpeg",
+        sceneCount: 2,
+        templateType: "urban_legend",
+        topic: "雨夜便利店"
+      })
+      .expect(201);
+
+    expect(costLogsRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      costRM: 0,
+      jobId: "job_compose_cost",
+      model: "ffmpeg-local",
+      operation: "generation.compose_video",
+      provider: "local_ffmpeg",
+      pricingStatus: "local_zero",
+      quantity: 23,
+      service: "compose",
+      unit: "seconds",
+      usage: {
+        durationSeconds: 23,
+        sceneCount: 2,
+        storageDriver: "local",
+        usedSceneClips: false
+      }
+    }));
   });
 });
 
@@ -163,6 +205,58 @@ function createScriptResponse(): GenerateScriptStoryResponse {
       },
       negativePrompt: "no text",
       style: "cinematic"
+    }
+  };
+}
+
+function createVideoResponse(): GenerateVideoResponse {
+  const object = {
+    driver: "local" as const,
+    publicUrl: "http://localhost:4000/uploads/jobs/job_compose_cost/final/video.mp4",
+    storagePath: "local://uploads/jobs/job_compose_cost/final/video.mp4"
+  };
+
+  return {
+    artifacts: {
+      finalVideo: object,
+      sceneImages: [object, object],
+      script: object,
+      soundEffects: object,
+      storyboard: object,
+      subtitles: object,
+      voiceover: object
+    },
+    costRM: 0,
+    durationSeconds: 23,
+    jobId: "job_compose_cost",
+    script: {
+      hook: "hook",
+      title: "title",
+      voiceover: "voiceover"
+    },
+    status: "COMPOSED",
+    storyboard: [
+      {
+        camera: "wide",
+        durationSeconds: 12,
+        imagePrompt: "scene one",
+        sceneId: 1,
+        sfx: [],
+        visual: "scene one",
+        voiceText: "voice one"
+      },
+      {
+        camera: "close",
+        durationSeconds: 11,
+        imagePrompt: "scene two",
+        sceneId: 2,
+        sfx: [],
+        visual: "scene two",
+        voiceText: "voice two"
+      }
+    ],
+    storage: {
+      driver: "local"
     }
   };
 }

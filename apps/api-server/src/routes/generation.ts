@@ -1,14 +1,17 @@
 import { Router, type Request, type Response } from "express";
+import { config } from "@ai-content-factory/config";
 import { contentTemplateTypes, type GenerateVideoRequest } from "@ai-content-factory/shared-types";
 import { createLogger } from "@ai-content-factory/logger";
 import { createVideoGenerationService, type ComposeVideo, type VideoGenerationService } from "../modules/generation/local-pipeline.js";
 import type { StorageAdapter } from "@ai-content-factory/storage";
+import type { CostRecorder } from "../modules/costs/cost-recorder.js";
 
 const logger = createLogger({ service: "generation-route" });
 
 export interface CreateGenerationRouterOptions {
   allowMockContent?: boolean | undefined;
   composeVideo?: ComposeVideo | undefined;
+  costRecorder?: CostRecorder | undefined;
   generationService?: VideoGenerationService | undefined;
   storage: StorageAdapter;
 }
@@ -25,6 +28,25 @@ export function createGenerationRouter(options: CreateGenerationRouterOptions): 
     try {
       const input = parseGenerateVideoRequest(req.body);
       const response = await generationService.generateVideo(input);
+      await options.costRecorder?.record({
+        costRM: response.costRM,
+        exchangeRate: config.currency.usdToMyrRate,
+        jobId: response.jobId,
+        model: input.model ?? "ffmpeg",
+        operation: "generation.compose_video",
+        provider: input.provider ?? "local_ffmpeg",
+        pricingSource: input.cost?.pricingSource ?? "Local FFmpeg compose",
+        pricingStatus: response.costRM > 0 ? "configured_rate" : "local_zero",
+        quantity: response.durationSeconds,
+        service: "compose",
+        unit: "seconds",
+        usage: {
+          durationSeconds: response.durationSeconds,
+          sceneCount: response.storyboard.length,
+          storageDriver: response.storage.driver,
+          usedSceneClips: Boolean(response.artifacts.sceneClips?.length)
+        }
+      });
 
       logger.info("Generated local video.", {
         driver: response.storage.driver,

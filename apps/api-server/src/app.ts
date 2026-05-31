@@ -159,6 +159,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
     createGenerationRouter({
       composeVideo: options.composeVideo,
       allowMockContent: options.allowMockGeneration,
+      costRecorder,
       generationService: options.generationService,
       storage
     })

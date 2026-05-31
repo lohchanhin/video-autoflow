@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Sparkles, Square, UserRound, X } from "lucide-react";
-import type { ContentSeries, ProductionAsset, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
+import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
+import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo } from "../lib/admin-data.js";
 import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
@@ -89,7 +90,7 @@ interface CasesPageProps {
 }
 
 type CaseTab = "new" | "queue" | "production";
-type ProductionWorkbenchTab = "overview" | "pipeline" | "script" | "assets" | "voice" | "music" | "clips" | "final" | "publish" | "activity";
+type ProductionWorkbenchTab = "overview" | "pipeline" | "script" | "assets" | "voice" | "music" | "clips" | "final" | "cost" | "publish" | "activity";
 
 const processStatusOptions: ProcessRecordStatus[] = ["pending", "working", "done", "failed", "skipped"];
 
@@ -521,6 +522,40 @@ function ProductionTab(
   }
 ) {
   const [activeProductionTab, setActiveProductionTab] = useState<ProductionWorkbenchTab>("overview");
+  const [caseCostError, setCaseCostError] = useState<string | null>(null);
+  const [caseCostLogs, setCaseCostLogs] = useState<CostLog[]>([]);
+  const [caseCostSummary, setCaseCostSummary] = useState<CostSummaryResponse | null>(null);
+  const [isLoadingCaseCosts, setIsLoadingCaseCosts] = useState(false);
+
+  useEffect(() => {
+    if (!props.selectedJob || activeProductionTab !== "cost") {
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingCaseCosts(true);
+    void Promise.all([
+      getCostSummary(props.selectedJob.id),
+      listCostLogs({ jobId: props.selectedJob.id, limit: 100 })
+    ])
+      .then(([summary, logs]) => {
+        if (cancelled) return;
+        setCaseCostSummary(summary);
+        setCaseCostLogs(logs.logs);
+        setCaseCostError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCaseCostError(error instanceof Error ? error.message : "成本记录读取失败。");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCaseCosts(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProductionTab, props.selectedJob?.id]);
 
   if (!props.selectedJob) {
     return (
@@ -688,7 +723,7 @@ function ProductionTab(
       {props.generationError ? <div className="inline-error">{props.generationError}</div> : null}
 
       <div className="production-workbench-tabs" role="tablist" aria-label="Production workbench sections">
-        {(["overview", "pipeline", "script", "assets", "voice", "music", "clips", "final", "publish", "activity"] as ProductionWorkbenchTab[]).map((tab) => (
+        {(["overview", "pipeline", "script", "assets", "voice", "music", "clips", "final", "cost", "publish", "activity"] as ProductionWorkbenchTab[]).map((tab) => (
           <button className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`} key={tab} type="button" onClick={() => setActiveProductionTab(tab)}>
             {formatProductionTab(tab)}
           </button>
@@ -799,6 +834,16 @@ function ProductionTab(
           job={props.selectedJob}
           publishingTargets={props.publishingTargets}
           uploadPrivateTarget={props.uploadPrivateTarget}
+        />
+      ) : null}
+
+      {activeProductionTab === "cost" ? (
+        <CaseCostLedgerPanel
+          error={caseCostError}
+          isLoading={isLoadingCaseCosts}
+          job={props.selectedJob}
+          logs={caseCostLogs}
+          summary={caseCostSummary}
         />
       ) : null}
 
@@ -913,6 +958,7 @@ function formatProductionTab(tab: ProductionWorkbenchTab): string {
     activity: "Activity",
     assets: "Assets",
     clips: "Clips",
+    cost: "Cost",
     final: "Final MP4",
     music: "Music",
     overview: "Overview",
@@ -1746,6 +1792,89 @@ function getRecordOutputForDisplay(record: JobProcessRecord): string {
   }
 
   return "Required OpenAI scene images are missing. Click Generate images to create reviewable PNG scene assets.";
+}
+
+function CaseCostLedgerPanel(props: {
+  error: string | null;
+  isLoading: boolean;
+  job: AdminJob;
+  logs: CostLog[];
+  summary: CostSummaryResponse | null;
+}) {
+  return (
+    <section className="production-tab-grid two">
+      <section className="panel">
+        <SectionHeader eyebrow="Cost ledger" title="Case 成本账本" action={<StatusPill tone={props.summary?.pricingMissingCount ? "warning" : "success"}>{props.summary?.pricingMissingCount ? "需要补单价" : "已记录"}</StatusPill>} />
+        <div className="budget-stack">
+          <BudgetLine label="MongoDB 账本合计" value={`RM ${(props.summary?.totalCostRM ?? 0).toFixed(4)}`} />
+          <BudgetLine label="Case 本地累计" value={`RM ${props.job.actualCostRM.toFixed(2)}`} />
+          <BudgetLine label="预算上限" value={`RM ${props.job.costLimitRM.toFixed(2)}`} />
+          <BudgetLine label="记录笔数" value={String(props.summary?.totalLogs ?? 0)} />
+          <BudgetLine label="缺少单价" value={String(props.summary?.pricingMissingCount ?? 0)} />
+        </div>
+        {props.error ? <div className="inline-error">{props.error}</div> : null}
+        {props.isLoading ? (
+          <div className="pipeline-gate-note">
+            <Loader2 size={16} className="spin" />
+            <span>正在读取 MongoDB cost_logs...</span>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="panel table-panel">
+        <SectionHeader eyebrow="Provider calls" title="本 Case API / 合成记录" />
+        <div className="settings-table">
+          {props.logs.length === 0 ? (
+            <EmptyState title="暂无成本记录" body="生成脚本、图片、配音、BGM、Seedance clips 或最终 MP4 后，这里会显示 MongoDB cost_logs 明细。" />
+          ) : props.logs.map((log) => (
+            <article className="settings-row" key={log._id}>
+              <div>
+                <strong>{costServiceLabel(log.service)} / {log.provider}</strong>
+                <span>{log.operation} · {log.model}</span>
+              </div>
+              <span>RM {log.costRM.toFixed(4)}</span>
+              <span>{log.quantity} {log.unit}</span>
+              <StatusPill tone={log.pricingStatus === "pricing_missing" ? "warning" : log.pricingStatus === "local_zero" ? "neutral" : "success"}>{costPricingStatusLabel(log.pricingStatus)}</StatusPill>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function costServiceLabel(service: CostLog["service"]): string {
+  const labels: Record<CostLog["service"], string> = {
+    bgm: "背景音乐",
+    compose: "合成",
+    image: "图片",
+    other: "其他",
+    qc: "质检",
+    reference_design: "设计图",
+    script: "脚本",
+    tts: "配音",
+    video: "影片"
+  };
+  return labels[service];
+}
+
+function costPricingStatusLabel(status: CostLog["pricingStatus"]): string {
+  const labels: Record<CostLog["pricingStatus"], string> = {
+    actual_usage: "真实用量",
+    configured_rate: "配置单价",
+    local_zero: "本地零成本",
+    pricing_missing: "待补单价"
+  };
+  return labels[status];
+}
+
+function BudgetLine(props: { label: string; value: string }) {
+  return (
+    <div className="budget-line">
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
+  );
 }
 
 function ActivityLogPanel(props: { activities: CaseActivity[] }) {
