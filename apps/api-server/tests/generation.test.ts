@@ -8,7 +8,7 @@ import { createApp } from "../src/app.js";
 import { buildReferenceDesignPromptForTest, createImageGenerationService } from "../src/modules/generation/image-service.js";
 import { createBgmGenerationService, type BgmGenerationService } from "../src/modules/generation/bgm-service.js";
 import type { ComposeVideoInput } from "../src/modules/generation/local-pipeline.js";
-import type { TtsGenerationService } from "../src/modules/generation/tts-service.js";
+import { createTtsGenerationService, type TtsGenerationService } from "../src/modules/generation/tts-service.js";
 import type { VideoClipGenerationService } from "../src/modules/generation/video-clip-service.js";
 
 afterEach(() => {
@@ -256,6 +256,68 @@ describe("POST /generation/video", () => {
 });
 
 describe("POST /generation/tts", () => {
+  it("applies TTS tool provider overrides from workflow settings", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-tts-override-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      new Response(Buffer.from("fake wav"), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createTtsGenerationService({
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        costUsdPer1KChars: 0,
+        format: "mp3",
+        model: "gpt-4o-mini-tts",
+        usdToMyrRate: 4,
+        voice: "cedar"
+      },
+      storage
+    });
+
+    const response = await service.generateTts({
+      baseUrl: "https://custom-tts.example/v1",
+      cost: {
+        costMode: "character",
+        outputUnitPriceRM: 0.01
+      },
+      costLimitRM: 7.5,
+      jobId: "job_tts_override",
+      language: "zh-CN",
+      model: "custom-tts-model",
+      params: {
+        format: "wav",
+        voice: "nova"
+      },
+      provider: "openai-compatible",
+      voiceoverText: "hello"
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://custom-tts.example/v1/audio/speech",
+      expect.objectContaining({
+        body: JSON.stringify({
+          input: "hello",
+          model: "custom-tts-model",
+          response_format: "wav",
+          voice: "nova"
+        })
+      })
+    );
+    expect(response).toMatchObject({
+      costRM: 0.05,
+      format: "wav",
+      model: "custom-tts-model",
+      provider: "openai-compatible",
+      voice: "nova"
+    });
+  });
+
   it("stores generated OpenAI TTS audio through the storage adapter", async () => {
     const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-tts-test-"));
     const storage = createStorageAdapter({

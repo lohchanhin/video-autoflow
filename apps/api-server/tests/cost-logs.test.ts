@@ -1,8 +1,9 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import type { CostLog, GenerateScriptStoryResponse, GenerateVideoResponse } from "@ai-content-factory/shared-types";
+import type { CostLog, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoResponse } from "@ai-content-factory/shared-types";
 import type { CostLogsRepository } from "@ai-content-factory/database";
 import type { ScriptStoryService } from "../src/modules/generation/script-story-service.js";
+import type { TtsGenerationService } from "../src/modules/generation/tts-service.js";
 import type { VideoGenerationService } from "../src/modules/generation/local-pipeline.js";
 import { createApp } from "../src/app.js";
 
@@ -106,6 +107,35 @@ describe("cost logging", () => {
         storageDriver: "local",
         usedSceneClips: false
       }
+    }));
+  });
+
+  it("marks TTS cost as pricing_missing when no TTS unit price is configured", async () => {
+    const costLogsRepository = createCostLogsRepositoryMock();
+    const ttsGenerationService = {
+      generateTts: vi.fn().mockResolvedValue(createTtsResponse({ costRM: 0 }))
+    } as unknown as TtsGenerationService;
+
+    await request(createApp({ costLogsRepository, ttsGenerationService }))
+      .post("/generation/tts")
+      .send({
+        costLimitRM: 7.5,
+        jobId: "job_tts_cost",
+        language: "zh-CN",
+        voiceoverText: "测试配音"
+      })
+      .expect(201);
+
+    expect(costLogsRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      costRM: 0,
+      jobId: "job_tts_cost",
+      model: "gpt-4o-mini-tts",
+      operation: "generation.tts",
+      pricingStatus: "pricing_missing",
+      provider: "openai",
+      quantity: 4,
+      service: "tts",
+      unit: "characters"
     }));
   });
 });
@@ -258,5 +288,28 @@ function createVideoResponse(): GenerateVideoResponse {
     storage: {
       driver: "local"
     }
+  };
+}
+
+function createTtsResponse(overrides: Partial<GenerateTtsResponse> = {}): GenerateTtsResponse {
+  return {
+    audio: {
+      driver: "local",
+      publicUrl: "http://localhost:4000/uploads/jobs/job_tts_cost/audio/voiceover.mp3",
+      storagePath: "local://uploads/jobs/job_tts_cost/audio/voiceover.mp3"
+    },
+    costRM: 0,
+    format: "mp3",
+    jobId: "job_tts_cost",
+    model: "gpt-4o-mini-tts",
+    provider: "openai",
+    status: "TTS_DONE",
+    usage: {
+      characterCount: 4,
+      pricingMode: "character_count"
+    },
+    voice: "cedar",
+    voiceoverText: "测试配音",
+    ...overrides
   };
 }

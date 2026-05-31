@@ -365,7 +365,12 @@ export function AssetsPage(props: AssetsPageProps) {
           <section className="asset-library-layout">
             <FolderRail activeFolder={activeFolder} folders={folders} setActiveFolder={setActiveFolder} totalCount={libraryAssets.length} />
             <section className="asset-table-panel panel">
-              <div className="asset-filter-row">
+              <div className="asset-library-toolbar">
+                <div className="asset-folder-context" title={`当前文件夹：${activeFolder}`}>
+                  <Folder size={15} />
+                  <span>当前文件夹</span>
+                  <strong>{activeFolder}</strong>
+                </div>
                 <Field label="搜索">
                   <div className="asset-search-input">
                     <Search size={15} />

@@ -30,7 +30,8 @@ export function createTtsRouter(options: CreateTtsRouterOptions): Router {
 
   router.post("/generation/tts", async (req: Request, res: Response, next) => {
     try {
-      const response = await service.generateTts(parseRequest(req.body));
+      const input = parseRequest(req.body);
+      const response = await service.generateTts(input);
       const characterCount = response.usage?.characterCount;
       await options.costRecorder?.record({
         costRM: response.costRM,
@@ -39,8 +40,8 @@ export function createTtsRouter(options: CreateTtsRouterOptions): Router {
         model: response.model,
         operation: "generation.tts",
         provider: response.provider,
-        pricingSource: "OPENAI_TTS_COST_USD_PER_1K_CHARS / https://openai.com/api/pricing/",
-        pricingStatus: "configured_rate",
+        pricingSource: input.cost?.pricingSource ?? (response.costRM > 0 ? "OPENAI_TTS_COST_USD_PER_1K_CHARS / https://openai.com/api/pricing/" : "TTS unit price missing; configure OPENAI_TTS_COST_USD_PER_1K_CHARS or Tool Settings cost."),
+        pricingStatus: response.costRM > 0 ? "configured_rate" : "pricing_missing",
         quantity: typeof characterCount === "number" ? characterCount : response.voiceoverText.length,
         service: "tts",
         unit: "characters",

@@ -1669,6 +1669,52 @@ textarea {
   width: 100%;
 }
 
+.asset-library-toolbar {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 220px) minmax(260px, 1fr) minmax(160px, 220px);
+  min-width: 0;
+}
+
+.asset-library-toolbar .field,
+.asset-library-toolbar input,
+.asset-library-toolbar select {
+  min-width: 0;
+  width: 100%;
+}
+
+.asset-folder-context {
+  align-items: center;
+  background: #f5f8fc;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  color: #102033;
+  display: grid;
+  gap: 2px 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 50px;
+  padding: 9px 12px;
+}
+
+.asset-folder-context svg {
+  color: #53657d;
+  grid-row: span 2;
+}
+
+.asset-folder-context span {
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.asset-folder-context strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .asset-table-wrap {
   border: 1px solid #d7e3f2;
   border-radius: 8px;
@@ -3716,6 +3762,7 @@ textarea {
   .asset-board-metrics,
   .asset-studio-tabs,
   .asset-filter-row,
+  .asset-library-toolbar,
   .asset-two-col,
   .asset-plan-summary-grid,
   .trend-summary-strip,

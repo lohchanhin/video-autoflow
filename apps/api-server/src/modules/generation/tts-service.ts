@@ -48,7 +48,7 @@ export function createTtsGenerationService(options: TtsGenerationServiceOptions)
 
       return {
         audio: toGeneratedObject(audioObject),
-        costRM: applyTtsCostOverride(generated.costRM, normalizedInput),
+        costRM: applyTtsCostOverride(generated.costRM, normalizedInput, voiceoverText.length),
         format: generated.extension,
         jobId,
         model: openaiOptions.model,
@@ -68,6 +68,7 @@ export function createTtsGenerationService(options: TtsGenerationServiceOptions)
 function buildOpenAITtsOptions(options: OpenAITtsClientOptions, input: NormalizedTtsInput): OpenAITtsClientOptions {
   return {
     ...options,
+    apiKey: options.apiKey,
     baseUrl: input.baseUrl?.trim() || options.baseUrl,
     format: stringParam(input.params?.format) || options.format,
     model: input.model?.trim() || options.model,
@@ -75,9 +76,13 @@ function buildOpenAITtsOptions(options: OpenAITtsClientOptions, input: Normalize
   };
 }
 
-function applyTtsCostOverride(costRM: number, input: NormalizedTtsInput): number {
+function applyTtsCostOverride(costRM: number, input: NormalizedTtsInput, characterCount: number): number {
   if (costRM > 0) {
     return costRM;
+  }
+
+  if (input.cost?.costMode === "character" && typeof input.cost.outputUnitPriceRM === "number" && input.cost.outputUnitPriceRM > 0) {
+    return Number((characterCount * input.cost.outputUnitPriceRM).toFixed(4));
   }
 
   return Number((input.cost?.fallbackCostRM ?? 0).toFixed(4));
@@ -157,6 +162,30 @@ function normalizeInput(input: GenerateTtsRequest): NormalizedTtsInput {
 
   if (input.voice?.trim()) {
     normalized.voice = input.voice.trim();
+  }
+
+  if (input.apiStyle?.trim()) {
+    normalized.apiStyle = input.apiStyle.trim();
+  }
+
+  if (input.baseUrl?.trim()) {
+    normalized.baseUrl = input.baseUrl.trim();
+  }
+
+  if (input.model?.trim()) {
+    normalized.model = input.model.trim();
+  }
+
+  if (input.provider?.trim()) {
+    normalized.provider = input.provider.trim();
+  }
+
+  if (input.cost) {
+    normalized.cost = input.cost;
+  }
+
+  if (input.params) {
+    normalized.params = input.params;
   }
 
   return normalized;
