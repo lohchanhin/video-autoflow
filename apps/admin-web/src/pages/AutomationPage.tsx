@@ -2,7 +2,7 @@ import { Play, Power, PowerOff } from "lucide-react";
 import { useEffect } from "react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
-import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type PublishingTarget, type ScheduleRun, type ToolProviderSettings } from "../lib/admin-data.js";
+import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type ProviderKeyRecord, type PublishingTarget, type ScheduleRun, type ToolProviderSettings } from "../lib/admin-data.js";
 import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 import { evaluateScheduleRunGuard } from "../lib/schedule-guards.js";
@@ -12,6 +12,7 @@ interface AutomationPageProps {
   endpoints: AiToolEndpoint[];
   jobs: AdminJob[];
   producerAgent: StaffAgent | null;
+  providerKeys: ProviderKeyRecord[];
   publishingTargets: PublishingTarget[];
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   runSchedule: (scheduleId: string) => void;
@@ -57,6 +58,7 @@ export function AutomationPage(props: AutomationPageProps) {
               jobs={props.jobs}
               key={schedule.id}
               producerAgent={props.producerAgent}
+              providerKeys={props.providerKeys}
               publishingTargets={props.publishingTargets}
               reportDirtyState={props.reportDirtyState}
               runSchedule={props.runSchedule}
@@ -94,6 +96,7 @@ function ScheduleCard(props: {
   endpoints: AiToolEndpoint[];
   jobs: AdminJob[];
   producerAgent: StaffAgent | null;
+  providerKeys: ProviderKeyRecord[];
   publishingTargets: PublishingTarget[];
   reportDirtyState?: AutomationPageProps["reportDirtyState"];
   runSchedule: (scheduleId: string) => void;
@@ -111,6 +114,7 @@ function ScheduleCard(props: {
     endpoints: props.endpoints,
     jobs: props.jobs,
     producerAgent: props.producerAgent,
+    providerKeys: props.providerKeys,
     publishingTargets: props.publishingTargets,
     schedule: props.schedule,
     settings: props.settings

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultProducerAgent } from "./agents.js";
-import { loadAiToolEndpoints, loadToolProviderSettings, type ToolProviderSettings } from "./admin-data.js";
+import { loadAiToolEndpoints, loadProviderKeys, loadToolProviderSettings, type ProviderKeyRecord, type ToolProviderSettings } from "./admin-data.js";
 import {
   findWorkflowToolSetting,
   getToolTypeForStage,
@@ -84,4 +84,65 @@ describe("workflow readiness", () => {
       tone: "danger"
     });
   });
+
+  it("blocks required external tools when the matching provider key is missing", () => {
+    const endpoint = loadAiToolEndpoints().find((candidate) => candidate.id === "tool_llm")!;
+    const setting = loadToolProviderSettings().find((candidate) => candidate.toolType === "llm")!;
+    const state = getWorkflowOperationalState({
+      agent: defaultProducerAgent,
+      endpoint,
+      providerKeys: loadProviderKeys(),
+      setting,
+      stageId: "script"
+    });
+
+    expect(state.ready).toBe(false);
+    expect(state.tone).toBe("danger");
+    expect(state.label).toContain("OPENAI_API_KEY");
+  });
+
+  it("allows required external tools after the matching provider key is configured", () => {
+    const endpoint = loadAiToolEndpoints().find((candidate) => candidate.id === "tool_llm")!;
+    const setting = loadToolProviderSettings().find((candidate) => candidate.toolType === "llm")!;
+    const state = getWorkflowOperationalState({
+      agent: defaultProducerAgent,
+      endpoint,
+      providerKeys: configuredProviderKeys(["OPENAI_API_KEY"]),
+      setting,
+      stageId: "script"
+    });
+
+    expect(state.ready).toBe(true);
+    expect(state.tone).not.toBe("danger");
+  });
+
+  it("warns instead of hard-blocking optional video tools when Seedance key is missing", () => {
+    const endpoint = loadAiToolEndpoints().find((candidate) => candidate.id === "tool_video")!;
+    const setting = loadToolProviderSettings().find((candidate) => candidate.toolType === "video")!;
+    const state = getWorkflowOperationalState({
+      agent: defaultProducerAgent,
+      endpoint,
+      providerKeys: loadProviderKeys(),
+      setting,
+      stageId: "video"
+    });
+
+    expect(state.ready).toBe(true);
+    expect(state.required).toBe(false);
+    expect(state.tone).toBe("warning");
+    expect(state.label).toContain("BYTEPLUS_ARK_API_KEY");
+  });
 });
+
+function configuredProviderKeys(keyNames: string[]): ProviderKeyRecord[] {
+  return loadProviderKeys().map((key) =>
+    keyNames.includes(key.keyName)
+      ? {
+          ...key,
+          lastFour: "test",
+          status: "configured",
+          updatedAt: new Date(0).toISOString()
+        }
+      : key
+  );
+}

@@ -389,7 +389,7 @@ export function AssetsPage(props: AssetsPageProps) {
                         {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
                       </div>
                       <strong>{asset.label}</strong>
-                      <span>{asset.folderName} / {assetTypeLabel(asset.type)}</span>
+                      <span>{formatAssetCardMeta(asset)}</span>
                       <StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>
                     </button>
                   ))}
@@ -450,7 +450,7 @@ export function AssetsPage(props: AssetsPageProps) {
                       {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
                     </div>
                     <strong>{asset.label}</strong>
-                    <span>{asset.folderName} / {assetTypeLabel(asset.type)}</span>
+                    <span>{formatAssetCardMeta(asset)}</span>
                     <StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>
                   </button>
                 ))}
@@ -674,6 +674,17 @@ function buildFolderStats(assets: ProductionAsset[]): Array<{ count: number; nam
 
   assets.forEach((asset) => counts.set(asset.folderName || "未分类", (counts.get(asset.folderName || "未分类") ?? 0) + 1));
   return [...counts.entries()].map(([name, count]) => ({ count, name })).sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
+}
+
+function formatAssetCardMeta(asset: ProductionAsset): string {
+  const folderName = asset.folderName.trim();
+  const typeLabel = assetTypeLabel(asset.type);
+
+  if (!folderName || folderName === typeLabel) {
+    return typeLabel;
+  }
+
+  return `${folderName} / ${typeLabel}`;
 }
 
 function splitTags(value: string): string[] {

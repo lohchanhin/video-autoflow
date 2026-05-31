@@ -1501,6 +1501,7 @@ export function App() {
       endpoints: aiToolEndpoints,
       jobs,
       producerAgent: staffAgents[0] ?? null,
+      providerKeys,
       publishingTargets,
       schedule,
       settings: toolProviderSettings
@@ -3860,6 +3861,7 @@ export function App() {
             endpoints={aiToolEndpoints}
             jobs={jobs}
             producerAgent={staffAgents[0] ?? null}
+            providerKeys={providerKeys}
             publishingTargets={publishingTargets}
             reportDirtyState={reportDirtyDraft}
             runSchedule={(scheduleId) => runProductionSchedule(scheduleId, "manual")}
@@ -4091,6 +4093,7 @@ export function App() {
           <WorkflowPage
             agents={staffAgents}
             endpoints={aiToolEndpoints}
+            providerKeys={providerKeys}
             reportDirtyState={reportDirtyDraft}
             resetEndpoints={() => setAiToolEndpoints(resetAiToolEndpoints())}
             resetSettings={() => setToolProviderSettings(resetToolProviderSettings())}

@@ -3,6 +3,7 @@ import { defaultProducerAgent } from "./agents.js";
 import {
   createPublishingTarget,
   loadAiToolEndpoints,
+  loadProviderKeys,
   loadProductionSchedules,
   loadToolProviderSettings,
   type PublishingTarget
@@ -63,6 +64,22 @@ describe("schedule run guards", () => {
 
     expect(guard.canRun).toBe(false);
     expect(guard.blockers.some((blocker) => blocker.includes("只允许手动调用"))).toBe(true);
+  });
+
+  it("blocks automatic runs when a required provider key is missing", () => {
+    const schedule = { ...loadProductionSchedules()[0]!, enabled: true, targetIds: [] };
+    const guard = evaluateScheduleRunGuard({
+      endpoints: loadAiToolEndpoints(),
+      jobs: [],
+      producerAgent: defaultProducerAgent,
+      providerKeys: loadProviderKeys(),
+      publishingTargets: [],
+      schedule,
+      settings: loadToolProviderSettings()
+    });
+
+    expect(guard.canRun).toBe(false);
+    expect(guard.blockers.some((blocker) => blocker.includes("OPENAI_API_KEY"))).toBe(true);
   });
 
   it("blocks when daily quota or budget is exhausted", () => {

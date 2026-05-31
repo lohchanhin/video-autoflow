@@ -1,5 +1,5 @@
 import type { StaffAgent } from "./agents.js";
-import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type PublishingTarget, type ToolProviderSettings } from "./admin-data.js";
+import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type ProviderKeyRecord, type PublishingTarget, type ToolProviderSettings } from "./admin-data.js";
 import type { AdminJob } from "./jobs.js";
 import { productionStages } from "./production.js";
 import { findWorkflowToolSetting, getToolTypeForStage, getWorkflowOperationalState } from "./workflow-readiness.js";
@@ -10,6 +10,7 @@ export interface ScheduleGuardInput {
   jobs: Pick<AdminJob, "actualCostRM" | "costLimitRM" | "createdAt" | "scheduleId" | "source">[];
   now?: Date | undefined;
   producerAgent: StaffAgent | null;
+  providerKeys?: ProviderKeyRecord[] | undefined;
   publishingTargets: PublishingTarget[];
   schedule: ProductionSchedule;
   settings: ToolProviderSettings[];
@@ -96,6 +97,7 @@ function getRequiredWorkflowIssues(input: ScheduleGuardInput): string[] {
     const state = getWorkflowOperationalState({
       agent: input.producerAgent,
       endpoint,
+      providerKeys: input.providerKeys,
       setting,
       stageId: stage.id
     });

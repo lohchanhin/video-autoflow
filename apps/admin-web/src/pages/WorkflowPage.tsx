@@ -11,6 +11,7 @@ import {
   getToolProviderPresets,
   usesCustomToolModel,
   type AiToolEndpoint,
+  type ProviderKeyRecord,
   type ToolProviderSettings,
   type ToolProviderType
 } from "../lib/admin-data.js";
@@ -28,6 +29,7 @@ import {
 interface WorkflowPageProps {
   agents: StaffAgent[];
   endpoints: AiToolEndpoint[];
+  providerKeys: ProviderKeyRecord[];
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   resetSettings: () => void;
   resetEndpoints: () => void;
@@ -68,7 +70,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       const endpoint = props.endpoints.find((candidate) => candidate.stageIds.includes(stage.id)) ?? null;
       const toolType = getToolTypeForStage(stage.id, endpoint);
       const setting = findWorkflowToolSetting(props.settings, toolType);
-      const state = getWorkflowOperationalState({ agent: producerAgent, endpoint, setting, stageId: stage.id });
+      const state = getWorkflowOperationalState({ agent: producerAgent, endpoint, providerKeys: props.providerKeys, setting, stageId: stage.id });
       return { stage, endpoint, setting, ...state };
     });
     const requiredRows = rows.filter((row) => row.required);
@@ -80,7 +82,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       issues: rows.filter((row) => row.tone === "danger" || row.tone === "warning"),
       issueCount: rows.filter((row) => row.tone === "danger").length
     };
-  }, [producerAgent, props.endpoints, props.settings]);
+  }, [producerAgent, props.endpoints, props.providerKeys, props.settings]);
 
   useEffect(() => {
     if (selectedToolSetting?.provider !== "openai") {
