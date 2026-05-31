@@ -141,6 +141,7 @@ import {
   type SceneReviewItem
 } from "./lib/jobs.js";
 import type { ProductionStageId } from "./lib/production.js";
+import { evaluateScheduleRunGuard } from "./lib/schedule-guards.js";
 import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
 
@@ -1465,15 +1466,18 @@ export function App() {
       return;
     }
 
-    const activeTargetIds = schedule.targetIds.filter((targetId) => publishingTargets.some((target) => target.id === targetId && target.enabled));
-    const todaysScheduledJobs = jobs.filter((job) => job.source === "scheduled" && job.scheduleId === schedule.id && isSameLocalDay(job.createdAt));
-    const todaysCostExposure = todaysScheduledJobs.reduce((sum, job) => sum + Math.max(job.actualCostRM, job.costLimitRM), 0);
-    const remainingDailySlots = Math.max(0, schedule.maxVideosPerDay - todaysScheduledJobs.length);
-    const remainingBudgetSlots = Math.max(0, Math.floor((schedule.budgetLimitRM - todaysCostExposure) / 7.5));
-    const plannedCaseCount = Math.min(schedule.maxCasesPerRun, remainingDailySlots, remainingBudgetSlots);
+    const guard = evaluateScheduleRunGuard({
+      endpoints: aiToolEndpoints,
+      jobs,
+      producerAgent: staffAgents[0] ?? null,
+      publishingTargets,
+      schedule,
+      settings: toolProviderSettings
+    });
+    const { activeTargetIds, plannedCaseCount } = guard;
 
-    if (!schedule.enabled || activeTargetIds.length === 0 || plannedCaseCount <= 0) {
-      const reason = !schedule.enabled ? "Schedule is paused." : activeTargetIds.length === 0 ? "No enabled publishing targets." : "Daily quota or budget limit reached.";
+    if (!guard.canRun) {
+      const reason = guard.blockers.join(" ");
       const now = new Date().toISOString();
       setScheduleRuns((currentRuns) => [createScheduleRun({ createdCaseIds: [], error: reason, finishedAt: now, plannedCaseCount: 0, scheduleId, startedAt, status: "blocked" }), ...currentRuns]);
       setProductionSchedules((currentSchedules) =>
@@ -1490,12 +1494,15 @@ export function App() {
       return;
     }
 
-    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createCaseFromSchedule(schedule, todaysScheduledJobs.length + index + 1));
+    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createCaseFromSchedule(schedule, guard.todaysCaseCount + index + 1));
     const newRecords = createdJobs.flatMap((job) => createProcessRecordsForJob(job, staffAgents, aiToolEndpoints));
     const newPublishTargets = createdJobs.flatMap((job) => createCasePublishTargets(job.id, activeTargetIds));
     const newActivities = createdJobs.map((job) =>
       createCaseActivity({
-        detail: `${mode === "manual" ? "Run now" : "Due schedule"} created this case for ${activeTargetIds.length} private upload target(s).`,
+        detail:
+          activeTargetIds.length > 0
+            ? `${mode === "manual" ? "Run now" : "Due schedule"} created this case for ${activeTargetIds.length} private upload target(s).`
+            : `${mode === "manual" ? "Run now" : "Due schedule"} created this case without YouTube targets. It will stop at MP4/QC review.`,
         jobId: job.id,
         title: "Scheduled case created",
         type: "schedule_run"
@@ -3802,11 +3809,14 @@ export function App() {
 
         {activeView === "automation" ? (
           <AutomationPage
+            endpoints={aiToolEndpoints}
             jobs={jobs}
+            producerAgent={staffAgents[0] ?? null}
             publishingTargets={publishingTargets}
             runSchedule={(scheduleId) => runProductionSchedule(scheduleId, "manual")}
             runs={scheduleRuns}
             schedules={productionSchedules}
+            settings={toolProviderSettings}
             updateSchedule={updateProductionSchedule}
           />
         ) : null}

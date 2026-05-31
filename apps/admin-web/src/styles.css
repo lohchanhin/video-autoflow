@@ -2778,6 +2778,43 @@ textarea {
   white-space: nowrap;
 }
 
+.automation-guard-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d6e4f5;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.automation-guard-panel div {
+  min-width: 0;
+}
+
+.automation-guard-panel span {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.automation-guard-panel strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #182230;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-guard-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .automation-form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3562,6 +3599,7 @@ textarea {
   }
 
   .case-form-grid,
+  .automation-guard-panel,
   .automation-form-grid,
   .automation-stat-grid,
   .asset-board-metrics,
@@ -3628,6 +3666,7 @@ textarea {
   .workflow-route-row,
   .workflow-tool-row,
   .workflow-readiness-row,
+  .automation-guard-panel,
   .automation-form-grid,
   .automation-stat-grid,
   .automation-run-row,

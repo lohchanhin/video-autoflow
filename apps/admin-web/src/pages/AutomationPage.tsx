@@ -1,16 +1,21 @@
 import { Play, Power, PowerOff } from "lucide-react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
-import { isSameLocalDay, type ProductionSchedule, type PublishingTarget, type ScheduleRun } from "../lib/admin-data.js";
+import type { StaffAgent } from "../lib/agents.js";
+import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type PublishingTarget, type ScheduleRun, type ToolProviderSettings } from "../lib/admin-data.js";
 import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
+import { evaluateScheduleRunGuard } from "../lib/schedule-guards.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface AutomationPageProps {
+  endpoints: AiToolEndpoint[];
   jobs: AdminJob[];
+  producerAgent: StaffAgent | null;
   publishingTargets: PublishingTarget[];
   runSchedule: (scheduleId: string) => void;
   runs: ScheduleRun[];
   schedules: ProductionSchedule[];
+  settings: ToolProviderSettings[];
   updateSchedule: (id: string, updater: (schedule: ProductionSchedule) => ProductionSchedule) => void;
 }
 
@@ -46,11 +51,14 @@ export function AutomationPage(props: AutomationPageProps) {
         <div className="automation-schedule-list">
           {props.schedules.map((schedule) => (
             <ScheduleCard
+              endpoints={props.endpoints}
               jobs={props.jobs}
               key={schedule.id}
+              producerAgent={props.producerAgent}
               publishingTargets={props.publishingTargets}
               runSchedule={props.runSchedule}
               schedule={schedule}
+              settings={props.settings}
               updateSchedule={props.updateSchedule}
             />
           ))}
@@ -80,16 +88,27 @@ export function AutomationPage(props: AutomationPageProps) {
 }
 
 function ScheduleCard(props: {
+  endpoints: AiToolEndpoint[];
   jobs: AdminJob[];
+  producerAgent: StaffAgent | null;
   publishingTargets: PublishingTarget[];
   runSchedule: (scheduleId: string) => void;
   schedule: ProductionSchedule;
+  settings: ToolProviderSettings[];
   updateSchedule: AutomationPageProps["updateSchedule"];
 }) {
   const scheduleEditor = useEditableDraft(props.schedule, JSON.stringify(props.schedule));
   const draft = scheduleEditor.draft ?? props.schedule;
   const todayCases = props.jobs.filter((job) => job.source === "scheduled" && job.scheduleId === props.schedule.id && isSameLocalDay(job.createdAt));
   const enabledTargetCount = draft.targetIds.filter((targetId) => props.publishingTargets.some((target) => target.id === targetId && target.enabled)).length;
+  const runGuard = evaluateScheduleRunGuard({
+    endpoints: props.endpoints,
+    jobs: props.jobs,
+    producerAgent: props.producerAgent,
+    publishingTargets: props.publishingTargets,
+    schedule: props.schedule,
+    settings: props.settings
+  });
 
   function patchDraft(patch: Partial<ProductionSchedule>) {
     scheduleEditor.setDraftPatch(patch);
@@ -114,7 +133,7 @@ function ScheduleCard(props: {
             </button>
             <button
               className="primary-button"
-              disabled={!props.schedule.enabled || scheduleEditor.isDirty}
+              disabled={!runGuard.canRun || scheduleEditor.isDirty}
               title={scheduleEditor.isDirty ? "保存排程修改后才能 Run now" : undefined}
               type="button"
               onClick={() => props.runSchedule(props.schedule.id)}
@@ -133,6 +152,36 @@ function ScheduleCard(props: {
         <AutomationStat label="Today created" value={`${todayCases.length}/${draft.maxVideosPerDay}`} />
         <AutomationStat label="Targets" value={String(enabledTargetCount)} />
       </div>
+
+      <div className="automation-guard-panel">
+        <div>
+          <span>开工检查</span>
+          <strong>{runGuard.canRun ? `可创建 ${runGuard.plannedCaseCount} 支` : "暂时阻塞"}</strong>
+        </div>
+        <div>
+          <span>今日预算余额</span>
+          <strong>RM {runGuard.remainingBudgetRM.toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>剩余名额</span>
+          <strong>{runGuard.remainingDailySlots}</strong>
+        </div>
+        <div>
+          <span>发布目标</span>
+          <strong>{runGuard.activeTargetIds.length > 0 ? `${runGuard.activeTargetIds.length} 个 private` : "MP4/QC"}</strong>
+        </div>
+      </div>
+
+      {runGuard.blockers.length > 0 || runGuard.warnings.length > 0 ? (
+        <div className="automation-guard-list">
+          {runGuard.blockers.map((blocker) => (
+            <StatusPill key={blocker} tone="danger">{blocker}</StatusPill>
+          ))}
+          {runGuard.warnings.map((warning) => (
+            <StatusPill key={warning} tone="warning">{warning}</StatusPill>
+          ))}
+        </div>
+      ) : null}
 
       <div className="automation-form-grid">
         <Field label="Schedule name">
