@@ -105,7 +105,7 @@ function matchesToolType(modelId: string, toolType: string): boolean {
   const id = modelId.toLowerCase();
 
   if (toolType === "image" || toolType === "design_image") {
-    return id.startsWith("gpt-image") || id.startsWith("dall-e");
+    return id.startsWith("gpt-image") || id.startsWith("dall-e") || id.includes("image");
   }
 
   if (toolType === "tts") {
@@ -116,6 +116,7 @@ function matchesToolType(modelId: string, toolType: string): boolean {
     return (
       (id.startsWith("gpt-") || id.startsWith("o") || id.startsWith("chatgpt-")) &&
       !id.startsWith("gpt-image") &&
+      !id.includes("image") &&
       !id.includes("tts") &&
       !id.includes("transcribe") &&
       !id.includes("embedding") &&

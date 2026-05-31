@@ -25,6 +25,7 @@ describe("GET /providers/openai/models", () => {
           data: [
             { created: 1, id: "gpt-4.1-mini", owned_by: "openai" },
             { created: 2, id: "gpt-image-1.5", owned_by: "openai" },
+            { created: 3, id: "chatgpt-image-latest", owned_by: "openai" },
             { created: 3, id: "gpt-5.5", owned_by: "openai" }
           ]
         }),
@@ -51,5 +52,30 @@ describe("GET /providers/openai/models", () => {
     });
     expect(response.body.models.map((model: { id: string }) => model.id)).toEqual(["gpt-5.5", "gpt-4.1-mini"]);
     expect(JSON.stringify(response.body)).not.toContain("sk-test-openai-secret");
+  });
+
+  it("keeps image models in image tool lists instead of LLM lists", async () => {
+    const providerModelsFetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            { id: "gpt-5.5", owned_by: "openai" },
+            { id: "chatgpt-image-latest", owned_by: "openai" },
+            { id: "gpt-image-1.5", owned_by: "openai" }
+          ]
+        }),
+        { status: 200 }
+      )
+    );
+    const app = createApp({
+      providerModelsFetch,
+      readProviderSecret: () => "sk-test-openai-secret"
+    });
+
+    const llmResponse = await request(app).get("/providers/openai/models?toolType=llm").expect(200);
+    const imageResponse = await request(app).get("/providers/openai/models?toolType=image").expect(200);
+
+    expect(llmResponse.body.models.map((model: { id: string }) => model.id)).toEqual(["gpt-5.5"]);
+    expect(imageResponse.body.models.map((model: { id: string }) => model.id)).toEqual(["gpt-image-1.5", "chatgpt-image-latest"]);
   });
 });

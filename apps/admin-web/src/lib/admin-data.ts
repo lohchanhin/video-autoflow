@@ -186,7 +186,7 @@ export const openAILlmModels = [
   "gpt-4o-mini"
 ] as const;
 
-export const openAIImageModels = ["gpt-image-1.5", "gpt-image-1", "gpt-image-2"] as const;
+export const openAIImageModels = ["gpt-image-1.5", "chatgpt-image-latest", "gpt-image-1", "gpt-image-2"] as const;
 
 export const openAITtsModels = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"] as const;
 
