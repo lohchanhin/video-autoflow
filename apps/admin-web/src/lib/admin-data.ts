@@ -161,6 +161,19 @@ export interface ToolProviderSettings {
   updatedAt: string;
 }
 
+export interface ToolProviderPreset {
+  id: string;
+  label: string;
+  provider: string;
+  apiStyle: string;
+  baseUrl: string;
+  defaultModel: string;
+  models: string[];
+  params: Record<string, boolean | number | string>;
+  costMode: ToolCostMode;
+  retryLimit: number;
+}
+
 export interface ProviderKeyRecord {
   id: string;
   provider: string;
@@ -198,6 +211,356 @@ const legacyGenreCharacterNames = new Set([
   "童话故事"
 ]);
 const qcReportsKey = "ai-content-factory:qc-reports";
+
+export const customToolModelValue = "__custom_model__";
+export const customToolProviderValue = "__custom_provider__";
+
+const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
+  bgm: [
+    {
+      apiStyle: "elevenlabs-music",
+      baseUrl: "https://api.elevenlabs.io/v1",
+      costMode: "credit",
+      defaultModel: "music_v1",
+      id: "bgm_elevenlabs",
+      label: "ElevenLabs Music",
+      models: ["music_v1"],
+      params: { outputFormat: "mp3_44100_128" },
+      provider: "elevenlabs",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "custom-music-api",
+      baseUrl: "",
+      costMode: "custom",
+      defaultModel: "custom-music-model",
+      id: "bgm_custom",
+      label: "自定义音乐 API",
+      models: ["custom-music-model"],
+      params: {},
+      provider: "custom-music-api",
+      retryLimit: 1
+    }
+  ],
+  compose: [
+    {
+      apiStyle: "ffmpeg",
+      baseUrl: "local://ffmpeg",
+      costMode: "free",
+      defaultModel: "ffmpeg-local",
+      id: "compose_ffmpeg",
+      label: "本地 FFmpeg",
+      models: ["ffmpeg-local"],
+      params: { fps: 30, resolution: "1080x1920" },
+      provider: "local",
+      retryLimit: 0
+    }
+  ],
+  design_image: [
+    {
+      apiStyle: "openai-images",
+      baseUrl: "https://api.openai.com/v1",
+      costMode: "image",
+      defaultModel: "gpt-image-2",
+      id: "design_openai",
+      label: "OpenAI Images",
+      models: ["gpt-image-2", "gpt-image-1"],
+      params: { quality: "high", size: "1024x1536" },
+      provider: "openai",
+      retryLimit: 2
+    },
+    {
+      apiStyle: "fal-image",
+      baseUrl: "https://fal.run",
+      costMode: "image",
+      defaultModel: "fal/flux-pro",
+      id: "design_fal",
+      label: "fal",
+      models: ["fal/flux-pro", "fal/flux/dev", "fal/imagen4/preview"],
+      params: { size: "1024x1536" },
+      provider: "fal",
+      retryLimit: 2
+    },
+    {
+      apiStyle: "replicate-image",
+      baseUrl: "https://api.replicate.com/v1",
+      costMode: "image",
+      defaultModel: "black-forest-labs/flux-1.1-pro",
+      id: "design_replicate",
+      label: "Replicate",
+      models: ["black-forest-labs/flux-1.1-pro", "ideogram-ai/ideogram-v3-turbo"],
+      params: { aspectRatio: "9:16" },
+      provider: "replicate",
+      retryLimit: 2
+    },
+    {
+      apiStyle: "custom-image-api",
+      baseUrl: "",
+      costMode: "custom",
+      defaultModel: "custom-design-model",
+      id: "design_custom",
+      label: "自定义设计图 API",
+      models: ["custom-design-model"],
+      params: {},
+      provider: "custom-design-api",
+      retryLimit: 2
+    }
+  ],
+  image: [
+    {
+      apiStyle: "openai-images",
+      baseUrl: "https://api.openai.com/v1",
+      costMode: "image",
+      defaultModel: "gpt-image-2",
+      id: "image_openai",
+      label: "OpenAI Images",
+      models: ["gpt-image-2", "gpt-image-1"],
+      params: { quality: "medium", size: "1024x1536" },
+      provider: "openai",
+      retryLimit: 2
+    },
+    {
+      apiStyle: "fal-image",
+      baseUrl: "https://fal.run",
+      costMode: "image",
+      defaultModel: "fal/flux-pro",
+      id: "image_fal",
+      label: "fal",
+      models: ["fal/flux-pro", "fal/flux/dev", "fal/imagen4/preview"],
+      params: { size: "1024x1536" },
+      provider: "fal",
+      retryLimit: 2
+    },
+    {
+      apiStyle: "replicate-image",
+      baseUrl: "https://api.replicate.com/v1",
+      costMode: "image",
+      defaultModel: "black-forest-labs/flux-1.1-pro",
+      id: "image_replicate",
+      label: "Replicate",
+      models: ["black-forest-labs/flux-1.1-pro", "ideogram-ai/ideogram-v3-turbo"],
+      params: { aspectRatio: "9:16" },
+      provider: "replicate",
+      retryLimit: 2
+    },
+    {
+      apiStyle: "custom-image-api",
+      baseUrl: "",
+      costMode: "custom",
+      defaultModel: "custom-image-model",
+      id: "image_custom",
+      label: "自定义图片 API",
+      models: ["custom-image-model"],
+      params: {},
+      provider: "custom-image-api",
+      retryLimit: 2
+    }
+  ],
+  llm: [
+    {
+      apiStyle: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+      costMode: "tokens",
+      defaultModel: "gpt-4.1-mini",
+      id: "llm_openai",
+      label: "OpenAI",
+      models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
+      params: { maxOutputTokens: 3200 },
+      provider: "openai",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "openai-compatible-chat",
+      baseUrl: "https://api.deepseek.com",
+      costMode: "tokens",
+      defaultModel: "deepseek-chat",
+      id: "llm_deepseek",
+      label: "DeepSeek",
+      models: ["deepseek-chat", "deepseek-reasoner"],
+      params: { maxOutputTokens: 3200 },
+      provider: "deepseek",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "gemini-generate-content",
+      baseUrl: "https://generativelanguage.googleapis.com",
+      costMode: "tokens",
+      defaultModel: "gemini-2.0-flash",
+      id: "llm_gemini",
+      label: "Gemini",
+      models: ["gemini-2.0-flash", "gemini-1.5-pro"],
+      params: { maxOutputTokens: 3200 },
+      provider: "gemini",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "openai-compatible-chat",
+      baseUrl: "",
+      costMode: "custom",
+      defaultModel: "custom-chat-model",
+      id: "llm_custom",
+      label: "自定义兼容 API",
+      models: ["custom-chat-model"],
+      params: { maxOutputTokens: 3200 },
+      provider: "custom-llm-api",
+      retryLimit: 1
+    }
+  ],
+  storage: [
+    {
+      apiStyle: "local-uploads",
+      baseUrl: "local://uploads",
+      costMode: "free",
+      defaultModel: "local-uploads",
+      id: "storage_local",
+      label: "本地 uploads",
+      models: ["local-uploads"],
+      params: { driver: "local" },
+      provider: "local",
+      retryLimit: 0
+    },
+    {
+      apiStyle: "gcs",
+      baseUrl: "https://storage.googleapis.com",
+      costMode: "custom",
+      defaultModel: "gcs-bucket",
+      id: "storage_gcs",
+      label: "Google Cloud Storage",
+      models: ["gcs-bucket"],
+      params: { driver: "gcs" },
+      provider: "gcs",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "s3-compatible",
+      baseUrl: "http://minio:9000",
+      costMode: "custom",
+      defaultModel: "minio-bucket",
+      id: "storage_minio",
+      label: "MinIO / S3",
+      models: ["minio-bucket"],
+      params: { driver: "minio" },
+      provider: "minio",
+      retryLimit: 1
+    }
+  ],
+  subtitle: [
+    {
+      apiStyle: "local-worker",
+      baseUrl: "local://subtitle-worker",
+      costMode: "free",
+      defaultModel: "local-srt",
+      id: "subtitle_local",
+      label: "本地字幕 Worker",
+      models: ["local-srt", "local-ass"],
+      params: { format: "srt" },
+      provider: "local",
+      retryLimit: 0
+    }
+  ],
+  tts: [
+    {
+      apiStyle: "openai-tts",
+      baseUrl: "https://api.openai.com/v1",
+      costMode: "character",
+      defaultModel: "gpt-4o-mini-tts",
+      id: "tts_openai",
+      label: "OpenAI TTS",
+      models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
+      params: { format: "mp3", voice: "verse" },
+      provider: "openai",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "elevenlabs-tts",
+      baseUrl: "https://api.elevenlabs.io/v1",
+      costMode: "character",
+      defaultModel: "eleven_multilingual_v2",
+      id: "tts_elevenlabs",
+      label: "ElevenLabs TTS",
+      models: ["eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_turbo_v2_5"],
+      params: { format: "mp3_44100_128" },
+      provider: "elevenlabs",
+      retryLimit: 1
+    },
+    {
+      apiStyle: "custom-tts-api",
+      baseUrl: "",
+      costMode: "custom",
+      defaultModel: "custom-tts-model",
+      id: "tts_custom",
+      label: "自定义 TTS API",
+      models: ["custom-tts-model"],
+      params: {},
+      provider: "custom-tts-api",
+      retryLimit: 1
+    }
+  ],
+  video: [
+    {
+      apiStyle: "byteplus-ark",
+      baseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
+      costMode: "tokens",
+      defaultModel: "dreamina-seedance-2-0-260128",
+      id: "video_seedance",
+      label: "BytePlus Seedance",
+      models: ["dreamina-seedance-2-0-260128", "dreamina-seedance-2-0-fast"],
+      params: { aspectRatio: "9:16", quality: "720p" },
+      provider: "seedance",
+      retryLimit: 0
+    },
+    {
+      apiStyle: "runway",
+      baseUrl: "https://api.dev.runwayml.com/v1",
+      costMode: "second",
+      defaultModel: "gen4_turbo",
+      id: "video_runway",
+      label: "Runway",
+      models: ["gen4_turbo", "gen3a_turbo"],
+      params: { aspectRatio: "9:16", duration: 5 },
+      provider: "runway",
+      retryLimit: 0
+    },
+    {
+      apiStyle: "minimax-video",
+      baseUrl: "https://api.minimax.io/v1",
+      costMode: "second",
+      defaultModel: "video-01",
+      id: "video_minimax",
+      label: "MiniMax",
+      models: ["video-01", "video-01-live"],
+      params: { aspectRatio: "9:16", duration: 5 },
+      provider: "minimax",
+      retryLimit: 0
+    },
+    {
+      apiStyle: "custom-video-api",
+      baseUrl: "",
+      costMode: "custom",
+      defaultModel: "custom-video-model",
+      id: "video_custom",
+      label: "自定义视频 API",
+      models: ["custom-video-model"],
+      params: {},
+      provider: "custom-video-api",
+      retryLimit: 0
+    }
+  ],
+  youtube: [
+    {
+      apiStyle: "youtube-data-v3",
+      baseUrl: "https://www.googleapis.com",
+      costMode: "credit",
+      defaultModel: "youtube-upload-private",
+      id: "youtube_data",
+      label: "YouTube Data API",
+      models: ["youtube-upload-private"],
+      params: { privacy: "private" },
+      provider: "youtube",
+      retryLimit: 1
+    }
+  ]
+};
 
 const defaultYouTubeAccounts: YouTubeAccount[] = [];
 
@@ -1038,6 +1401,63 @@ export function saveToolProviderSettings(settings: ToolProviderSettings[]): void
 export function resetToolProviderSettings(): ToolProviderSettings[] {
   writeJson(toolProviderSettingsKey, defaultToolProviderSettings);
   return defaultToolProviderSettings;
+}
+
+export function getToolProviderPresets(toolType: ToolProviderType): ToolProviderPreset[] {
+  return toolProviderPresets[toolType] ?? [];
+}
+
+export function getToolProviderPreset(toolType: ToolProviderType, providerOrPresetId: string): ToolProviderPreset | null {
+  const normalizedValue = providerOrPresetId.trim().toLowerCase();
+
+  return getToolProviderPresets(toolType).find((preset) => preset.id.toLowerCase() === normalizedValue || preset.provider.toLowerCase() === normalizedValue) ?? null;
+}
+
+export function getToolModelOptions(setting: Pick<ToolProviderSettings, "model" | "provider" | "toolType">): string[] {
+  const preset = getToolProviderPreset(setting.toolType, setting.provider);
+  const models = preset?.models ?? [];
+  const currentModel = setting.model.trim();
+
+  return Array.from(new Set([...models, ...(currentModel && !models.includes(currentModel) ? [currentModel] : [])]));
+}
+
+export function usesCustomToolModel(setting: Pick<ToolProviderSettings, "model" | "provider" | "toolType">): boolean {
+  const preset = getToolProviderPreset(setting.toolType, setting.provider);
+
+  if (!preset) {
+    return true;
+  }
+
+  return !preset.models.includes(setting.model);
+}
+
+export function applyToolProviderPreset(setting: ToolProviderSettings, presetId: string): ToolProviderSettings {
+  const preset = getToolProviderPreset(setting.toolType, presetId);
+
+  if (!preset) {
+    return {
+      ...setting,
+      apiStyle: "custom",
+      baseUrl: "",
+      costMode: "custom",
+      model: "",
+      params: {},
+      provider: "",
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  return {
+    ...setting,
+    apiStyle: preset.apiStyle,
+    baseUrl: preset.baseUrl,
+    costMode: preset.costMode,
+    model: preset.defaultModel,
+    params: { ...preset.params },
+    provider: preset.provider,
+    retryLimit: preset.retryLimit,
+    updatedAt: new Date().toISOString()
+  };
 }
 
 export function findToolProviderSettings(settings: ToolProviderSettings[], toolType: ToolProviderType): ToolProviderSettings | null {

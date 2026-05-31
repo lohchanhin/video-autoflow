@@ -2,7 +2,18 @@ import { useMemo, useState } from "react";
 import { RefreshCw, Settings2 } from "lucide-react";
 import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
-import type { AiToolEndpoint, ToolProviderSettings, ToolProviderType } from "../lib/admin-data.js";
+import {
+  applyToolProviderPreset,
+  customToolModelValue,
+  customToolProviderValue,
+  getToolModelOptions,
+  getToolProviderPreset,
+  getToolProviderPresets,
+  usesCustomToolModel,
+  type AiToolEndpoint,
+  type ToolProviderSettings,
+  type ToolProviderType
+} from "../lib/admin-data.js";
 import { getProductionStage, productionStages, type ProductionStageId } from "../lib/production.js";
 
 interface WorkflowPageProps {
@@ -62,68 +73,72 @@ export function WorkflowPage(props: WorkflowPageProps) {
       <section className="panel workflow-command-panel">
         <SectionHeader
           eyebrow="Workflow manager"
-          title="Routing, Tools, Readiness"
+          title="路由、工具、就绪检查"
           action={
             <div className="workflow-header-actions">
               <button className="secondary-button" type="button" onClick={props.resetSettings}>
                 <RefreshCw size={15} />
-                Reset models
+                重置模型设置
               </button>
               <button className="secondary-button" type="button" onClick={props.resetEndpoints}>
                 <RefreshCw size={15} />
-                Reset routing
+                重置流程路由
               </button>
             </div>
           }
         />
         <div className="workflow-command-row">
-          <WorkflowStat label="Required ready" value={`${readiness.readyRequiredCount}/${readiness.requiredCount}`} tone={readiness.issueCount === 0 ? "success" : "warning"} />
-          <WorkflowStat label="Autopilot tools" value={`${props.settings.filter((setting) => setting.allowAutopilot && setting.enabled).length}/${props.settings.length}`} tone="active" />
-          <WorkflowStat label="Issues" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
+          <WorkflowStat label="必要阶段就绪" value={`${readiness.readyRequiredCount}/${readiness.requiredCount}`} tone={readiness.issueCount === 0 ? "success" : "warning"} />
+          <WorkflowStat label="允许自动调用" value={`${props.settings.filter((setting) => setting.allowAutopilot && setting.enabled).length}/${props.settings.length}`} tone="active" />
+          <WorkflowStat label="阻塞问题" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
         </div>
         <div className="workflow-tabs" role="tablist" aria-label="Workflow sections">
-          <TabButton active={activeTab === "pipeline"} label="Pipeline" onClick={() => setActiveTab("pipeline")} />
-          <TabButton active={activeTab === "tools"} label="Tools" onClick={() => setActiveTab("tools")} />
-          <TabButton active={activeTab === "readiness"} label="Readiness" onClick={() => setActiveTab("readiness")} />
+          <TabButton active={activeTab === "pipeline"} label="流程路由" onClick={() => setActiveTab("pipeline")} />
+          <TabButton active={activeTab === "tools"} label="工具设置" onClick={() => setActiveTab("tools")} />
+          <TabButton active={activeTab === "readiness"} label="就绪检查" onClick={() => setActiveTab("readiness")} />
         </div>
       </section>
 
       {activeTab === "pipeline" ? (
         <section className="workflow-tab-layout">
           <section className="panel workflow-list-panel">
-            <SectionHeader eyebrow="Stage routing" title="Pipeline Routing" />
-            <div className="workflow-table-header workflow-route-header">
-              <span>Step</span>
-              <span>Output</span>
-              <span>Controller</span>
-              <span>Status</span>
-              <span>Action</span>
-            </div>
-            <div className="workflow-stage-list">
-              {readiness.rows.map(({ stage, label, tone }) => (
-                <article className={`workflow-route-row ${selectedStageId === stage.id ? "selected" : ""}`} key={stage.id}>
-                  <span className="step-index">{stage.order}</span>
-                  <div className="workflow-route-main">
-                    <strong>{stage.label}</strong>
-                    <span>{stage.defaultOutput}</span>
-                  </div>
-                  <span className="agent-controller-cell">{producerAgent?.name ?? "No agent"}</span>
-                  <StatusPill tone={tone}>{label}</StatusPill>
-                  <button
-                    className="secondary-button compact-button"
-                    type="button"
-                    onClick={() => {
-                      setSelectedStageId(stage.id);
-                      const endpoint = props.endpoints.find((candidate) => candidate.stageIds.includes(stage.id));
-                      const setting = props.settings.find((candidate) => endpoint && candidate.toolType === getToolTypeForEndpoint(endpoint));
-                      if (setting) setSelectedToolSettingId(setting.id);
-                    }}
-                  >
-                    <Settings2 size={14} />
-                    Configure
-                  </button>
-                </article>
-              ))}
+            <SectionHeader eyebrow="Stage routing" title="生产流程路由" />
+            <div className="workflow-table-scroll">
+              <div className="workflow-route-table">
+                <div className="workflow-table-header workflow-route-header">
+                  <span>步骤</span>
+                  <span>输出</span>
+                  <span>控制者</span>
+                  <span>状态</span>
+                  <span>操作</span>
+                </div>
+                <div className="workflow-stage-list">
+                  {readiness.rows.map(({ stage, label, tone }) => (
+                    <article className={`workflow-route-row ${selectedStageId === stage.id ? "selected" : ""}`} key={stage.id}>
+                      <span className="step-index">{stage.order}</span>
+                      <div className="workflow-route-main">
+                        <strong title={stage.label}>{stage.label}</strong>
+                        <span title={stage.defaultOutput}>{stage.defaultOutput}</span>
+                      </div>
+                      <span className="agent-controller-cell" title={producerAgent?.name ?? "No agent"}>{producerAgent?.name ?? "No agent"}</span>
+                      <StatusPill tone={tone}>{label}</StatusPill>
+                      <button
+                        className="secondary-button compact-button"
+                        type="button"
+                        onClick={() => {
+                          setSelectedStageId(stage.id);
+                          const endpoint = props.endpoints.find((candidate) => candidate.stageIds.includes(stage.id));
+                          const setting = props.settings.find((candidate) => endpoint && candidate.toolType === getToolTypeForEndpoint(endpoint));
+                          if (setting) setSelectedToolSettingId(setting.id);
+                        }}
+                      >
+                        <Settings2 size={14} />
+                        设置
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -151,50 +166,54 @@ export function WorkflowPage(props: WorkflowPageProps) {
       {activeTab === "tools" ? (
         <section className="workflow-tab-layout">
           <section className="panel workflow-list-panel">
-            <SectionHeader eyebrow="Tool registry" title="AI Tool Endpoints" />
-            <div className="workflow-table-header workflow-tools-header">
-              <span>Tool</span>
-              <span>Provider / model</span>
-              <span>Endpoint</span>
-              <span>Cost</span>
-              <span>Status</span>
-            </div>
-            <div className="workflow-tool-list">
-              {props.settings.map((setting) => (
-                <button
-                  className={`workflow-tool-row ${selectedToolSetting?.id === setting.id ? "selected" : ""}`}
-                  key={setting.id}
-                  type="button"
-                  onClick={() => setSelectedToolSettingId(setting.id)}
-                >
-                  <div>
-                    <strong>{formatToolType(setting.toolType)}</strong>
-                    <span>{setting.allowAutopilot ? "Autopilot allowed" : "Manual only"}</span>
-                  </div>
-                  <div>
-                    <strong>{setting.provider || "not set"}</strong>
-                    <span>{setting.model || "model missing"}</span>
-                  </div>
-                  <span className="mono-cell">{setting.baseUrl || "no endpoint"}</span>
-                  <span>{formatCostMode(setting)}</span>
-                  <StatusPill tone={getToolSettingTone(setting)}>{setting.enabled ? "enabled" : "disabled"}</StatusPill>
-                </button>
-              ))}
+            <SectionHeader eyebrow="Tool registry" title="AI 工具端点" />
+            <div className="workflow-table-scroll">
+              <div className="workflow-tools-table">
+                <div className="workflow-table-header workflow-tools-header">
+                  <span>工具</span>
+                  <span>供应商 / 模型</span>
+                  <span>接口地址</span>
+                  <span>成本</span>
+                  <span>状态</span>
+                </div>
+                <div className="workflow-tool-list">
+                  {props.settings.map((setting) => (
+                    <button
+                      className={`workflow-tool-row ${selectedToolSetting?.id === setting.id ? "selected" : ""}`}
+                      key={setting.id}
+                      type="button"
+                      onClick={() => setSelectedToolSettingId(setting.id)}
+                    >
+                      <div>
+                        <strong title={formatToolType(setting.toolType)}>{formatToolType(setting.toolType)}</strong>
+                        <span>{setting.allowAutopilot ? "允许自动调用" : "仅手动调用"}</span>
+                      </div>
+                      <div>
+                        <strong title={setting.provider || "未设置"}>{setting.provider || "未设置"}</strong>
+                        <span title={setting.model || "缺少模型"}>{setting.model || "缺少模型"}</span>
+                      </div>
+                      <span className="mono-cell" title={setting.baseUrl || "缺少接口地址"}>{setting.baseUrl || "缺少接口地址"}</span>
+                      <span title={formatCostMode(setting)}>{formatCostMode(setting)}</span>
+                      <StatusPill tone={getToolSettingTone(setting)}>{setting.enabled ? "启用" : "停用"}</StatusPill>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 
           <aside className="panel workflow-detail-panel">
             {selectedToolSetting ? (
               <>
-                <SectionHeader eyebrow="Provider/model inspector" title={formatToolType(selectedToolSetting.toolType)} />
+                <SectionHeader eyebrow="供应商与模型设置" title={formatToolType(selectedToolSetting.toolType)} />
                 <ToolProviderEditor setting={selectedToolSetting} updateToolSetting={props.updateToolSetting} />
                 <div className="workflow-stage-notes">
-                  <strong>Routing layer</strong>
-                  <span>Pipeline routing still lives in the Pipeline tab. This panel controls the provider, model, parameters, cost, retry, and autopilot permission used by generation requests.</span>
+                  <strong>路由说明</strong>
+                  <span>流程阶段绑定放在“流程路由”。这里负责每个工具的供应商、模型、参数、成本、重试与自动调用权限。</span>
                 </div>
               </>
             ) : (
-              <EmptyState title="No tool selected" body="Select a provider setting to edit model, endpoint, parameters, cost mode, and autopilot permission." />
+              <EmptyState title="尚未选择工具" body="选择一个工具后，可以编辑供应商、模型、接口、参数、成本和自动调用权限。" />
             )}
           </aside>
         </section>
@@ -202,16 +221,16 @@ export function WorkflowPage(props: WorkflowPageProps) {
 
       {activeTab === "readiness" ? (
         <section className="panel workflow-readiness-panel">
-          <SectionHeader eyebrow="Operational checks" title="Readiness Checklist" />
+          <SectionHeader eyebrow="Operational checks" title="就绪检查清单" />
           <div className="readiness-issue-strip">
             {readiness.issues.length === 0 ? (
-              <StatusPill tone="success">No blocking issues</StatusPill>
+              <StatusPill tone="success">没有阻塞问题</StatusPill>
             ) : (
               readiness.issues.map(({ stage, endpoint, label, tone }) => (
                 <div className="readiness-issue" key={stage.id}>
                   <strong>{stage.label}</strong>
-                  <span>{label} / {endpoint?.provider ?? "No tool"}</span>
-                  <StatusPill tone={tone}>{tone === "danger" ? "Blocker" : "Review"}</StatusPill>
+                  <span>{label} / {endpoint?.provider ?? "未绑定工具"}</span>
+                  <StatusPill tone={tone}>{tone === "danger" ? "阻塞" : "需检查"}</StatusPill>
                 </div>
               ))
             )}
@@ -225,15 +244,15 @@ export function WorkflowPage(props: WorkflowPageProps) {
                   <span>{stage.defaultInput}</span>
                 </div>
                 <div>
-                  <span className="column-label">Owner</span>
-                  <strong>{producerAgent?.name ?? "No agent"}</strong>
+                  <span className="column-label">负责人</span>
+                  <strong>{producerAgent?.name ?? "未设置 Agent"}</strong>
                 </div>
                 <div>
-                  <span className="column-label">Tool</span>
-                  <strong>{endpoint?.provider ?? "Internal"}</strong>
+                  <span className="column-label">工具</span>
+                  <strong>{endpoint?.provider ?? "内部处理"}</strong>
                 </div>
                 <div>
-                  <span className="column-label">Queue</span>
+                  <span className="column-label">队列</span>
                   <strong>{endpoint?.queueName ?? stage.queueName}</strong>
                 </div>
                 <StatusPill tone={tone}>{label}</StatusPill>
@@ -258,29 +277,29 @@ function StageInspector(props: {
 
   return (
     <>
-      <SectionHeader eyebrow="Stage inspector" title={props.selectedStage.label} />
+      <SectionHeader eyebrow="阶段设置" title={props.selectedStage.label} />
       <div className="workflow-summary-strip">
         <div>
-          <span>Queue</span>
+          <span>队列</span>
           <strong>{props.stageEndpoint?.queueName ?? props.selectedStage.queueName}</strong>
         </div>
         <div>
-          <span>Controller</span>
-          <strong>{props.producerAgent?.name ?? "No agent"}</strong>
+          <span>控制者</span>
+          <strong>{props.producerAgent?.name ?? "未设置 Agent"}</strong>
         </div>
         <div>
-          <span>Tool access</span>
-          <strong>{toolAllowed ? "Allowed" : "Blocked"}</strong>
+          <span>工具权限</span>
+          <strong>{toolAllowed ? "允许" : "阻止"}</strong>
         </div>
       </div>
 
-      <Field label="Tool endpoint">
+      <Field label="阶段工具">
         <select
           value={props.stageEndpoint?.id ?? ""}
           onChange={(event) => props.updateStageEndpoint(props.selectedStage.id, event.target.value)}
           disabled={props.selectedStage.id === "brief"}
         >
-          <option value="">No external tool</option>
+          <option value="">不使用外部工具</option>
           {props.endpoints.map((endpoint) => (
             <option key={endpoint.id} value={endpoint.id}>
               {endpoint.stage} - {endpoint.provider}
@@ -290,16 +309,16 @@ function StageInspector(props: {
       </Field>
 
       <div className="workflow-stage-notes">
-        <strong>Output expected</strong>
+        <strong>预期输出</strong>
         <span>{props.selectedStage.defaultOutput}</span>
       </div>
 
       {props.stageEndpoint ? (
         <button className="primary-button" type="button" onClick={() => props.openTools(props.stageEndpoint!.id)}>
-          Edit endpoint in Tools
+          前往工具设置
         </button>
       ) : (
-        <EmptyState title="Internal stage" body="This stage is handled by the admin console and does not require an external tool." />
+        <EmptyState title="内部阶段" body="这个阶段由后台内部处理，不需要绑定外部工具。" />
       )}
     </>
   );
@@ -327,38 +346,75 @@ function ToolProviderEditor(props: {
   }
 
   const params = Object.entries(props.setting.params);
+  const providerPresets = getToolProviderPresets(props.setting.toolType);
+  const selectedProviderPreset = getToolProviderPreset(props.setting.toolType, props.setting.provider);
+  const modelOptions = getToolModelOptions(props.setting);
+  const usesCustomProvider = !selectedProviderPreset;
+  const usesCustomModel = usesCustomToolModel(props.setting);
+  const providerSelectValue = selectedProviderPreset?.id ?? customToolProviderValue;
+  const modelSelectValue = usesCustomModel ? customToolModelValue : props.setting.model;
+
+  function applyPreset(presetId: string) {
+    props.updateToolSetting(props.setting.id, (current) => applyToolProviderPreset(current, presetId));
+  }
 
   return (
     <div className="endpoint-editor">
       <label className="toggle-line endpoint-enabled-line">
         <input type="checkbox" checked={props.setting.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />
-        <span>Enabled for generation requests</span>
+        <span>启用这个工具</span>
       </label>
 
       <div className="two-column-fields">
-        <Field label="Tool type">
+        <Field label="工具类型">
           <input readOnly value={props.setting.toolType} />
         </Field>
-        <Field label="API style">
+        <Field label="API 风格">
           <input value={props.setting.apiStyle} onChange={(event) => patch({ apiStyle: event.target.value })} />
         </Field>
       </div>
 
       <div className="two-column-fields">
-        <Field label="Provider">
-          <input value={props.setting.provider} onChange={(event) => patch({ provider: event.target.value })} />
+        <Field label="供应商">
+          <select value={providerSelectValue} onChange={(event) => applyPreset(event.target.value)}>
+            {providerPresets.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+            <option value={customToolProviderValue}>自定义供应商...</option>
+          </select>
         </Field>
-        <Field label="Model ID">
-          <input value={props.setting.model} onChange={(event) => patch({ model: event.target.value })} />
+        <Field label="模型">
+          <select value={modelSelectValue} onChange={(event) => patch({ model: event.target.value === customToolModelValue ? "" : event.target.value })}>
+            {modelOptions.filter((model) => selectedProviderPreset?.models.includes(model)).map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+            <option value={customToolModelValue}>自定义模型...</option>
+          </select>
         </Field>
       </div>
 
-      <Field label="Base URL">
+      {usesCustomProvider ? (
+        <Field label="自定义供应商 ID">
+          <input value={props.setting.provider} onChange={(event) => patch({ provider: event.target.value })} placeholder="例如 custom-video-api" />
+        </Field>
+      ) : null}
+
+      {usesCustomModel ? (
+        <Field label="自定义模型 ID">
+          <input value={props.setting.model} onChange={(event) => patch({ model: event.target.value })} placeholder="输入自定义 model id" />
+        </Field>
+      ) : null}
+
+      <Field label="接口地址">
         <input value={props.setting.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} />
       </Field>
 
       <div className="two-column-fields">
-        <Field label="Cost mode">
+        <Field label="成本模式">
           <select value={props.setting.costMode} onChange={(event) => patch({ costMode: event.target.value as ToolProviderSettings["costMode"] })}>
             <option value="tokens">tokens</option>
             <option value="image">image</option>
@@ -369,36 +425,36 @@ function ToolProviderEditor(props: {
             <option value="custom">custom</option>
           </select>
         </Field>
-        <Field label="Retry limit">
+        <Field label="重试次数">
           <input type="number" min={0} max={10} value={props.setting.retryLimit} onChange={(event) => patch({ retryLimit: Number(event.target.value) })} />
         </Field>
       </div>
 
       <div className="three-column-fields">
-        <Field label="Input unit RM">
+        <Field label="输入单价 RM">
           <input type="number" min={0} step="0.0001" value={props.setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value) })} />
         </Field>
-        <Field label="Output unit RM">
+        <Field label="输出单价 RM">
           <input type="number" min={0} step="0.0001" value={props.setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value) })} />
         </Field>
-        <Field label="Fallback RM">
+        <Field label="保底成本 RM">
           <input type="number" min={0} step="0.0001" value={props.setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value) })} />
         </Field>
       </div>
 
       <label className="toggle-line endpoint-enabled-line">
         <input type="checkbox" checked={props.setting.allowAutopilot} onChange={(event) => patch({ allowAutopilot: event.target.checked })} />
-        <span>Allow autopilot to call this tool</span>
+        <span>允许主控 Agent 自动调用这个工具</span>
       </label>
 
       <div className="tool-param-list">
         <div className="section-heading-row">
           <div>
-            <span>Tool params</span>
-            <strong>Editable request parameters</strong>
+            <span>工具参数</span>
+            <strong>随请求传入的可编辑参数</strong>
           </div>
         </div>
-        {params.length === 0 ? <EmptyState title="No params yet" body="Add provider parameters like quality, size, voice, format, aspectRatio, or custom switches." /> : null}
+        {params.length === 0 ? <EmptyState title="还没有参数" body="可加入 quality、size、voice、format、aspectRatio 等供应商参数。" /> : null}
         {params.map(([name, value]) => (
           <div className="tool-param-row" key={name}>
             <strong>{name}</strong>
@@ -412,7 +468,7 @@ function ToolProviderEditor(props: {
                 })
               }
             >
-              Remove
+              移除
             </button>
           </div>
         ))}
@@ -424,7 +480,7 @@ function ToolProviderEditor(props: {
             updateParam(nextName, "");
           }}
         >
-          Add param
+          新增参数
         </button>
       </div>
     </div>
@@ -478,58 +534,58 @@ function getToolTypeForEndpoint(endpoint: AiToolEndpoint): ToolProviderType {
 
 function formatToolType(toolType: ToolProviderType): string {
   const labels: Record<ToolProviderType, string> = {
-    bgm: "BGM / music",
-    compose: "FFmpeg compose",
-    design_image: "Design image",
-    image: "Scene image",
-    llm: "Script / storyboard",
-    storage: "Storage",
-    subtitle: "Subtitles",
-    tts: "Voiceover / TTS",
-    video: "Video clips",
-    youtube: "YouTube publish"
+    bgm: "背景音乐",
+    compose: "FFmpeg 合成",
+    design_image: "设计图",
+    image: "场景图片",
+    llm: "脚本 / 分镜",
+    storage: "存储",
+    subtitle: "字幕",
+    tts: "配音 / TTS",
+    video: "视频片段",
+    youtube: "YouTube 发布"
   };
 
   return labels[toolType];
 }
 
 function formatCostMode(setting: ToolProviderSettings): string {
-  if (setting.costMode === "free") return "free";
+  if (setting.costMode === "free") return "免费";
   if (setting.inputUnitPriceRM > 0 || setting.outputUnitPriceRM > 0) {
     return `${setting.costMode} / RM ${setting.inputUnitPriceRM.toFixed(4)} + ${setting.outputUnitPriceRM.toFixed(4)}`;
   }
-  if (setting.fallbackCostRM > 0) return `${setting.costMode} / fallback RM ${setting.fallbackCostRM.toFixed(4)}`;
-  return `${setting.costMode} / not priced`;
+  if (setting.fallbackCostRM > 0) return `${setting.costMode} / 保底 RM ${setting.fallbackCostRM.toFixed(4)}`;
+  return `${setting.costMode} / 未定价`;
 }
 
 function getOperationalState(stageId: ProductionStageId, endpoint: AiToolEndpoint | null, agent: StaffAgent | null): { label: string; tone: PillTone; ready: boolean; required: boolean } {
   if (!agent || agent.status !== "active") {
-    return { label: "agent off", tone: "danger", ready: false, required: stageId !== "video" };
+    return { label: "Agent 未启用", tone: "danger", ready: false, required: stageId !== "video" };
   }
 
   if (stageId === "brief") {
-    return { label: "ready", tone: "success", ready: true, required: true };
+    return { label: "就绪", tone: "success", ready: true, required: true };
   }
 
   if (!endpoint) {
-    return { label: "needs tool", tone: "danger", ready: false, required: stageId !== "video" };
+    return { label: "缺少工具", tone: "danger", ready: false, required: stageId !== "video" };
   }
 
   if (!agent.allowedToolIds.includes(endpoint.id)) {
-    return { label: "tool blocked", tone: "danger", ready: false, required: stageId !== "video" };
+    return { label: "工具未授权", tone: "danger", ready: false, required: stageId !== "video" };
   }
 
   if (!endpoint.enabled || endpoint.status === "disabled") {
     if (stageId === "video") {
-      return { label: "optional off", tone: "neutral", ready: true, required: false };
+      return { label: "可选关闭", tone: "neutral", ready: true, required: false };
     }
 
-    return { label: "disabled", tone: "danger", ready: false, required: true };
+    return { label: "已停用", tone: "danger", ready: false, required: true };
   }
 
   if (endpoint.status === "needs_setup") {
-    return { label: "needs setup", tone: "danger", ready: false, required: stageId !== "video" };
+    return { label: "需要设置", tone: "danger", ready: false, required: stageId !== "video" };
   }
 
-  return { label: "ready", tone: "success", ready: true, required: stageId !== "video" };
+  return { label: "就绪", tone: "success", ready: true, required: stageId !== "video" };
 }

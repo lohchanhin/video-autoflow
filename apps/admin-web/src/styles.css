@@ -3033,9 +3033,10 @@ textarea {
 
 .workflow-tab-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(340px, 420px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
   gap: 14px;
   align-items: start;
+  max-width: 100%;
 }
 
 .workflow-list-panel,
@@ -3048,7 +3049,8 @@ textarea {
   position: sticky;
   top: 20px;
   max-height: calc(100vh - 40px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .workflow-stage-list,
@@ -3056,6 +3058,21 @@ textarea {
 .workflow-readiness-list {
   display: grid;
   gap: 8px;
+}
+
+.workflow-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.workflow-route-table {
+  min-width: 920px;
+}
+
+.workflow-tools-table {
+  min-width: 980px;
 }
 
 .workflow-table-header {
@@ -3136,6 +3153,15 @@ textarea {
   border-radius: 8px;
   text-align: left;
   background: #fbfcfe;
+}
+
+.workflow-tool-row > span,
+.workflow-tool-row .mono-cell {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .readiness-issue-strip {
