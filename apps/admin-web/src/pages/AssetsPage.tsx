@@ -30,6 +30,7 @@ interface AssetsPageProps {
   assetError: string | null;
   assets: ProductionAsset[];
   bootstrapAssetsForJob: (job: AdminJob) => void;
+  cloneAsset: (asset: ProductionAsset) => Promise<ProductionAsset | null | void> | ProductionAsset | null | void;
   createDesignAsset: (input: DesignAssetInput) => Promise<ProductionAsset | null | void> | ProductionAsset | null | void;
   createManualAsset: (job: AdminJob | null) => void;
   deleteAsset: (id: string) => void;
@@ -202,6 +203,21 @@ export function AssetsPage(props: AssetsPageProps) {
     }
   }
 
+  async function cloneAssetAsDraft(asset: ProductionAsset) {
+    if (!confirmDiscardDirtyDraft(editableAsset.isDirty)) {
+      return;
+    }
+
+    const clonedAsset = await props.cloneAsset(asset);
+
+    if (clonedAsset && typeof clonedAsset === "object" && "_id" in clonedAsset) {
+      props.selectAsset(null);
+      setActiveDraftAssetId(clonedAsset._id);
+      setActiveTab("generate");
+      setAssetSaveMessage(null);
+    }
+  }
+
   function updateDraftType(type: ProductionAssetType) {
     setDraftType(type);
     setDraftFolderName(defaultFolderForType(type));
@@ -319,6 +335,7 @@ export function AssetsPage(props: AssetsPageProps) {
             isDirty={editableAsset.isDirty}
             deleteAsset={props.deleteAsset}
             generateAsset={props.generateAsset}
+            cloneAsset={cloneAssetAsDraft}
             generating={generatingDraft}
             isWaitingForNewAsset={isSubmittingDraft && !selectedAsset}
             job={selectedJob}
@@ -382,6 +399,7 @@ export function AssetsPage(props: AssetsPageProps) {
               isDirty={editableAsset.isDirty}
               deleteAsset={props.deleteAsset}
               generateAsset={props.generateAsset}
+              cloneAsset={cloneAssetAsDraft}
               generating={generatingDraft}
               job={selectedJob}
               openCase={props.openCase}
@@ -448,6 +466,7 @@ export function AssetsPage(props: AssetsPageProps) {
             isDirty={editableAsset.isDirty}
             deleteAsset={props.deleteAsset}
             generateAsset={props.generateAsset}
+            cloneAsset={cloneAssetAsDraft}
             generating={generatingDraft}
             job={selectedJob}
             openCase={props.openCase}
@@ -466,6 +485,7 @@ export function AssetsPage(props: AssetsPageProps) {
 
 function AssetInspector(props: {
   asset: ProductionAsset | null;
+  cloneAsset: (asset: ProductionAsset) => void;
   deleteAsset: (id: string) => void;
   emptyBody?: string | undefined;
   emptyTitle?: string | undefined;
@@ -502,6 +522,7 @@ function AssetInspector(props: {
   }
 
   const asset = props.asset;
+  const approvedLibraryAsset = Boolean(props.protectRegenerate && asset.status === "approved");
 
   return (
     <section className="asset-inspector panel">
@@ -513,7 +534,8 @@ function AssetInspector(props: {
         <button
           className="primary-button"
           type="button"
-          disabled={props.generating || asset.type === "bgm_reference"}
+          disabled={props.generating || asset.type === "bgm_reference" || approvedLibraryAsset}
+          title={approvedLibraryAsset ? "已保存入库的资产不会直接覆盖；请复制为新版本草稿后再生成。" : undefined}
           onClick={() => {
             if (props.protectRegenerate && !window.confirm(`重新生成会覆盖「${asset.label}」目前的图片结果。确定要继续吗？`)) {
               return;
@@ -531,6 +553,13 @@ function AssetInspector(props: {
           {props.generating ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
           {props.generating ? "生成中" : props.protectRegenerate ? "重新生成并覆盖" : "生成草稿"}
         </button>
+        {approvedLibraryAsset ? <span className="asset-version-lock">已入库资产不会直接覆盖，请复制为新版本继续改。</span> : null}
+        {props.protectRegenerate && props.sourceAsset ? (
+          <button className="secondary-button" type="button" onClick={() => props.cloneAsset(props.sourceAsset!)}>
+            <Plus size={15} />
+            复制为新版本草稿
+          </button>
+        ) : null}
         <button className="secondary-button" type="button" onClick={() => props.saveAsset({ status: "approved" })}>
           <Save size={15} />
           满意，保存入库

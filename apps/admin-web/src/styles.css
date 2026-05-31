@@ -1765,6 +1765,19 @@ textarea {
   min-width: 0;
 }
 
+.asset-version-lock {
+  align-items: center;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 8px;
+  color: #7a4b00;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 850;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
 .asset-inspector-footer {
   justify-content: space-between;
 }

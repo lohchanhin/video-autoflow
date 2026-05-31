@@ -141,6 +141,7 @@ import {
   type SceneReviewItem
 } from "./lib/jobs.js";
 import type { ProductionStageId } from "./lib/production.js";
+import { buildProductionAssetVersionDraft } from "./lib/production-assets.js";
 import { evaluateScheduleRunGuard } from "./lib/schedule-guards.js";
 import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
@@ -2413,6 +2414,28 @@ export function App() {
     }
   }
 
+  async function handleCloneProductionAsset(asset: ProductionAsset): Promise<ProductionAsset | null> {
+    if (apiState !== "online") {
+      setAssetError(`API server is ${apiState}. 复制资产版本需要 ${apiBaseUrl}。`);
+      return null;
+    }
+
+    try {
+      const response = await requestCreateProductionAsset(buildProductionAssetVersionDraft(asset));
+
+      setProductionAssets((currentAssets) => [response.asset, ...currentAssets.filter((currentAsset) => currentAsset._id !== response.asset._id)]);
+      setSelectedProductionAssetId(response.asset._id);
+      setAssetFilterJobId(response.asset.jobId === libraryJobId ? "" : response.asset.jobId);
+      setAssetFilterType(response.asset.type);
+      setAssetError(null);
+      appendCaseActivity(asset.jobId, "stage_updated", "Production asset version draft created", `${response.asset.label} was forked from ${asset.label}; the original approved asset was preserved.`);
+      return response.asset;
+    } catch (error) {
+      setAssetError(error instanceof Error ? error.message : "资产版本草稿创建失败。");
+      return null;
+    }
+  }
+
   async function handleUpdateProductionAsset(id: string, patch: Partial<Pick<ProductionAsset, "costRM" | "error" | "folderName" | "label" | "notes" | "prompt" | "provider" | "role" | "sceneId" | "scope" | "status" | "storagePath" | "tags" | "type" | "url">>) {
     try {
       const response = await requestPatchProductionAsset(id, patch);
@@ -4011,6 +4034,7 @@ export function App() {
             bootstrapAssetsForJob={(job) => void handleBootstrapProductionAssets(job)}
             createDesignAsset={(input) => handleCreateDesignProductionAsset(input)}
             createManualAsset={(job) => void handleCreateProductionAsset(job)}
+            cloneAsset={(asset) => handleCloneProductionAsset(asset)}
             deleteAsset={(id) => void handleDeleteProductionAsset(id)}
             filterJobId={assetFilterJobId}
             filterStatus={assetFilterStatus}
