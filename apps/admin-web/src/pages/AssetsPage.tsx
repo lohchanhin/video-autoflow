@@ -68,9 +68,9 @@ export function AssetsPage(props: AssetsPageProps) {
   const folders = useMemo(() => buildFolderStats(libraryAssets), [libraryAssets]);
   const libraryVisibleAssets = filterAssets(libraryAssets, {
     activeFolder,
-    filterJobId: props.filterJobId,
+    filterJobId: "",
     filterStatus: props.filterStatus,
-    filterType: props.filterType,
+    filterType: "",
     searchText,
     useFolder: true
   });
@@ -93,7 +93,7 @@ export function AssetsPage(props: AssetsPageProps) {
   const selectedJob = selectedAsset ? props.jobs.find((job) => job.id === selectedAsset.jobId) ?? null : null;
   const readyReferences = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && asset.role === "reference_image" && isGeneratedDesignAsset(asset)).length;
   const readyFrames = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && (asset.role === "first_frame" || asset.role === "last_frame") && isGeneratedDesignAsset(asset)).length;
-  const blockedAssets = casePlanVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
+  const blockedAssets = libraryVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
   const generatingDraft = selectedAsset ? props.generatingAssetIds.includes(selectedAsset._id) : false;
 
   useEffect(() => {
@@ -352,12 +352,6 @@ export function AssetsPage(props: AssetsPageProps) {
                     <Search size={15} />
                     <input value={searchText} placeholder="搜索名称、prompt、标签、文件夹" onChange={(event) => setSearchText(event.target.value)} />
                   </div>
-                </Field>
-                <Field label="类型">
-                  <select value={props.filterType} onChange={(event) => props.setFilterType(event.target.value as ProductionAssetType | "")}>
-                    <option value="">全部类型</option>
-                    {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
-                  </select>
                 </Field>
                 <Field label="状态">
                   <select value={props.filterStatus} onChange={(event) => props.setFilterStatus(event.target.value as ProductionAssetStatus | "")}>
