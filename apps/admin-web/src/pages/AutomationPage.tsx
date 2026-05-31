@@ -86,7 +86,7 @@ function ScheduleCard(props: {
   schedule: ProductionSchedule;
   updateSchedule: AutomationPageProps["updateSchedule"];
 }) {
-  const scheduleEditor = useEditableDraft(props.schedule, props.schedule.id);
+  const scheduleEditor = useEditableDraft(props.schedule, JSON.stringify(props.schedule));
   const draft = scheduleEditor.draft ?? props.schedule;
   const todayCases = props.jobs.filter((job) => job.source === "scheduled" && job.scheduleId === props.schedule.id && isSameLocalDay(job.createdAt));
   const enabledTargetCount = draft.targetIds.filter((targetId) => props.publishingTargets.some((target) => target.id === targetId && target.enabled)).length;
@@ -108,15 +108,17 @@ function ScheduleCard(props: {
         title={draft.name}
         action={
           <>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, enabled: !schedule.enabled }))}
-            >
-              {props.schedule.enabled ? <PowerOff size={15} /> : <Power size={15} />}
-              {props.schedule.enabled ? "Pause" : "Enable"}
+            <button className="secondary-button" type="button" onClick={() => patchDraft({ enabled: !draft.enabled })}>
+              {draft.enabled ? <PowerOff size={15} /> : <Power size={15} />}
+              {draft.enabled ? "Pause draft" : "Enable draft"}
             </button>
-            <button className="primary-button" disabled={!props.schedule.enabled} type="button" onClick={() => props.runSchedule(props.schedule.id)}>
+            <button
+              className="primary-button"
+              disabled={!props.schedule.enabled || scheduleEditor.isDirty}
+              title={scheduleEditor.isDirty ? "保存排程修改后才能 Run now" : undefined}
+              type="button"
+              onClick={() => props.runSchedule(props.schedule.id)}
+            >
               <Play size={15} />
               Run now
             </button>
@@ -125,6 +127,7 @@ function ScheduleCard(props: {
       />
 
       <div className="automation-stat-grid">
+        <AutomationStat label="Status" value={draft.enabled ? "Enabled" : "Paused"} />
         <AutomationStat label="Next run" value={formatDateTime(draft.nextRunAt)} />
         <AutomationStat label="Last run" value={props.schedule.lastRunAt ? formatDateTime(props.schedule.lastRunAt) : "Never"} />
         <AutomationStat label="Today created" value={`${todayCases.length}/${draft.maxVideosPerDay}`} />
