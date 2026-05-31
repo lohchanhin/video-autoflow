@@ -69,6 +69,19 @@ export interface ProviderSecretStatusResponse {
   timestamp: string;
 }
 
+export interface ProviderModelInfo {
+  created?: number | undefined;
+  id: string;
+  ownedBy?: string | undefined;
+}
+
+export interface ProviderModelsResponse {
+  models: ProviderModelInfo[];
+  provider: string;
+  source: string;
+  timestamp: string;
+}
+
 export const productionAssetTypes = ["character_design", "scene_design", "style_reference", "first_frame", "last_frame", "bgm_reference"] as const;
 export type ProductionAssetType = (typeof productionAssetTypes)[number];
 

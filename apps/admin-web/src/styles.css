@@ -3286,6 +3286,25 @@ textarea {
   background: #f8fafc;
 }
 
+.model-sync-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.model-sync-row span {
+  overflow: hidden;
+  color: #526173;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
 .three-column-fields {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

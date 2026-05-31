@@ -4,6 +4,7 @@ import {
   getToolModelOptions,
   getToolProviderPresets,
   loadToolProviderSettings,
+  openAILlmModels,
   usesCustomToolModel
 } from "./admin-data.js";
 
@@ -30,6 +31,15 @@ describe("tool provider settings", () => {
 
     expect(usesCustomToolModel(setting)).toBe(true);
     expect(getToolModelOptions(setting)).toContain("company-private-model-v9");
+  });
+
+  it("includes current OpenAI frontier presets and synced account models", () => {
+    const setting = loadToolProviderSettings().find((candidate) => candidate.toolType === "llm")!;
+
+    expect(openAILlmModels).toContain("gpt-5.2");
+    expect(getToolModelOptions(setting)).toContain("gpt-5.2");
+    expect(getToolModelOptions(setting, ["gpt-5.5-account-snapshot"])).toContain("gpt-5.5-account-snapshot");
+    expect(usesCustomToolModel({ ...setting, model: "gpt-5.5-account-snapshot" }, ["gpt-5.5-account-snapshot"])).toBe(false);
   });
 
   it("switches provider preset without wiping custom cost values", () => {

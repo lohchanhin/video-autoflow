@@ -174,6 +174,22 @@ export interface ToolProviderPreset {
   retryLimit: number;
 }
 
+export const openAILlmModels = [
+  "gpt-5.2",
+  "gpt-5.2-pro",
+  "gpt-5.1",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "gpt-4o-mini"
+] as const;
+
+export const openAIImageModels = ["gpt-image-1.5", "gpt-image-1", "gpt-image-2"] as const;
+
+export const openAITtsModels = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"] as const;
+
 export interface ProviderKeyRecord {
   id: string;
   provider: string;
@@ -261,10 +277,10 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-images",
       baseUrl: "https://api.openai.com/v1",
       costMode: "image",
-      defaultModel: "gpt-image-2",
+      defaultModel: "gpt-image-1.5",
       id: "design_openai",
       label: "OpenAI Images",
-      models: ["gpt-image-2", "gpt-image-1"],
+      models: [...openAIImageModels],
       params: { quality: "high", size: "1024x1536" },
       provider: "openai",
       retryLimit: 2
@@ -311,10 +327,10 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-images",
       baseUrl: "https://api.openai.com/v1",
       costMode: "image",
-      defaultModel: "gpt-image-2",
+      defaultModel: "gpt-image-1.5",
       id: "image_openai",
       label: "OpenAI Images",
-      models: ["gpt-image-2", "gpt-image-1"],
+      models: [...openAIImageModels],
       params: { quality: "medium", size: "1024x1536" },
       provider: "openai",
       retryLimit: 2
@@ -361,10 +377,10 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
       costMode: "tokens",
-      defaultModel: "gpt-4.1-mini",
+      defaultModel: "gpt-5.2",
       id: "llm_openai",
       label: "OpenAI",
-      models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
+      models: [...openAILlmModels],
       params: { maxOutputTokens: 3200 },
       provider: "openai",
       retryLimit: 1
@@ -466,7 +482,7 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       defaultModel: "gpt-4o-mini-tts",
       id: "tts_openai",
       label: "OpenAI TTS",
-      models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
+      models: [...openAITtsModels],
       params: { format: "mp3", voice: "verse" },
       provider: "openai",
       retryLimit: 1
@@ -952,7 +968,7 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     fallbackCostRM: 0,
     id: "tool_settings_llm",
     inputUnitPriceRM: 0,
-    model: "gpt-4.1-mini",
+    model: "gpt-5.2",
     outputUnitPriceRM: 0,
     params: { maxOutputTokens: 3200 },
     provider: "openai",
@@ -969,7 +985,7 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     fallbackCostRM: 0,
     id: "tool_settings_image",
     inputUnitPriceRM: 0,
-    model: "gpt-image-2",
+    model: "gpt-image-1.5",
     outputUnitPriceRM: 0,
     params: { quality: "medium", size: "1024x1536" },
     provider: "openai",
@@ -986,7 +1002,7 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     fallbackCostRM: 0,
     id: "tool_settings_design_image",
     inputUnitPriceRM: 0,
-    model: "gpt-image-2",
+    model: "gpt-image-1.5",
     outputUnitPriceRM: 0,
     params: { quality: "high", size: "1024x1536" },
     provider: "openai",
@@ -1413,22 +1429,22 @@ export function getToolProviderPreset(toolType: ToolProviderType, providerOrPres
   return getToolProviderPresets(toolType).find((preset) => preset.id.toLowerCase() === normalizedValue || preset.provider.toLowerCase() === normalizedValue) ?? null;
 }
 
-export function getToolModelOptions(setting: Pick<ToolProviderSettings, "model" | "provider" | "toolType">): string[] {
+export function getToolModelOptions(setting: Pick<ToolProviderSettings, "model" | "provider" | "toolType">, syncedModels: string[] = []): string[] {
   const preset = getToolProviderPreset(setting.toolType, setting.provider);
-  const models = preset?.models ?? [];
+  const models = [...(preset?.models ?? []), ...syncedModels];
   const currentModel = setting.model.trim();
 
   return Array.from(new Set([...models, ...(currentModel && !models.includes(currentModel) ? [currentModel] : [])]));
 }
 
-export function usesCustomToolModel(setting: Pick<ToolProviderSettings, "model" | "provider" | "toolType">): boolean {
+export function usesCustomToolModel(setting: Pick<ToolProviderSettings, "model" | "provider" | "toolType">, syncedModels: string[] = []): boolean {
   const preset = getToolProviderPreset(setting.toolType, setting.provider);
 
   if (!preset) {
     return true;
   }
 
-  return !preset.models.includes(setting.model);
+  return !preset.models.includes(setting.model) && !syncedModels.includes(setting.model);
 }
 
 export function applyToolProviderPreset(setting: ToolProviderSettings, presetId: string): ToolProviderSettings {

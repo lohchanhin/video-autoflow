@@ -11,6 +11,7 @@ import { createDatabaseRouter, type ConnectDatabase } from "./routes/database.js
 import { createGenerationRouter } from "./routes/generation.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createImagesRouter } from "./routes/images.js";
+import { createProviderModelsRouter } from "./routes/provider-models.js";
 import { createProviderKeysRouter, type ProviderSecretReader, type ProviderSecretWriter } from "./routes/provider-keys.js";
 import { createProductionAssetsRouter } from "./routes/production-assets.js";
 import { createQcRouter } from "./routes/qc.js";
@@ -77,6 +78,7 @@ export interface CreateAppOptions {
   bgmGenerationService?: BgmGenerationService | undefined;
   imageGenerationService?: ImageGenerationService | undefined;
   productionAssetsRepository?: ProductionAssetsRepository | undefined;
+  providerModelsFetch?: typeof fetch | undefined;
   qcReportService?: QcReportService | undefined;
   readProviderSecret?: ProviderSecretReader | undefined;
   writeProviderSecret?: ProviderSecretWriter | undefined;
@@ -116,6 +118,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(createDatabaseRouter({ connectDatabase: options.connectDatabase }));
   app.use(createCostsRouter({ connectDatabase: options.connectDatabase, costLogsRepository: options.costLogsRepository }));
   app.use(createProviderKeysRouter({ readSecret: options.readProviderSecret, writeSecret: options.writeProviderSecret }));
+  app.use(createProviderModelsRouter({ fetchImpl: options.providerModelsFetch, readSecret: options.readProviderSecret }));
   app.use(createScriptStoryRouter({ costRecorder, scriptStoryService: options.scriptStoryService, storage }));
   app.use(
     createImagesRouter({

@@ -26,6 +26,7 @@ import type {
   ProductionAssetRole,
   ProductionAssetStatus,
   ProductionAssetType,
+  ProviderModelsResponse,
   ProviderSecretStatusResponse,
   SeriesEpisodeIdea,
   SeriesEpisodeIdeaResponse,
@@ -339,6 +340,11 @@ export async function saveProviderSecretToApi(keyName: string, value: string): P
     },
     "Provider key save failed"
   );
+}
+
+export async function listOpenAIModels(toolType: string): Promise<ProviderModelsResponse> {
+  const query = toolType ? `?toolType=${encodeURIComponent(toolType)}` : "";
+  return fetchJson<ProviderModelsResponse>(`/providers/openai/models${query}`, undefined, "OpenAI model sync failed");
 }
 
 export async function getDatabaseStatus(): Promise<DatabaseStatusResponse> {

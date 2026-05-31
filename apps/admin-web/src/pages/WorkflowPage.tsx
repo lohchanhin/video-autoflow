@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Settings2 } from "lucide-react";
 import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
@@ -14,6 +14,7 @@ import {
   type ToolProviderSettings,
   type ToolProviderType
 } from "../lib/admin-data.js";
+import { listOpenAIModels } from "../lib/api.js";
 import { getProductionStage, productionStages, type ProductionStageId } from "../lib/production.js";
 
 interface WorkflowPageProps {
@@ -28,15 +29,30 @@ interface WorkflowPageProps {
 
 type WorkflowTab = "pipeline" | "tools" | "readiness";
 type PillTone = "neutral" | "active" | "success" | "danger" | "warning";
+type ModelSyncStatus = "idle" | "loading" | "loaded" | "error";
+
+interface ModelSyncState {
+  error?: string | undefined;
+  models: string[];
+  status: ModelSyncStatus;
+  timestamp?: string | undefined;
+}
+
+const idleModelSyncState: ModelSyncState = {
+  models: [],
+  status: "idle"
+};
 
 export function WorkflowPage(props: WorkflowPageProps) {
   const [activeTab, setActiveTab] = useState<WorkflowTab>("pipeline");
+  const [modelSyncStates, setModelSyncStates] = useState<Record<string, ModelSyncState>>({});
   const [selectedStageId, setSelectedStageId] = useState<ProductionStageId>("script");
   const [selectedToolSettingId, setSelectedToolSettingId] = useState<string>(props.settings[0]?.id ?? "");
   const selectedStage = getProductionStage(selectedStageId);
   const producerAgent = props.agents[0] ?? null;
   const stageEndpoint = props.endpoints.find((endpoint) => endpoint.stageIds.includes(selectedStage.id)) ?? null;
   const selectedToolSetting = props.settings.find((setting) => setting.id === selectedToolSettingId) ?? props.settings[0] ?? null;
+  const selectedModelSyncState = selectedToolSetting ? modelSyncStates[getModelSyncKey(selectedToolSetting)] ?? idleModelSyncState : idleModelSyncState;
 
   const readiness = useMemo(() => {
     const rows = productionStages.map((stage) => {
@@ -54,6 +70,51 @@ export function WorkflowPage(props: WorkflowPageProps) {
       issueCount: rows.filter((row) => row.tone === "danger").length
     };
   }, [producerAgent, props.endpoints]);
+
+  useEffect(() => {
+    if (selectedToolSetting?.provider !== "openai") {
+      return;
+    }
+
+    if (selectedModelSyncState.status !== "idle") {
+      return;
+    }
+
+    void syncOpenAIModels(selectedToolSetting);
+  }, [selectedToolSetting?.id, selectedToolSetting?.provider, selectedToolSetting?.toolType, selectedModelSyncState.status]);
+
+  async function syncOpenAIModels(setting: ToolProviderSettings) {
+    const key = getModelSyncKey(setting);
+
+    setModelSyncStates((current) => ({
+      ...current,
+      [key]: {
+        models: current[key]?.models ?? [],
+        status: "loading"
+      }
+    }));
+
+    try {
+      const response = await listOpenAIModels(setting.toolType);
+      setModelSyncStates((current) => ({
+        ...current,
+        [key]: {
+          models: response.models.map((model) => model.id),
+          status: "loaded",
+          timestamp: response.timestamp
+        }
+      }));
+    } catch (error) {
+      setModelSyncStates((current) => ({
+        ...current,
+        [key]: {
+          error: error instanceof Error ? error.message : "OpenAI model sync failed.",
+          models: current[key]?.models ?? [],
+          status: "error"
+        }
+      }));
+    }
+  }
 
   function updateStageEndpoint(stageId: ProductionStageId, endpointId: string) {
     props.setEndpoints((currentEndpoints) =>
@@ -206,7 +267,12 @@ export function WorkflowPage(props: WorkflowPageProps) {
             {selectedToolSetting ? (
               <>
                 <SectionHeader eyebrow="供应商与模型设置" title={formatToolType(selectedToolSetting.toolType)} />
-                <ToolProviderEditor setting={selectedToolSetting} updateToolSetting={props.updateToolSetting} />
+                <ToolProviderEditor
+                  modelSyncState={selectedModelSyncState}
+                  onSyncModels={() => syncOpenAIModels(selectedToolSetting)}
+                  setting={selectedToolSetting}
+                  updateToolSetting={props.updateToolSetting}
+                />
                 <div className="workflow-stage-notes">
                   <strong>路由说明</strong>
                   <span>流程阶段绑定放在“流程路由”。这里负责每个工具的供应商、模型、参数、成本、重试与自动调用权限。</span>
@@ -325,6 +391,8 @@ function StageInspector(props: {
 }
 
 function ToolProviderEditor(props: {
+  modelSyncState: ModelSyncState;
+  onSyncModels: () => void;
   setting: ToolProviderSettings;
   updateToolSetting: (id: string, updater: (setting: ToolProviderSettings) => ToolProviderSettings) => void;
 }) {
@@ -348,9 +416,9 @@ function ToolProviderEditor(props: {
   const params = Object.entries(props.setting.params);
   const providerPresets = getToolProviderPresets(props.setting.toolType);
   const selectedProviderPreset = getToolProviderPreset(props.setting.toolType, props.setting.provider);
-  const modelOptions = getToolModelOptions(props.setting);
+  const modelOptions = getToolModelOptions(props.setting, props.modelSyncState.models);
   const usesCustomProvider = !selectedProviderPreset;
-  const usesCustomModel = usesCustomToolModel(props.setting);
+  const usesCustomModel = usesCustomToolModel(props.setting, props.modelSyncState.models);
   const providerSelectValue = selectedProviderPreset?.id ?? customToolProviderValue;
   const modelSelectValue = usesCustomModel ? customToolModelValue : props.setting.model;
 
@@ -387,7 +455,7 @@ function ToolProviderEditor(props: {
         </Field>
         <Field label="模型">
           <select value={modelSelectValue} onChange={(event) => patch({ model: event.target.value === customToolModelValue ? "" : event.target.value })}>
-            {modelOptions.filter((model) => selectedProviderPreset?.models.includes(model)).map((model) => (
+            {modelOptions.map((model) => (
               <option key={model} value={model}>
                 {model}
               </option>
@@ -396,6 +464,22 @@ function ToolProviderEditor(props: {
           </select>
         </Field>
       </div>
+
+      {props.setting.provider === "openai" ? (
+        <div className="model-sync-row">
+          <button className="secondary-button compact-button" type="button" onClick={props.onSyncModels} disabled={props.modelSyncState.status === "loading"}>
+            <RefreshCw size={14} />
+            {props.modelSyncState.status === "loading" ? "同步中" : "同步 OpenAI 模型"}
+          </button>
+          <span>
+            {props.modelSyncState.status === "loaded"
+              ? `已同步 ${props.modelSyncState.models.length} 个账户可用模型`
+              : props.modelSyncState.status === "error"
+                ? props.modelSyncState.error
+                : "可从当前 OpenAI key 的 /v1/models 拉取可用模型"}
+          </span>
+        </div>
+      ) : null}
 
       {usesCustomProvider ? (
         <Field label="自定义供应商 ID">
@@ -510,6 +594,10 @@ function TabButton(props: { active: boolean; label: string; onClick: () => void 
       {props.label}
     </button>
   );
+}
+
+function getModelSyncKey(setting: Pick<ToolProviderSettings, "provider" | "toolType">): string {
+  return `${setting.provider}:${setting.toolType}`;
 }
 
 function getToolSettingTone(setting: ToolProviderSettings): PillTone {
