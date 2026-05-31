@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Settings2 } from "lucide-react";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
 import {
   applyToolProviderPreset,
@@ -15,6 +15,7 @@ import {
   type ToolProviderType
 } from "../lib/admin-data.js";
 import { listOpenAIModels } from "../lib/api.js";
+import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import { getProductionStage, productionStages, type ProductionStageId } from "../lib/production.js";
 import {
   findWorkflowToolSetting,
@@ -278,7 +279,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                 <SectionHeader eyebrow="供应商与模型设置" title={formatToolType(selectedToolSetting.toolType)} />
                 <ToolProviderEditor
                   modelSyncState={selectedModelSyncState}
-                  onSyncModels={() => syncOpenAIModels(selectedToolSetting)}
+                  onSyncModels={syncOpenAIModels}
                   setting={selectedToolSetting}
                   updateToolSetting={props.updateToolSetting}
                 />
@@ -349,6 +350,8 @@ function StageInspector(props: {
   openTools: (endpointId: string) => void;
 }) {
   const toolAllowed = props.stageEndpoint ? Boolean(props.producerAgent?.allowedToolIds.includes(props.stageEndpoint.id)) : true;
+  const routeEditor = useEditableDraft({ endpointId: props.stageEndpoint?.id ?? "" }, props.selectedStage.id);
+  const draftEndpointId = routeEditor.draft?.endpointId ?? "";
 
   return (
     <>
@@ -370,8 +373,8 @@ function StageInspector(props: {
 
       <Field label="阶段工具">
         <select
-          value={props.stageEndpoint?.id ?? ""}
-          onChange={(event) => props.updateStageEndpoint(props.selectedStage.id, event.target.value)}
+          value={draftEndpointId}
+          onChange={(event) => routeEditor.setDraftPatch({ endpointId: event.target.value })}
           disabled={props.selectedStage.id === "brief"}
         >
           <option value="">不使用外部工具</option>
@@ -389,65 +392,85 @@ function StageInspector(props: {
       </div>
 
       {props.stageEndpoint ? (
-        <button className="primary-button" type="button" onClick={() => props.openTools(props.stageEndpoint!.id)}>
+        <button className="primary-button" type="button" onClick={() => props.openTools(draftEndpointId || props.stageEndpoint!.id)}>
           前往工具设置
         </button>
       ) : (
         <EmptyState title="内部阶段" body="这个阶段由后台内部处理，不需要绑定外部工具。" />
       )}
+      <EditableActionBar
+        isDirty={routeEditor.isDirty}
+        onCancel={routeEditor.resetDraft}
+        onSave={() => {
+          props.updateStageEndpoint(props.selectedStage.id, draftEndpointId);
+          routeEditor.markSaved({ endpointId: draftEndpointId });
+        }}
+      />
     </>
   );
 }
 
 function ToolProviderEditor(props: {
   modelSyncState: ModelSyncState;
-  onSyncModels: () => void;
+  onSyncModels: (setting: ToolProviderSettings) => void;
   setting: ToolProviderSettings;
   updateToolSetting: (id: string, updater: (setting: ToolProviderSettings) => ToolProviderSettings) => void;
 }) {
+  const editor = useEditableDraft(props.setting, `${props.setting.id}:${props.setting.updatedAt}`);
+  const setting = editor.draft ?? props.setting;
+
   function patch(patchValue: Partial<ToolProviderSettings>) {
-    props.updateToolSetting(props.setting.id, (current) => ({
-      ...current,
+    editor.setDraftPatch({
       ...patchValue,
       updatedAt: new Date().toISOString()
-    }));
+    });
   }
 
   function updateParam(name: string, value: string) {
     patch({
       params: {
-        ...props.setting.params,
+        ...setting.params,
         [name]: coerceParamValue(value)
       }
     });
   }
 
-  const params = Object.entries(props.setting.params);
-  const providerPresets = getToolProviderPresets(props.setting.toolType);
-  const selectedProviderPreset = getToolProviderPreset(props.setting.toolType, props.setting.provider);
-  const modelOptions = getToolModelOptions(props.setting, props.modelSyncState.models);
+  function saveDraft() {
+    const patchValue = createDraftPatch(props.setting, setting);
+    props.updateToolSetting(props.setting.id, (current) => ({
+      ...current,
+      ...patchValue,
+      updatedAt: new Date().toISOString()
+    }));
+    editor.markSaved({ ...setting, updatedAt: new Date().toISOString() });
+  }
+
+  const params = Object.entries(setting.params);
+  const providerPresets = getToolProviderPresets(setting.toolType);
+  const selectedProviderPreset = getToolProviderPreset(setting.toolType, setting.provider);
+  const modelOptions = getToolModelOptions(setting, props.modelSyncState.models);
   const usesCustomProvider = !selectedProviderPreset;
-  const usesCustomModel = usesCustomToolModel(props.setting, props.modelSyncState.models);
+  const usesCustomModel = usesCustomToolModel(setting, props.modelSyncState.models);
   const providerSelectValue = selectedProviderPreset?.id ?? customToolProviderValue;
-  const modelSelectValue = usesCustomModel ? customToolModelValue : props.setting.model;
+  const modelSelectValue = usesCustomModel ? customToolModelValue : setting.model;
 
   function applyPreset(presetId: string) {
-    props.updateToolSetting(props.setting.id, (current) => applyToolProviderPreset(current, presetId));
+    editor.setDraft(applyToolProviderPreset(setting, presetId));
   }
 
   return (
     <div className="endpoint-editor">
       <label className="toggle-line endpoint-enabled-line">
-        <input type="checkbox" checked={props.setting.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />
+        <input type="checkbox" checked={setting.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />
         <span>启用这个工具</span>
       </label>
 
       <div className="two-column-fields">
         <Field label="工具类型">
-          <input readOnly value={props.setting.toolType} />
+          <input readOnly value={setting.toolType} />
         </Field>
         <Field label="API 风格">
-          <input value={props.setting.apiStyle} onChange={(event) => patch({ apiStyle: event.target.value })} />
+          <input value={setting.apiStyle} onChange={(event) => patch({ apiStyle: event.target.value })} />
         </Field>
       </div>
 
@@ -474,9 +497,9 @@ function ToolProviderEditor(props: {
         </Field>
       </div>
 
-      {props.setting.provider === "openai" ? (
+      {setting.provider === "openai" ? (
         <div className="model-sync-row">
-          <button className="secondary-button compact-button" type="button" onClick={props.onSyncModels} disabled={props.modelSyncState.status === "loading"}>
+          <button className="secondary-button compact-button" type="button" onClick={() => props.onSyncModels(setting)} disabled={props.modelSyncState.status === "loading"}>
             <RefreshCw size={14} />
             {props.modelSyncState.status === "loading" ? "同步中" : "同步 OpenAI 模型"}
           </button>
@@ -492,23 +515,23 @@ function ToolProviderEditor(props: {
 
       {usesCustomProvider ? (
         <Field label="自定义供应商 ID">
-          <input value={props.setting.provider} onChange={(event) => patch({ provider: event.target.value })} placeholder="例如 custom-video-api" />
+          <input value={setting.provider} onChange={(event) => patch({ provider: event.target.value })} placeholder="例如 custom-video-api" />
         </Field>
       ) : null}
 
       {usesCustomModel ? (
         <Field label="自定义模型 ID">
-          <input value={props.setting.model} onChange={(event) => patch({ model: event.target.value })} placeholder="输入自定义 model id" />
+          <input value={setting.model} onChange={(event) => patch({ model: event.target.value })} placeholder="输入自定义 model id" />
         </Field>
       ) : null}
 
       <Field label="接口地址">
-        <input value={props.setting.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} />
+        <input value={setting.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} />
       </Field>
 
       <div className="two-column-fields">
         <Field label="成本模式">
-          <select value={props.setting.costMode} onChange={(event) => patch({ costMode: event.target.value as ToolProviderSettings["costMode"] })}>
+          <select value={setting.costMode} onChange={(event) => patch({ costMode: event.target.value as ToolProviderSettings["costMode"] })}>
             <option value="tokens">tokens</option>
             <option value="image">image</option>
             <option value="second">second</option>
@@ -519,24 +542,24 @@ function ToolProviderEditor(props: {
           </select>
         </Field>
         <Field label="重试次数">
-          <input type="number" min={0} max={10} value={props.setting.retryLimit} onChange={(event) => patch({ retryLimit: Number(event.target.value) })} />
+          <input type="number" min={0} max={10} value={setting.retryLimit} onChange={(event) => patch({ retryLimit: Number(event.target.value) })} />
         </Field>
       </div>
 
       <div className="three-column-fields">
         <Field label="输入单价 RM">
-          <input type="number" min={0} step="0.0001" value={props.setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.0001" value={setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value) })} />
         </Field>
         <Field label="输出单价 RM">
-          <input type="number" min={0} step="0.0001" value={props.setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.0001" value={setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value) })} />
         </Field>
         <Field label="保底成本 RM">
-          <input type="number" min={0} step="0.0001" value={props.setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.0001" value={setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value) })} />
         </Field>
       </div>
 
       <label className="toggle-line endpoint-enabled-line">
-        <input type="checkbox" checked={props.setting.allowAutopilot} onChange={(event) => patch({ allowAutopilot: event.target.checked })} />
+        <input type="checkbox" checked={setting.allowAutopilot} onChange={(event) => patch({ allowAutopilot: event.target.checked })} />
         <span>允许主控 Agent 自动调用这个工具</span>
       </label>
 
@@ -557,7 +580,7 @@ function ToolProviderEditor(props: {
               type="button"
               onClick={() =>
                 patch({
-                  params: Object.fromEntries(Object.entries(props.setting.params).filter(([key]) => key !== name))
+                  params: Object.fromEntries(Object.entries(setting.params).filter(([key]) => key !== name))
                 })
               }
             >
@@ -576,6 +599,11 @@ function ToolProviderEditor(props: {
           新增参数
         </button>
       </div>
+      <EditableActionBar
+        isDirty={editor.isDirty}
+        onCancel={editor.resetDraft}
+        onSave={saveDraft}
+      />
     </div>
   );
 }

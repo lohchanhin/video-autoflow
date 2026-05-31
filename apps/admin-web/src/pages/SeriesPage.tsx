@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Loader2, Plus, RefreshCw, Sparkles, Trash2, XCircle } from "lucide-react";
 import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus } from "@ai-content-factory/shared-types";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
@@ -20,8 +21,8 @@ interface SeriesPageProps {
   selectSeries: (id: string | null) => void;
   selectedSeriesId: string | null;
   series: ContentSeries[];
-  updateEpisode: (seriesId: string, episodeId: string, patch: Partial<Omit<SeriesEpisodeIdea, "_id" | "createdAt" | "seriesId" | "updatedAt">>) => void;
-  updateSeries: (id: string, patch: Partial<Omit<ContentSeries, "_id" | "createdAt" | "updatedAt">>) => void;
+  updateEpisode: (seriesId: string, episodeId: string, patch: Partial<Omit<SeriesEpisodeIdea, "_id" | "createdAt" | "seriesId" | "updatedAt">>) => Promise<void> | void;
+  updateSeries: (id: string, patch: Partial<Omit<ContentSeries, "_id" | "createdAt" | "updatedAt">>) => Promise<void> | void;
   openCase: (id: string) => void;
 }
 
@@ -31,12 +32,55 @@ const episodeStatusOptions: SeriesEpisodeIdeaStatus[] = ["draft", "approved", "c
 export function SeriesPage(props: SeriesPageProps) {
   const [ideaCount, setIdeaCount] = useState(10);
   const selectedSeries = props.series.find((series) => series._id === props.selectedSeriesId) ?? props.series[0] ?? null;
+  const seriesEditor = useEditableDraft(selectedSeries, selectedSeries ? `${selectedSeries._id}:${selectedSeries.updatedAt}` : null);
+  const seriesDraft = seriesEditor.draft;
   const selectedSeriesJobs = selectedSeries ? props.jobs.filter((job) => job.seriesId === selectedSeries._id) : [];
   const generatedAssets = props.assets.filter((asset) => Boolean(asset.url.trim()) && (asset.status === "ready" || asset.status === "approved"));
-  const selectedReferenceIds = new Set(selectedSeries?.referenceAssetIds ?? []);
+  const selectedReferenceIds = new Set(seriesDraft?.referenceAssetIds ?? []);
   const approvedEpisodes = props.episodes.filter((episode) => episode.status === "approved").length;
   const convertedEpisodes = props.episodes.filter((episode) => episode.status === "converted_to_case").length;
   const generating = selectedSeries ? props.generatingSeriesIds.includes(selectedSeries._id) : false;
+
+  function patchSeriesDraft(patch: Partial<ContentSeries>) {
+    seriesEditor.setDraftPatch(patch);
+  }
+
+  async function saveSeriesDraft() {
+    if (!selectedSeries || !seriesDraft) {
+      return;
+    }
+
+    await props.updateSeries(selectedSeries._id, createDraftPatch(selectedSeries, seriesDraft));
+    seriesEditor.markSaved(seriesDraft);
+  }
+
+  function safeSelectSeries(id: string | null) {
+    if (id === selectedSeries?._id) {
+      return;
+    }
+
+    if (!confirmDiscardDirtyDraft(seriesEditor.isDirty)) {
+      return;
+    }
+
+    props.selectSeries(id);
+  }
+
+  function safeRefresh() {
+    if (!confirmDiscardDirtyDraft(seriesEditor.isDirty)) {
+      return;
+    }
+
+    props.refresh();
+  }
+
+  function safeCreateSeries() {
+    if (!confirmDiscardDirtyDraft(seriesEditor.isDirty)) {
+      return;
+    }
+
+    props.createSeries();
+  }
 
   return (
     <section className="series-page">
@@ -47,11 +91,11 @@ export function SeriesPage(props: SeriesPageProps) {
           <span>先定义一个可持续生产的内容系列，再批量生成选题；人工批准后才转成影片 Case。</span>
         </div>
         <div className="asset-board-actions">
-          <button className="secondary-button" type="button" onClick={props.refresh}>
+          <button className="secondary-button" type="button" onClick={safeRefresh}>
             {props.isLoading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
             刷新
           </button>
-          <button className="primary-button" type="button" onClick={props.createSeries}>
+          <button className="primary-button" type="button" onClick={safeCreateSeries}>
             <Plus size={16} />
             新建系列
           </button>
@@ -72,7 +116,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 const caseCount = props.jobs.filter((job) => job.seriesId === series._id).length;
 
                 return (
-                  <button key={series._id} className={`series-list-item ${selectedSeries?._id === series._id ? "active" : ""}`} type="button" onClick={() => props.selectSeries(series._id)}>
+                  <button key={series._id} className={`series-list-item ${selectedSeries?._id === series._id ? "active" : ""}`} type="button" onClick={() => safeSelectSeries(series._id)}>
                     <BookOpen size={18} />
                     <span>
                       <strong>{series.name}</strong>
@@ -88,13 +132,13 @@ export function SeriesPage(props: SeriesPageProps) {
         </aside>
 
         <section className="panel series-editor-panel">
-          {selectedSeries ? (
+          {selectedSeries && seriesDraft ? (
             <>
               <SectionHeader
                 eyebrow="系列设定"
-                title={selectedSeries.name}
+                title={seriesDraft.name}
                 action={
-                  <button className="danger-button" type="button" onClick={() => props.deleteSeries(selectedSeries._id)}>
+                  <button className="danger-button" type="button" onClick={() => window.confirm(`确定删除系列「${selectedSeries.name}」？`) && props.deleteSeries(selectedSeries._id)}>
                     <Trash2 size={16} />
                     删除
                   </button>
@@ -102,50 +146,55 @@ export function SeriesPage(props: SeriesPageProps) {
               />
               <div className="series-form-grid">
                 <Field label="系列名称">
-                  <input value={selectedSeries.name} onChange={(event) => props.updateSeries(selectedSeries._id, { name: event.target.value })} />
+                  <input value={seriesDraft.name} onChange={(event) => patchSeriesDraft({ name: event.target.value })} />
                 </Field>
                 <Field label="状态">
-                  <select value={selectedSeries.status} onChange={(event) => props.updateSeries(selectedSeries._id, { status: event.target.value as ContentSeriesStatus })}>
+                  <select value={seriesDraft.status} onChange={(event) => patchSeriesDraft({ status: event.target.value as ContentSeriesStatus })}>
                     {seriesStatusOptions.map((status) => <option key={status} value={status}>{seriesStatusLabel(status)}</option>)}
                   </select>
                 </Field>
                 <Field label="语言">
-                  <select value={selectedSeries.language} onChange={(event) => props.updateSeries(selectedSeries._id, { language: event.target.value as ContentSeries["language"] })}>
+                  <select value={seriesDraft.language} onChange={(event) => patchSeriesDraft({ language: event.target.value as ContentSeries["language"] })}>
                     <option value="zh-CN">中文</option>
                     <option value="en-US">English</option>
                   </select>
                 </Field>
                 <Field label="目标观众 / 市场">
-                  <input value={selectedSeries.audience} onChange={(event) => props.updateSeries(selectedSeries._id, { audience: event.target.value })} />
+                  <input value={seriesDraft.audience} onChange={(event) => patchSeriesDraft({ audience: event.target.value })} />
                 </Field>
                 <Field label="内容类型 / 影片类型">
-                  <input value={selectedSeries.contentType} onChange={(event) => props.updateSeries(selectedSeries._id, { contentType: event.target.value })} />
+                  <input value={seriesDraft.contentType} onChange={(event) => patchSeriesDraft({ contentType: event.target.value })} />
                 </Field>
                 <Field label="片长秒数">
-                  <input min={15} max={180} type="number" value={selectedSeries.durationSeconds} onChange={(event) => props.updateSeries(selectedSeries._id, { durationSeconds: Number(event.target.value) })} />
+                  <input min={15} max={180} type="number" value={seriesDraft.durationSeconds} onChange={(event) => patchSeriesDraft({ durationSeconds: Number(event.target.value) })} />
                 </Field>
                 <Field label="场景数">
-                  <input min={3} max={12} type="number" value={selectedSeries.sceneCount} onChange={(event) => props.updateSeries(selectedSeries._id, { sceneCount: Number(event.target.value) })} />
+                  <input min={3} max={12} type="number" value={seriesDraft.sceneCount} onChange={(event) => patchSeriesDraft({ sceneCount: Number(event.target.value) })} />
                 </Field>
                 <Field label="系列目标 / 核心价值">
-                  <input value={selectedSeries.values} onChange={(event) => props.updateSeries(selectedSeries._id, { values: event.target.value })} />
+                  <input value={seriesDraft.values} onChange={(event) => patchSeriesDraft({ values: event.target.value })} />
                 </Field>
                 <Field className="wide" label="系列定位">
-                  <textarea rows={3} value={selectedSeries.description} onChange={(event) => props.updateSeries(selectedSeries._id, { description: event.target.value })} />
+                  <textarea rows={3} value={seriesDraft.description} onChange={(event) => patchSeriesDraft({ description: event.target.value })} />
                 </Field>
                 <Field label="叙事语气">
-                  <textarea rows={3} value={selectedSeries.tone} onChange={(event) => props.updateSeries(selectedSeries._id, { tone: event.target.value })} />
+                  <textarea rows={3} value={seriesDraft.tone} onChange={(event) => patchSeriesDraft({ tone: event.target.value })} />
                 </Field>
                 <Field label="视觉风格">
-                  <textarea rows={3} value={selectedSeries.visualStyle} onChange={(event) => props.updateSeries(selectedSeries._id, { visualStyle: event.target.value })} />
+                  <textarea rows={3} value={seriesDraft.visualStyle} onChange={(event) => patchSeriesDraft({ visualStyle: event.target.value })} />
                 </Field>
                 <Field label="BGM 风格">
-                  <textarea rows={3} value={selectedSeries.musicStyle} onChange={(event) => props.updateSeries(selectedSeries._id, { musicStyle: event.target.value })} />
+                  <textarea rows={3} value={seriesDraft.musicStyle} onChange={(event) => patchSeriesDraft({ musicStyle: event.target.value })} />
                 </Field>
                 <Field label="禁忌 / 合规规则">
-                  <textarea rows={3} value={selectedSeries.safetyRules} onChange={(event) => props.updateSeries(selectedSeries._id, { safetyRules: event.target.value })} />
+                  <textarea rows={3} value={seriesDraft.safetyRules} onChange={(event) => patchSeriesDraft({ safetyRules: event.target.value })} />
                 </Field>
               </div>
+              <EditableActionBar
+                isDirty={seriesEditor.isDirty}
+                onCancel={seriesEditor.resetDraft}
+                onSave={saveSeriesDraft}
+              />
 
               <section className="series-asset-binding">
                 <SectionHeader eyebrow="资产绑定" title="固定角色 / 场景 / 风格参考" />
@@ -158,10 +207,10 @@ export function SeriesPage(props: SeriesPageProps) {
                         <input
                           checked={selectedReferenceIds.has(asset._id)}
                           type="checkbox"
-                          onChange={(event) => props.updateSeries(selectedSeries._id, {
+                          onChange={(event) => patchSeriesDraft({
                             referenceAssetIds: event.target.checked
                               ? [...selectedReferenceIds, asset._id]
-                              : selectedSeries.referenceAssetIds.filter((id) => id !== asset._id)
+                              : seriesDraft.referenceAssetIds.filter((id) => id !== asset._id)
                           })}
                         />
                         <span>{asset.url ? <img src={asset.url} alt={asset.label} /> : null}</span>
@@ -257,26 +306,43 @@ function EpisodeRow(props: {
   updateEpisode: SeriesPageProps["updateEpisode"];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const episodeEditor = useEditableDraft(props.episode, `${props.episode._id}:${props.episode.updatedAt}`);
+  const episodeDraft = episodeEditor.draft ?? props.episode;
   const canConvert = props.episode.status === "approved";
+
+  function patchEpisodeDraft(patch: Partial<SeriesEpisodeIdea>) {
+    episodeEditor.setDraftPatch(patch);
+  }
+
+  async function saveEpisodeDraft(extraPatch: Partial<SeriesEpisodeIdea> = {}) {
+    const nextDraft = { ...episodeDraft, ...extraPatch };
+    const patch = createDraftPatch(props.episode, nextDraft);
+
+    if (Object.keys(patch).length > 0) {
+      await props.updateEpisode(props.selectedSeries._id, props.episode._id, patch);
+    }
+
+    episodeEditor.markSaved(nextDraft);
+  }
 
   return (
     <div className={`episode-row ${expanded ? "expanded" : ""}`}>
       <button className="episode-title-cell" type="button" onClick={() => setExpanded(!expanded)}>
-        <strong>{props.episode.title}</strong>
-        <span>{props.episode.moralLesson}</span>
+        <strong>{episodeDraft.title}</strong>
+        <span>{episodeDraft.moralLesson}</span>
         <small>{formatDateTime(props.episode.createdAt)}</small>
       </button>
-      <span>{props.episode.sourceStory}</span>
-      <span>{props.episode.riskNotes}</span>
-      <select value={props.episode.status} onChange={(event) => props.updateEpisode(props.selectedSeries._id, props.episode._id, { status: event.target.value as SeriesEpisodeIdeaStatus })}>
+      <span>{episodeDraft.sourceStory}</span>
+      <span>{episodeDraft.riskNotes}</span>
+      <select value={episodeDraft.status} onChange={(event) => patchEpisodeDraft({ status: event.target.value as SeriesEpisodeIdeaStatus })}>
         {episodeStatusOptions.map((status) => <option key={status} value={status}>{episodeStatusLabel(status)}</option>)}
       </select>
       <div className="episode-row-actions">
-        <button className="secondary-button" type="button" onClick={() => props.updateEpisode(props.selectedSeries._id, props.episode._id, { status: "approved" })}>
+        <button className="secondary-button" type="button" onClick={() => saveEpisodeDraft({ status: "approved" })}>
           <CheckCircle2 size={15} />
           批准
         </button>
-        <button className="secondary-button" type="button" onClick={() => props.updateEpisode(props.selectedSeries._id, props.episode._id, { status: "rejected" })}>
+        <button className="secondary-button" type="button" onClick={() => saveEpisodeDraft({ status: "rejected" })}>
           <XCircle size={15} />
           拒绝
         </button>
@@ -292,18 +358,32 @@ function EpisodeRow(props: {
       </div>
       {expanded ? (
         <div className="episode-detail">
+          <Field label="题目">
+            <input value={episodeDraft.title} onChange={(event) => patchEpisodeDraft({ title: event.target.value })} />
+          </Field>
+          <Field label="核心看点 / 道理">
+            <input value={episodeDraft.moralLesson} onChange={(event) => patchEpisodeDraft({ moralLesson: event.target.value })} />
+          </Field>
+          <Field label="来源 / 灵感">
+            <input value={episodeDraft.sourceStory} onChange={(event) => patchEpisodeDraft({ sourceStory: event.target.value })} />
+          </Field>
           <Field label="剧情梗概">
-            <textarea rows={3} value={props.episode.synopsis} onChange={(event) => props.updateEpisode(props.selectedSeries._id, props.episode._id, { synopsis: event.target.value })} />
+            <textarea rows={3} value={episodeDraft.synopsis} onChange={(event) => patchEpisodeDraft({ synopsis: event.target.value })} />
           </Field>
           <Field label="Prompt seed">
-            <textarea rows={3} value={props.episode.promptSeed} onChange={(event) => props.updateEpisode(props.selectedSeries._id, props.episode._id, { promptSeed: event.target.value })} />
+            <textarea rows={3} value={episodeDraft.promptSeed} onChange={(event) => patchEpisodeDraft({ promptSeed: event.target.value })} />
           </Field>
           <Field label="目标受众 / 年龄层">
-            <input value={props.episode.ageRange} onChange={(event) => props.updateEpisode(props.selectedSeries._id, props.episode._id, { ageRange: event.target.value })} />
+            <input value={episodeDraft.ageRange} onChange={(event) => patchEpisodeDraft({ ageRange: event.target.value })} />
           </Field>
           <Field label="风险提示">
-            <input value={props.episode.riskNotes} onChange={(event) => props.updateEpisode(props.selectedSeries._id, props.episode._id, { riskNotes: event.target.value })} />
+            <input value={episodeDraft.riskNotes} onChange={(event) => patchEpisodeDraft({ riskNotes: event.target.value })} />
           </Field>
+          <EditableActionBar
+            isDirty={episodeEditor.isDirty}
+            onCancel={episodeEditor.resetDraft}
+            onSave={() => saveEpisodeDraft()}
+          />
         </div>
       ) : null}
     </div>

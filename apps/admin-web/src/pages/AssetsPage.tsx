@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Database, Folder, Image as ImageIcon, Loader2, Plus, RefreshCw, Save, Search, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import {
   productionAssetProviders,
@@ -11,7 +11,8 @@ import {
   type ProductionAssetStatus,
   type ProductionAssetType
 } from "@ai-content-factory/shared-types";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 
 type AssetStudioTab = "generate" | "library" | "case-plan";
@@ -47,7 +48,7 @@ interface AssetsPageProps {
   setFilterJobId: (value: string) => void;
   setFilterStatus: (value: ProductionAssetStatus | "") => void;
   setFilterType: (value: ProductionAssetType | "") => void;
-  updateAsset: (id: string, patch: Partial<Pick<ProductionAsset, "costRM" | "error" | "folderName" | "label" | "notes" | "prompt" | "provider" | "role" | "sceneId" | "scope" | "status" | "storagePath" | "tags" | "type" | "url">>) => void;
+  updateAsset: (id: string, patch: Partial<Pick<ProductionAsset, "costRM" | "error" | "folderName" | "label" | "notes" | "prompt" | "provider" | "role" | "sceneId" | "scope" | "status" | "storagePath" | "tags" | "type" | "url">>) => Promise<void> | void;
 }
 
 export function AssetsPage(props: AssetsPageProps) {
@@ -86,11 +87,69 @@ export function AssetsPage(props: AssetsPageProps) {
   const explicitlySelectedAsset = props.selectedAssetId ? props.assets.find((asset) => asset._id === props.selectedAssetId) ?? null : null;
   const activeDraftAsset = activeDraftAssetId ? props.assets.find((asset) => asset._id === activeDraftAssetId) ?? null : null;
   const selectedAsset = activeTab === "generate" ? activeDraftAsset : explicitlySelectedAsset && selectedAssetPool.some((asset) => asset._id === explicitlySelectedAsset._id) ? explicitlySelectedAsset : selectedAssetPool[0] ?? null;
+  const editableAsset = useEditableDraft(selectedAsset, selectedAsset ? `${selectedAsset._id}:${selectedAsset.updatedAt}` : null);
+  const assetDraft = editableAsset.draft;
+  const [assetSaveMessage, setAssetSaveMessage] = useState<string | null>(null);
   const selectedJob = selectedAsset ? props.jobs.find((job) => job.id === selectedAsset.jobId) ?? null : null;
   const readyReferences = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && asset.role === "reference_image" && isGeneratedDesignAsset(asset)).length;
   const readyFrames = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && (asset.role === "first_frame" || asset.role === "last_frame") && isGeneratedDesignAsset(asset)).length;
   const blockedAssets = casePlanVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
   const generatingDraft = selectedAsset ? props.generatingAssetIds.includes(selectedAsset._id) : false;
+
+  useEffect(() => {
+    setAssetSaveMessage(null);
+  }, [selectedAsset?._id]);
+
+  useEffect(() => {
+    if (!editableAsset.isDirty) {
+      return;
+    }
+
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [editableAsset.isDirty]);
+
+  function openStudioTab(tab: AssetStudioTab) {
+    if (!confirmDiscardDirtyDraft(editableAsset.isDirty)) {
+      return;
+    }
+
+    if (tab === "generate") {
+      props.selectAsset(null);
+      setActiveDraftAssetId(null);
+    }
+
+    setActiveTab(tab);
+  }
+
+  function selectAssetSafely(id: string | null) {
+    if (!confirmDiscardDirtyDraft(editableAsset.isDirty)) {
+      return;
+    }
+
+    props.selectAsset(id);
+  }
+
+  async function saveSelectedAsset(extraPatch: Partial<ProductionAsset> = {}) {
+    if (!selectedAsset || !assetDraft) {
+      return;
+    }
+
+    const nextDraft = { ...assetDraft, ...extraPatch };
+    const patch = createDraftPatch(selectedAsset, nextDraft);
+
+    if (Object.keys(patch).length > 0) {
+      await props.updateAsset(selectedAsset._id, patch);
+    }
+
+    editableAsset.markSaved(nextDraft);
+    setAssetSaveMessage("刚刚保存");
+  }
 
   function filterAssets(assets: ProductionAsset[], options: {
     activeFolder: string;
@@ -193,9 +252,9 @@ export function AssetsPage(props: AssetsPageProps) {
       {props.assetError ? <div className="inline-error"><AlertTriangle size={16} />{props.assetError}</div> : null}
 
       <div className="asset-studio-tabs">
-        <StudioTab active={activeTab === "generate"} label="生成设计" onClick={() => { props.selectAsset(null); setActiveDraftAssetId(null); setActiveTab("generate"); }} />
-        <StudioTab active={activeTab === "library"} label="资产库" onClick={() => setActiveTab("library")} />
-        <StudioTab active={activeTab === "case-plan"} label="Case 规划" onClick={() => setActiveTab("case-plan")} />
+        <StudioTab active={activeTab === "generate"} label="生成设计" onClick={() => openStudioTab("generate")} />
+        <StudioTab active={activeTab === "library"} label="资产库" onClick={() => openStudioTab("library")} />
+        <StudioTab active={activeTab === "case-plan"} label="Case 规划" onClick={() => openStudioTab("case-plan")} />
       </div>
 
       {activeTab === "generate" ? (
@@ -256,7 +315,8 @@ export function AssetsPage(props: AssetsPageProps) {
             </div>
           </section>
           <AssetInspector
-            asset={selectedAsset}
+            asset={assetDraft}
+            isDirty={editableAsset.isDirty}
             deleteAsset={props.deleteAsset}
             generateAsset={props.generateAsset}
             generating={generatingDraft}
@@ -265,7 +325,11 @@ export function AssetsPage(props: AssetsPageProps) {
             openCase={props.openCase}
             emptyBody="输入设计 prompt 后点击生成。这里只会显示本次新建的设计草稿，不会自动拿旧资产占位。"
             emptyTitle="等待新设计草稿"
-            updateAsset={props.updateAsset}
+            resetDraft={editableAsset.resetDraft}
+            saveAsset={saveSelectedAsset}
+            savedMessage={assetSaveMessage}
+            sourceAsset={selectedAsset}
+            updateAssetDraft={editableAsset.setDraftPatch}
             protectRegenerate={false}
           />
         </section>
@@ -307,7 +371,7 @@ export function AssetsPage(props: AssetsPageProps) {
               ) : (
                 <div className="asset-gallery-grid">
                   {libraryVisibleAssets.map((asset) => (
-                    <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => props.selectAsset(asset._id)}>
+                    <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                       <div className="asset-gallery-thumb">
                         {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
                       </div>
@@ -320,13 +384,18 @@ export function AssetsPage(props: AssetsPageProps) {
               )}
             </section>
             <AssetInspector
-              asset={selectedAsset}
+              asset={assetDraft}
+              isDirty={editableAsset.isDirty}
               deleteAsset={props.deleteAsset}
               generateAsset={props.generateAsset}
               generating={generatingDraft}
               job={selectedJob}
               openCase={props.openCase}
-              updateAsset={props.updateAsset}
+              resetDraft={editableAsset.resetDraft}
+              saveAsset={saveSelectedAsset}
+              savedMessage={assetSaveMessage}
+              sourceAsset={selectedAsset}
+              updateAssetDraft={editableAsset.setDraftPatch}
               protectRegenerate
             />
           </section>
@@ -368,7 +437,7 @@ export function AssetsPage(props: AssetsPageProps) {
             ) : (
               <div className="asset-gallery-grid">
                 {casePlanDisplayAssets.map((asset) => (
-                  <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => props.selectAsset(asset._id)}>
+                  <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                     <div className="asset-gallery-thumb">
                       {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
                     </div>
@@ -381,13 +450,18 @@ export function AssetsPage(props: AssetsPageProps) {
             )}
           </section>
           <AssetInspector
-            asset={selectedAsset}
+            asset={assetDraft}
+            isDirty={editableAsset.isDirty}
             deleteAsset={props.deleteAsset}
             generateAsset={props.generateAsset}
             generating={generatingDraft}
             job={selectedJob}
             openCase={props.openCase}
-            updateAsset={props.updateAsset}
+            resetDraft={editableAsset.resetDraft}
+            saveAsset={saveSelectedAsset}
+            savedMessage={assetSaveMessage}
+            sourceAsset={selectedAsset}
+            updateAssetDraft={editableAsset.setDraftPatch}
             protectRegenerate
           />
         </section>
@@ -404,10 +478,15 @@ function AssetInspector(props: {
   generateAsset: (asset: ProductionAsset) => void;
   generating: boolean;
   isWaitingForNewAsset?: boolean | undefined;
+  isDirty: boolean;
   job: AdminJob | null;
   openCase: (jobId: string) => void;
   protectRegenerate?: boolean | undefined;
-  updateAsset: AssetsPageProps["updateAsset"];
+  resetDraft: () => void;
+  saveAsset: (extraPatch?: Partial<ProductionAsset>) => void;
+  savedMessage?: string | null | undefined;
+  sourceAsset: ProductionAsset | null;
+  updateAssetDraft: (patch: Partial<ProductionAsset>) => void;
 }) {
   if (!props.asset) {
     return (
@@ -446,71 +525,91 @@ function AssetInspector(props: {
               return;
             }
 
-            props.generateAsset(asset);
+            if (!confirmDiscardDirtyDraft(props.isDirty, "当前设计资料有未保存修改。放弃这些修改并继续生成吗？")) {
+              return;
+            }
+
+            if (props.sourceAsset) {
+              props.generateAsset(props.sourceAsset);
+            }
           }}
         >
           {props.generating ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
           {props.generating ? "生成中" : props.protectRegenerate ? "重新生成并覆盖" : "生成草稿"}
         </button>
-        <button className="secondary-button" type="button" onClick={() => props.updateAsset(asset._id, { status: "approved" })}>
+        <button className="secondary-button" type="button" onClick={() => props.saveAsset({ status: "approved" })}>
           <Save size={15} />
           满意，保存入库
         </button>
-        <button className="danger-button" type="button" onClick={() => props.updateAsset(asset._id, { status: "rejected" })}>
+        <button className="danger-button" type="button" onClick={() => props.saveAsset({ status: "rejected" })}>
           不采用
         </button>
-        <button className="danger-button" type="button" onClick={() => props.deleteAsset(asset._id)}>
+        <button
+          className="danger-button"
+          type="button"
+          onClick={() => {
+            if (window.confirm(`确定删除「${asset.label}」？这个动作会删除 MongoDB 中的资产记录。`)) {
+              props.deleteAsset(asset._id);
+            }
+          }}
+        >
           <Trash2 size={15} />
           删除
         </button>
       </div>
       <div className="asset-inspector-form">
         <Field label="资产名称">
-          <input value={asset.label} onChange={(event) => props.updateAsset(asset._id, { label: event.target.value })} />
+          <input value={asset.label} onChange={(event) => props.updateAssetDraft({ label: event.target.value })} />
         </Field>
         <div className="asset-two-col">
           <Field label="文件夹">
-            <input value={asset.folderName} onChange={(event) => props.updateAsset(asset._id, { folderName: event.target.value })} />
+            <input value={asset.folderName} onChange={(event) => props.updateAssetDraft({ folderName: event.target.value })} />
           </Field>
           <Field label="标签">
-            <input value={asset.tags.join(", ")} onChange={(event) => props.updateAsset(asset._id, { tags: splitTags(event.target.value) })} />
+            <input value={asset.tags.join(", ")} onChange={(event) => props.updateAssetDraft({ tags: splitTags(event.target.value) })} />
           </Field>
         </div>
         <div className="asset-two-col">
           <Field label="类型">
-            <select value={asset.type} onChange={(event) => props.updateAsset(asset._id, { type: event.target.value as ProductionAssetType })}>
+            <select value={asset.type} onChange={(event) => props.updateAssetDraft({ type: event.target.value as ProductionAssetType })}>
               {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
             </select>
           </Field>
           <Field label="状态">
-            <select value={asset.status} onChange={(event) => props.updateAsset(asset._id, { status: event.target.value as ProductionAssetStatus })}>
+            <select value={asset.status} onChange={(event) => props.updateAssetDraft({ status: event.target.value as ProductionAssetStatus })}>
               {productionAssetStatuses.map((status) => <option key={status} value={status}>{assetStatusLabel(status)}</option>)}
             </select>
           </Field>
         </div>
         <div className="asset-two-col">
           <Field label="供应商">
-            <select value={asset.provider} onChange={(event) => props.updateAsset(asset._id, { provider: event.target.value as ProductionAssetProvider })}>
+            <select value={asset.provider} onChange={(event) => props.updateAssetDraft({ provider: event.target.value as ProductionAssetProvider })}>
               {productionAssetProviders.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
             </select>
           </Field>
           <Field label="Seedance 用途">
-            <select value={asset.role} onChange={(event) => props.updateAsset(asset._id, { role: event.target.value as ProductionAssetRole })}>
+            <select value={asset.role} onChange={(event) => props.updateAssetDraft({ role: event.target.value as ProductionAssetRole })}>
               {productionAssetRoles.map((role) => <option key={role} value={role}>{assetRoleLabel(role)}</option>)}
             </select>
           </Field>
         </div>
         <Field label="设计 Prompt">
-          <textarea rows={6} value={asset.prompt} onChange={(event) => props.updateAsset(asset._id, { prompt: event.target.value })} />
+          <textarea rows={6} value={asset.prompt} onChange={(event) => props.updateAssetDraft({ prompt: event.target.value })} />
         </Field>
         <Field label="图片 URL / artifact">
-          <input value={asset.url} onChange={(event) => props.updateAsset(asset._id, { url: event.target.value })} />
+          <input value={asset.url} onChange={(event) => props.updateAssetDraft({ url: event.target.value })} />
         </Field>
         <Field label="备注">
-          <textarea rows={3} value={asset.notes} onChange={(event) => props.updateAsset(asset._id, { notes: event.target.value })} />
+          <textarea rows={3} value={asset.notes} onChange={(event) => props.updateAssetDraft({ notes: event.target.value })} />
         </Field>
         {asset.error ? <div className="stage-error-panel"><AlertTriangle size={15} /><span>{asset.error}</span></div> : null}
       </div>
+      <EditableActionBar
+        isDirty={props.isDirty}
+        onCancel={props.resetDraft}
+        onSave={() => props.saveAsset()}
+        savedMessage={props.savedMessage}
+      />
       <div className="asset-inspector-footer">
         {props.job ? <button className="secondary-button compact-button" type="button" onClick={() => props.openCase(props.job!.id)}>打开 Case</button> : null}
       </div>

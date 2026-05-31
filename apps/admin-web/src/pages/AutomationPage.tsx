@@ -1,6 +1,7 @@
 import { Play, Power, PowerOff } from "lucide-react";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { isSameLocalDay, type ProductionSchedule, type PublishingTarget, type ScheduleRun } from "../lib/admin-data.js";
+import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
@@ -85,14 +86,26 @@ function ScheduleCard(props: {
   schedule: ProductionSchedule;
   updateSchedule: AutomationPageProps["updateSchedule"];
 }) {
+  const scheduleEditor = useEditableDraft(props.schedule, props.schedule.id);
+  const draft = scheduleEditor.draft ?? props.schedule;
   const todayCases = props.jobs.filter((job) => job.source === "scheduled" && job.scheduleId === props.schedule.id && isSameLocalDay(job.createdAt));
-  const enabledTargetCount = props.schedule.targetIds.filter((targetId) => props.publishingTargets.some((target) => target.id === targetId && target.enabled)).length;
+  const enabledTargetCount = draft.targetIds.filter((targetId) => props.publishingTargets.some((target) => target.id === targetId && target.enabled)).length;
+
+  function patchDraft(patch: Partial<ProductionSchedule>) {
+    scheduleEditor.setDraftPatch(patch);
+  }
+
+  function saveDraft() {
+    const patch = createDraftPatch(props.schedule, draft);
+    props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, ...patch }));
+    scheduleEditor.markSaved(draft);
+  }
 
   return (
     <section className="panel automation-schedule-card">
       <SectionHeader
         eyebrow="Daily production rule"
-        title={props.schedule.name}
+        title={draft.name}
         action={
           <>
             <button
@@ -112,29 +125,29 @@ function ScheduleCard(props: {
       />
 
       <div className="automation-stat-grid">
-        <AutomationStat label="Next run" value={formatDateTime(props.schedule.nextRunAt)} />
+        <AutomationStat label="Next run" value={formatDateTime(draft.nextRunAt)} />
         <AutomationStat label="Last run" value={props.schedule.lastRunAt ? formatDateTime(props.schedule.lastRunAt) : "Never"} />
-        <AutomationStat label="Today created" value={`${todayCases.length}/${props.schedule.maxVideosPerDay}`} />
+        <AutomationStat label="Today created" value={`${todayCases.length}/${draft.maxVideosPerDay}`} />
         <AutomationStat label="Targets" value={String(enabledTargetCount)} />
       </div>
 
       <div className="automation-form-grid">
         <Field label="Schedule name">
-          <input value={props.schedule.name} onChange={(event) => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, name: event.target.value }))} />
+          <input value={draft.name} onChange={(event) => patchDraft({ name: event.target.value })} />
         </Field>
         <Field label="Timezone">
-          <input value={props.schedule.timezone} onChange={(event) => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, timezone: event.target.value }))} />
+          <input value={draft.timezone} onChange={(event) => patchDraft({ timezone: event.target.value })} />
         </Field>
         <Field label="Start time">
-          <input type="time" value={props.schedule.startTime} onChange={(event) => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, startTime: event.target.value }))} />
+          <input type="time" value={draft.startTime} onChange={(event) => patchDraft({ startTime: event.target.value })} />
         </Field>
         <Field label="Cases per run">
           <input
             min={1}
             max={50}
             type="number"
-            value={props.schedule.maxCasesPerRun}
-            onChange={(event) => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, maxCasesPerRun: Number(event.target.value) }))}
+            value={draft.maxCasesPerRun}
+            onChange={(event) => patchDraft({ maxCasesPerRun: Number(event.target.value) })}
           />
         </Field>
         <Field label="Max videos / day">
@@ -142,8 +155,8 @@ function ScheduleCard(props: {
             min={1}
             max={100}
             type="number"
-            value={props.schedule.maxVideosPerDay}
-            onChange={(event) => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, maxVideosPerDay: Number(event.target.value) }))}
+            value={draft.maxVideosPerDay}
+            onChange={(event) => patchDraft({ maxVideosPerDay: Number(event.target.value) })}
           />
         </Field>
         <Field label="Budget limit RM">
@@ -151,8 +164,8 @@ function ScheduleCard(props: {
             min={1}
             step={0.5}
             type="number"
-            value={props.schedule.budgetLimitRM}
-            onChange={(event) => props.updateSchedule(props.schedule.id, (schedule) => ({ ...schedule, budgetLimitRM: Number(event.target.value) }))}
+            value={draft.budgetLimitRM}
+            onChange={(event) => patchDraft({ budgetLimitRM: Number(event.target.value) })}
           />
         </Field>
       </div>
@@ -161,14 +174,9 @@ function ScheduleCard(props: {
         {days.map((day) => (
           <label className="toggle-line" key={day.id}>
             <input
-              checked={props.schedule.daysOfWeek.includes(day.id)}
+              checked={draft.daysOfWeek.includes(day.id)}
               type="checkbox"
-              onChange={(event) =>
-                props.updateSchedule(props.schedule.id, (schedule) => ({
-                  ...schedule,
-                  daysOfWeek: event.target.checked ? [...schedule.daysOfWeek, day.id] : schedule.daysOfWeek.filter((candidate) => candidate !== day.id)
-                }))
-              }
+              onChange={(event) => patchDraft({ daysOfWeek: event.target.checked ? [...draft.daysOfWeek, day.id] : draft.daysOfWeek.filter((candidate) => candidate !== day.id) })}
             />
             <span>{day.label}</span>
           </label>
@@ -180,15 +188,10 @@ function ScheduleCard(props: {
         {props.publishingTargets.map((target) => (
           <label className="automation-target-row" key={target.id}>
             <input
-              checked={props.schedule.targetIds.includes(target.id)}
+              checked={draft.targetIds.includes(target.id)}
               disabled={!target.enabled}
               type="checkbox"
-              onChange={(event) =>
-                props.updateSchedule(props.schedule.id, (schedule) => ({
-                  ...schedule,
-                  targetIds: event.target.checked ? [...schedule.targetIds, target.id] : schedule.targetIds.filter((targetId) => targetId !== target.id)
-                }))
-              }
+              onChange={(event) => patchDraft({ targetIds: event.target.checked ? [...draft.targetIds, target.id] : draft.targetIds.filter((targetId) => targetId !== target.id) })}
             />
             <div>
               <span>{target.channelName}</span>
@@ -198,6 +201,11 @@ function ScheduleCard(props: {
           </label>
         ))}
       </div>
+      <EditableActionBar
+        isDirty={scheduleEditor.isDirty}
+        onCancel={scheduleEditor.resetDraft}
+        onSave={saveDraft}
+      />
     </section>
   );
 }

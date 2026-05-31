@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Link2, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import type { CostLog, CostSummaryResponse } from "@ai-content-factory/shared-types";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { ProviderKeyRecord, PublishingTarget, StorageSettings, StoredVideo, YouTubeAccount } from "../lib/admin-data.js";
+import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 
 export function KeysPage(props: {
@@ -37,14 +38,7 @@ export function KeysPage(props: {
             </div>
             <StatusPill tone={key.status === "configured" ? "success" : key.status === "needs_rotation" ? "warning" : "danger"}>{key.status}</StatusPill>
             <span>{key.keyName}</span>
-            <label className="toggle-line">
-              <input
-                type="checkbox"
-                checked={key.enabled}
-                onChange={(event) => props.updateProviderKey(key.id, (current) => ({ ...current, enabled: event.target.checked }))}
-              />
-              <span>Enabled</span>
-            </label>
+            <ProviderKeyEnabledDraft providerKey={key} updateProviderKey={props.updateProviderKey} />
             <div className="secret-control">
               <input
                 type={props.visibleDrafts[key.id] ? "text" : "password"}
@@ -63,6 +57,40 @@ export function KeysPage(props: {
         ))}
       </div>
     </section>
+  );
+}
+
+function ProviderKeyEnabledDraft(props: {
+  providerKey: ProviderKeyRecord;
+  updateProviderKey: (id: string, updater: (key: ProviderKeyRecord) => ProviderKeyRecord) => void;
+}) {
+  const editor = useEditableDraft(props.providerKey, `${props.providerKey.id}:${props.providerKey.updatedAt ?? ""}:${props.providerKey.enabled}`);
+  const draft = editor.draft ?? props.providerKey;
+
+  function saveDraft() {
+    const nextDraft = { ...draft, updatedAt: new Date().toISOString() };
+    const patch = createDraftPatch(props.providerKey, nextDraft);
+
+    props.updateProviderKey(props.providerKey.id, (current) => ({ ...current, ...patch }));
+    editor.markSaved(nextDraft);
+  }
+
+  return (
+    <div className="settings-draft-cell">
+      <label className="toggle-line">
+        <input
+          type="checkbox"
+          checked={draft.enabled}
+          onChange={(event) => editor.setDraftPatch({ enabled: event.target.checked })}
+        />
+        <span>Enabled</span>
+      </label>
+      <EditableActionBar
+        isDirty={editor.isDirty}
+        onCancel={editor.resetDraft}
+        onSave={saveDraft}
+      />
+    </div>
   );
 }
 
@@ -176,36 +204,65 @@ export function YouTubePage(props: {
         {props.publishingTargets.length === 0 ? <EmptyState title="No publishing targets" body="Add real channel targets after registering a YouTube account. Upload remains blocked until OAuth is connected." /> : null}
         <div className="settings-table">
           {props.publishingTargets.map((target) => (
-            <article className="settings-row publishing-target-row" key={target.id}>
-              <div>
-                <strong>{target.channelName}</strong>
-                <span>{target.youtubeChannelId}</span>
-              </div>
-              <StatusPill tone={target.enabled ? "success" : "neutral"}>{target.enabled ? "enabled" : "paused"}</StatusPill>
-              <Field label="Daily quota">
-                <input
-                  min={1}
-                  max={50}
-                  type="number"
-                  value={target.dailyQuota}
-                  onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, dailyQuota: Number(event.target.value) }))}
-                />
-              </Field>
-              <Field label="Niche">
-                <input value={target.niche} onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, niche: event.target.value }))} />
-              </Field>
-              <Field label="Upload window">
-                <input value={target.uploadWindow} onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, uploadWindow: event.target.value }))} />
-              </Field>
-              <label className="toggle-line">
-                <input checked={target.enabled} type="checkbox" onChange={(event) => props.updatePublishingTarget(target.id, (current) => ({ ...current, enabled: event.target.checked }))} />
-                <span>Enabled</span>
-              </label>
-            </article>
+            <PublishingTargetSettingsRow key={target.id} target={target} updatePublishingTarget={props.updatePublishingTarget} />
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function PublishingTargetSettingsRow(props: {
+  target: PublishingTarget;
+  updatePublishingTarget: (id: string, updater: (target: PublishingTarget) => PublishingTarget) => void;
+}) {
+  const editor = useEditableDraft(props.target, `${props.target.id}:${props.target.updatedAt}`);
+  const draft = editor.draft ?? props.target;
+
+  function patchDraft(patch: Partial<PublishingTarget>) {
+    editor.setDraftPatch(patch);
+  }
+
+  function saveDraft() {
+    const nextDraft = { ...draft, updatedAt: new Date().toISOString(), defaultPrivacy: "private" as const };
+    const patch = createDraftPatch(props.target, nextDraft);
+
+    props.updatePublishingTarget(props.target.id, (current) => ({ ...current, ...patch }));
+    editor.markSaved(nextDraft);
+  }
+
+  return (
+    <article className="settings-row publishing-target-row">
+      <div>
+        <strong>{draft.channelName}</strong>
+        <span>{draft.youtubeChannelId}</span>
+      </div>
+      <StatusPill tone={draft.enabled ? "success" : "neutral"}>{draft.enabled ? "enabled" : "paused"}</StatusPill>
+      <Field label="Daily quota">
+        <input
+          min={1}
+          max={50}
+          type="number"
+          value={draft.dailyQuota}
+          onChange={(event) => patchDraft({ dailyQuota: Number(event.target.value) })}
+        />
+      </Field>
+      <Field label="Niche">
+        <input value={draft.niche} onChange={(event) => patchDraft({ niche: event.target.value })} />
+      </Field>
+      <Field label="Upload window">
+        <input value={draft.uploadWindow} onChange={(event) => patchDraft({ uploadWindow: event.target.value })} />
+      </Field>
+      <label className="toggle-line">
+        <input checked={draft.enabled} type="checkbox" onChange={(event) => patchDraft({ enabled: event.target.checked })} />
+        <span>Enabled</span>
+      </label>
+      <EditableActionBar
+        isDirty={editor.isDirty}
+        onCancel={editor.resetDraft}
+        onSave={saveDraft}
+      />
+    </article>
   );
 }
 
@@ -216,32 +273,49 @@ export function StoragePage(props: {
   storedVideos: StoredVideo[];
   updateStoredVideo: (id: string, updater: (video: StoredVideo) => StoredVideo) => void;
 }) {
+  const settingsEditor = useEditableDraft(props.settings, JSON.stringify(props.settings));
+  const settingsDraft = settingsEditor.draft ?? props.settings;
+
+  function patchSettingsDraft(patch: Partial<StorageSettings>) {
+    settingsEditor.setDraftPatch(patch);
+  }
+
+  function saveStorageSettings() {
+    props.setSettings(settingsDraft);
+    settingsEditor.markSaved(settingsDraft);
+  }
+
   return (
     <section className="settings-grid">
       <div className="panel">
-        <SectionHeader eyebrow="Video library" title="GCP / GCS Storage" action={<StatusPill tone={props.canUpload ? "success" : "warning"}>{props.settings.driver}</StatusPill>} />
+        <SectionHeader eyebrow="Video library" title="GCP / GCS Storage" action={<StatusPill tone={props.canUpload ? "success" : "warning"}>{settingsDraft.driver}</StatusPill>} />
         <Field label="Storage driver">
-          <select value={props.settings.driver} onChange={(event) => props.setSettings({ ...props.settings, driver: event.target.value as StorageSettings["driver"] })}>
+          <select value={settingsDraft.driver} onChange={(event) => patchSettingsDraft({ driver: event.target.value as StorageSettings["driver"] })}>
             <option value="gcs">Google Cloud Storage</option>
             <option value="minio">MinIO local</option>
             <option value="local">Project uploads folder</option>
           </select>
         </Field>
         <Field label="Local uploads path">
-          <input value={props.settings.localUploadsPath} onChange={(event) => props.setSettings({ ...props.settings, localUploadsPath: event.target.value })} />
+          <input value={settingsDraft.localUploadsPath} onChange={(event) => patchSettingsDraft({ localUploadsPath: event.target.value })} />
         </Field>
         <Field label="GCP project ID">
-          <input value={props.settings.gcpProjectId} onChange={(event) => props.setSettings({ ...props.settings, gcpProjectId: event.target.value })} />
+          <input value={settingsDraft.gcpProjectId} onChange={(event) => patchSettingsDraft({ gcpProjectId: event.target.value })} />
         </Field>
         <Field label="GCS bucket">
-          <input value={props.settings.gcsBucket} onChange={(event) => props.setSettings({ ...props.settings, gcsBucket: event.target.value })} />
+          <input value={settingsDraft.gcsBucket} onChange={(event) => patchSettingsDraft({ gcsBucket: event.target.value })} />
         </Field>
         <Field label="GCS prefix">
-          <input value={props.settings.gcsPrefix} onChange={(event) => props.setSettings({ ...props.settings, gcsPrefix: event.target.value })} />
+          <input value={settingsDraft.gcsPrefix} onChange={(event) => patchSettingsDraft({ gcsPrefix: event.target.value })} />
         </Field>
         <Field label="MinIO bucket">
-          <input value={props.settings.minioBucket} onChange={(event) => props.setSettings({ ...props.settings, minioBucket: event.target.value })} />
+          <input value={settingsDraft.minioBucket} onChange={(event) => patchSettingsDraft({ minioBucket: event.target.value })} />
         </Field>
+        <EditableActionBar
+          isDirty={settingsEditor.isDirty}
+          onCancel={settingsEditor.resetDraft}
+          onSave={saveStorageSettings}
+        />
       </div>
 
       <div className="panel table-panel">
@@ -249,28 +323,52 @@ export function StoragePage(props: {
         {props.storedVideos.length === 0 ? <EmptyState title="No stored videos" body="Final MP4 records will appear here after QC." /> : null}
         <div className="settings-table">
           {props.storedVideos.map((video) => (
-            <article className="settings-row video-row" key={video.id}>
-              <div>
-                <strong>{video.title}</strong>
-                <span>{video.publicUrl ?? video.storagePath}</span>
-              </div>
-              <StatusPill tone={video.status === "uploaded_private" ? "success" : "active"}>{video.status}</StatusPill>
-              <span>{video.resolution}</span>
-              {video.publicUrl ? (
-                <a className="secondary-button" href={video.publicUrl} target="_blank" rel="noreferrer">
-                  Open
-                </a>
-              ) : null}
-              <select value={video.status} onChange={(event) => props.updateStoredVideo(video.id, (current) => ({ ...current, status: event.target.value as StoredVideo["status"] }))}>
-                <option value="draft">draft</option>
-                <option value="ready_to_upload">ready_to_upload</option>
-                <option value="uploaded_private">uploaded_private</option>
-              </select>
-            </article>
+            <StoredVideoSettingsRow key={video.id} updateStoredVideo={props.updateStoredVideo} video={video} />
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function StoredVideoSettingsRow(props: {
+  updateStoredVideo: (id: string, updater: (video: StoredVideo) => StoredVideo) => void;
+  video: StoredVideo;
+}) {
+  const editor = useEditableDraft(props.video, `${props.video.id}:${props.video.status}`);
+  const draft = editor.draft ?? props.video;
+
+  function saveDraft() {
+    const patch = createDraftPatch(props.video, draft);
+
+    props.updateStoredVideo(props.video.id, (current) => ({ ...current, ...patch }));
+    editor.markSaved(draft);
+  }
+
+  return (
+    <article className="settings-row video-row">
+      <div>
+        <strong>{draft.title}</strong>
+        <span>{draft.publicUrl ?? draft.storagePath}</span>
+      </div>
+      <StatusPill tone={draft.status === "uploaded_private" ? "success" : "active"}>{draft.status}</StatusPill>
+      <span>{draft.resolution}</span>
+      {draft.publicUrl ? (
+        <a className="secondary-button" href={draft.publicUrl} target="_blank" rel="noreferrer">
+          Open
+        </a>
+      ) : null}
+      <select value={draft.status} onChange={(event) => editor.setDraftPatch({ status: event.target.value as StoredVideo["status"] })}>
+        <option value="draft">draft</option>
+        <option value="ready_to_upload">ready_to_upload</option>
+        <option value="uploaded_private">uploaded_private</option>
+      </select>
+      <EditableActionBar
+        isDirty={editor.isDirty}
+        onCancel={editor.resetDraft}
+        onSave={saveDraft}
+      />
+    </article>
   );
 }
 

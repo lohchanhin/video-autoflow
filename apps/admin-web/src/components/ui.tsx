@@ -37,3 +37,29 @@ export function Field(props: {
     </label>
   );
 }
+
+export function EditableActionBar(props: {
+  cancelLabel?: string;
+  disabled?: boolean;
+  isDirty: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  saveLabel?: string;
+  savedMessage?: string | null | undefined;
+}) {
+  return (
+    <div className="editable-action-bar">
+      <span className={`draft-state-pill ${props.isDirty ? "dirty" : "clean"}`}>
+        {props.isDirty ? "未保存修改" : props.savedMessage ?? "已保存"}
+      </span>
+      <div>
+        <button className="secondary-button compact-button" disabled={!props.isDirty} type="button" onClick={props.onCancel}>
+          {props.cancelLabel ?? "取消修改"}
+        </button>
+        <button className="primary-button compact-button" disabled={!props.isDirty || props.disabled} type="button" onClick={props.onSave}>
+          {props.saveLabel ?? "保存修改"}
+        </button>
+      </div>
+    </div>
+  );
+}

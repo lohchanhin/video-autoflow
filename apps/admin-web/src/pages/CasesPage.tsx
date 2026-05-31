@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Sparkles, Square, UserRound, X } from "lucide-react";
 import type { ContentSeries, ProductionAsset, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
 import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo } from "../lib/admin-data.js";
 import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
+import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import type { ProductionStageId } from "../lib/production.js";
 import type { CaseDraftPreview } from "../App.js";
@@ -1265,60 +1266,104 @@ function SceneReviewPanel(props: {
         <small>{props.sceneReviews.length} scene(s)</small>
       </div>
       <div className="scene-review-list">
-        {props.sceneReviews.map((scene) => {
-          const operationId = `${props.job.id}_${scene.sceneId}`;
-          const isGenerating = props.generatingSceneImageIds.includes(operationId);
-
-          return (
-            <article className={`scene-review-card ${scene.status}`} key={scene.id}>
-              <div className="scene-review-media">
-                {isImagePath(scene.artifactPath) ? <img src={scene.artifactPath} alt={`Scene ${scene.sceneId}`} /> : <div className="scene-placeholder">Scene {scene.sceneId}</div>}
-              </div>
-              <div className="scene-review-body">
-                <div className="scene-review-title">
-                  <strong>Scene {scene.sceneId}</strong>
-                  <StatusPill tone={scene.status === "approved" ? "success" : scene.status === "rejected" ? "danger" : "warning"}>{scene.status}</StatusPill>
-                </div>
-                <div className={`scene-qc-strip ${scene.qcStatus}`}>
-                  <strong>QC: {scene.qcStatus}</strong>
-                  <span>{scene.qcSummary || "No visual QC result recorded yet."}</span>
-                </div>
-                {scene.qcIssues.length > 0 ? (
-                  <div className="scene-qc-issues">
-                    {scene.qcIssues.map((issue) => <span key={issue}>{issue}</span>)}
-                  </div>
-                ) : null}
-                {scene.referenceImagePath ? <ArtifactLink icon={<UserRound size={14} />} label="Character reference" path={scene.referenceImagePath} /> : null}
-                <Field label="Image prompt">
-                  <textarea
-                    rows={4}
-                    value={scene.prompt}
-                    onChange={(event) => props.updateSceneReview(scene.id, (current) => ({ ...current, prompt: event.target.value, status: current.status === "approved" ? "generated" : current.status }))}
-                  />
-                </Field>
-                <Field label="Review notes">
-                  <input value={scene.notes} onChange={(event) => props.updateSceneReview(scene.id, (current) => ({ ...current, notes: event.target.value }))} />
-                </Field>
-                <div className="scene-review-actions">
-                  <button className="secondary-button compact-button" disabled={isGenerating} type="button" onClick={() => props.generateSceneImageForJob(props.job, scene)}>
-                    {isGenerating ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
-                    {isGenerating ? "Regenerating" : "Regenerate this scene"}
-                  </button>
-                  <button className="secondary-button compact-button" type="button" onClick={() => props.updateSceneReview(scene.id, (current) => ({ ...current, status: "approved" }))}>
-                    <LockKeyhole size={14} />
-                    Lock approved
-                  </button>
-                  <button className="danger-button compact-button" type="button" onClick={() => props.updateSceneReview(scene.id, (current) => ({ ...current, status: "rejected" }))}>
-                    <X size={14} />
-                    Reject
-                  </button>
-                </div>
-              </div>
-            </article>
-          );
-        })}
+        {props.sceneReviews.map((scene) => (
+          <SceneReviewCard
+            generateSceneImageForJob={props.generateSceneImageForJob}
+            isGenerating={props.generatingSceneImageIds.includes(`${props.job.id}_${scene.sceneId}`)}
+            job={props.job}
+            key={scene.id}
+            scene={scene}
+            updateSceneReview={props.updateSceneReview}
+          />
+        ))}
       </div>
     </div>
+  );
+}
+
+function SceneReviewCard(props: {
+  generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
+  isGenerating: boolean;
+  job: AdminJob;
+  scene: SceneReviewItem;
+  updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
+}) {
+  const sceneEditor = useEditableDraft(props.scene, `${props.scene.id}:${props.scene.updatedAt}`);
+  const draft = sceneEditor.draft ?? props.scene;
+
+  function saveSceneDraft(extraPatch: Partial<SceneReviewItem> = {}) {
+    const nextDraft = { ...draft, ...extraPatch };
+    const patch = createDraftPatch(props.scene, nextDraft);
+
+    props.updateSceneReview(props.scene.id, (current) => ({
+      ...current,
+      ...patch
+    }));
+    sceneEditor.markSaved(nextDraft);
+  }
+
+  return (
+    <article className={`scene-review-card ${draft.status}`}>
+      <div className="scene-review-media">
+        {isImagePath(draft.artifactPath) ? <img src={draft.artifactPath} alt={`Scene ${draft.sceneId}`} /> : <div className="scene-placeholder">Scene {draft.sceneId}</div>}
+      </div>
+      <div className="scene-review-body">
+        <div className="scene-review-title">
+          <strong>Scene {draft.sceneId}</strong>
+          <StatusPill tone={draft.status === "approved" ? "success" : draft.status === "rejected" ? "danger" : "warning"}>{draft.status}</StatusPill>
+        </div>
+        <div className={`scene-qc-strip ${draft.qcStatus}`}>
+          <strong>QC: {draft.qcStatus}</strong>
+          <span>{draft.qcSummary || "No visual QC result recorded yet."}</span>
+        </div>
+        {draft.qcIssues.length > 0 ? (
+          <div className="scene-qc-issues">
+            {draft.qcIssues.map((issue) => <span key={issue}>{issue}</span>)}
+          </div>
+        ) : null}
+        {draft.referenceImagePath ? <ArtifactLink icon={<UserRound size={14} />} label="Character reference" path={draft.referenceImagePath} /> : null}
+        <Field label="Image prompt">
+          <textarea
+            rows={4}
+            value={draft.prompt}
+            onChange={(event) => sceneEditor.setDraftPatch({ prompt: event.target.value, status: draft.status === "approved" ? "generated" : draft.status })}
+          />
+        </Field>
+        <Field label="Review notes">
+          <input value={draft.notes} onChange={(event) => sceneEditor.setDraftPatch({ notes: event.target.value })} />
+        </Field>
+        <div className="scene-review-actions">
+          <button
+            className="secondary-button compact-button"
+            disabled={props.isGenerating}
+            type="button"
+            onClick={() => {
+              if (!confirmDiscardDirtyDraft(sceneEditor.isDirty, "当前 scene 有未保存修改。放弃这些修改并重新生成吗？")) {
+                return;
+              }
+
+              props.generateSceneImageForJob(props.job, props.scene);
+            }}
+          >
+            {props.isGenerating ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+            {props.isGenerating ? "Regenerating" : "Regenerate this scene"}
+          </button>
+          <button className="secondary-button compact-button" type="button" onClick={() => saveSceneDraft({ status: "approved" })}>
+            <LockKeyhole size={14} />
+            Lock approved
+          </button>
+          <button className="danger-button compact-button" type="button" onClick={() => saveSceneDraft({ status: "rejected" })}>
+            <X size={14} />
+            Reject
+          </button>
+        </div>
+        <EditableActionBar
+          isDirty={sceneEditor.isDirty}
+          onCancel={sceneEditor.resetDraft}
+          onSave={() => saveSceneDraft()}
+        />
+      </div>
+    </article>
   );
 }
 
@@ -1400,7 +1445,54 @@ function StageEditorPanel(props: {
   updateCaseDetails: CasesPageProps["updateCaseDetails"];
   updateProcessRecord: CasesPageProps["updateProcessRecord"];
 }) {
-  const selectedAgent = props.record ? props.agents.find((agent) => agent.id === props.record?.ownerAgentId) : null;
+  const caseSource = props.job
+    ? {
+        characterId: props.job.characterId,
+        prompt: props.job.prompt,
+        topic: props.job.topic
+      }
+    : null;
+  const recordSource = props.record
+    ? {
+        artifactPath: props.record.artifactPath,
+        costRM: props.record.costRM,
+        input: props.record.input,
+        notes: props.record.notes,
+        output: getRecordOutputForDisplay(props.record),
+        ownerAgentId: props.record.ownerAgentId,
+        provider: props.record.provider,
+        queueName: props.record.queueName,
+        status: props.record.status
+      }
+    : null;
+  const caseEditor = useEditableDraft(caseSource, props.job ? `${props.job.id}:${props.job.updatedAt}` : null);
+  const recordEditor = useEditableDraft(recordSource, props.record ? `${props.record.id}:${props.record.updatedAt}` : null);
+  const caseDraft = caseEditor.draft;
+  const recordDraft = recordEditor.draft;
+  const selectedAgent = recordDraft ? props.agents.find((agent) => agent.id === recordDraft.ownerAgentId) : null;
+
+  function saveCaseDraft() {
+    if (!props.job || !caseEditor.baseline || !caseDraft) {
+      return;
+    }
+
+    props.updateCaseDetails(props.job.id, createDraftPatch(caseEditor.baseline, caseDraft));
+    caseEditor.markSaved(caseDraft);
+  }
+
+  function saveRecordDraft() {
+    if (!props.record || !recordEditor.baseline || !recordDraft) {
+      return;
+    }
+
+    const patch = createDraftPatch(recordEditor.baseline, recordDraft);
+    props.updateProcessRecord(props.record.id, (current) => ({
+      ...current,
+      ...patch,
+      owner: patch.ownerAgentId ? getAgentLabel(String(patch.ownerAgentId), props.agents) : current.owner
+    }));
+    recordEditor.markSaved(recordDraft);
+  }
 
   if (!props.job) {
     return (
@@ -1434,10 +1526,10 @@ function StageEditorPanel(props: {
 
       <div className="stage-editor-grid">
         <Field label="Case topic">
-          <input value={props.job.topic} onChange={(event) => props.updateCaseDetails(props.job!.id, { topic: event.target.value })} />
+          <input value={caseDraft?.topic ?? ""} onChange={(event) => caseEditor.setDraftPatch({ topic: event.target.value })} />
         </Field>
         <Field label="Character lock">
-          <select value={props.job.characterId ?? ""} onChange={(event) => props.updateCaseDetails(props.job!.id, { characterId: event.target.value || null })}>
+          <select value={caseDraft?.characterId ?? ""} onChange={(event) => caseEditor.setDraftPatch({ characterId: event.target.value || null })}>
             <option value="">No fixed character</option>
             {props.characters.map((character) => (
               <option key={character.id} value={character.id}>
@@ -1447,11 +1539,16 @@ function StageEditorPanel(props: {
           </select>
         </Field>
         <Field label="Main prompt / production brief">
-          <textarea rows={4} value={props.job.prompt} onChange={(event) => props.updateCaseDetails(props.job!.id, { prompt: event.target.value })} />
+          <textarea rows={4} value={caseDraft?.prompt ?? ""} onChange={(event) => caseEditor.setDraftPatch({ prompt: event.target.value })} />
         </Field>
       </div>
+      <EditableActionBar
+        isDirty={caseEditor.isDirty}
+        onCancel={caseEditor.resetDraft}
+        onSave={saveCaseDraft}
+      />
 
-      {props.record ? (
+      {props.record && recordDraft ? (
         <div className="stage-editor">
           <SectionHeader
             eyebrow="Selected stage"
@@ -1461,13 +1558,8 @@ function StageEditorPanel(props: {
           <div className="stage-editor-grid">
             <Field label="Status">
               <select
-                value={props.record.status}
-                onChange={(event) =>
-                  props.updateProcessRecord(props.record!.id, (current) => ({
-                    ...current,
-                    status: event.target.value as ProcessRecordStatus
-                  }))
-                }
+                value={recordDraft.status}
+                onChange={(event) => recordEditor.setDraftPatch({ status: event.target.value as ProcessRecordStatus })}
               >
                 {processStatusOptions.map((status) => (
                   <option value={status} key={status}>
@@ -1481,25 +1573,14 @@ function StageEditorPanel(props: {
                 min={0}
                 step={0.01}
                 type="number"
-                value={props.record.costRM}
-                onChange={(event) =>
-                  props.updateProcessRecord(props.record!.id, (current) => ({
-                    ...current,
-                    costRM: Number(event.target.value)
-                  }))
-                }
+                value={recordDraft.costRM}
+                onChange={(event) => recordEditor.setDraftPatch({ costRM: Number(event.target.value) })}
               />
             </Field>
             <Field label="Controller agent">
               <select
-                value={props.record.ownerAgentId}
-                onChange={(event) =>
-                  props.updateProcessRecord(props.record!.id, (current) => ({
-                    ...current,
-                    ownerAgentId: event.target.value,
-                    owner: getAgentLabel(event.target.value, props.agents)
-                  }))
-                }
+                value={recordDraft.ownerAgentId}
+                onChange={(event) => recordEditor.setDraftPatch({ ownerAgentId: event.target.value })}
               >
                 {props.agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
@@ -1510,35 +1591,20 @@ function StageEditorPanel(props: {
             </Field>
             <Field label="Provider / tool">
               <input
-                value={props.record.provider}
-                onChange={(event) =>
-                  props.updateProcessRecord(props.record!.id, (current) => ({
-                    ...current,
-                    provider: event.target.value
-                  }))
-                }
+                value={recordDraft.provider}
+                onChange={(event) => recordEditor.setDraftPatch({ provider: event.target.value })}
               />
             </Field>
             <Field label="Queue">
               <input
-                value={props.record.queueName}
-                onChange={(event) =>
-                  props.updateProcessRecord(props.record!.id, (current) => ({
-                    ...current,
-                    queueName: event.target.value
-                  }))
-                }
+                value={recordDraft.queueName}
+                onChange={(event) => recordEditor.setDraftPatch({ queueName: event.target.value })}
               />
             </Field>
             <Field label="Artifact path / record link">
               <input
-                value={props.record.artifactPath}
-                onChange={(event) =>
-                  props.updateProcessRecord(props.record!.id, (current) => ({
-                    ...current,
-                    artifactPath: event.target.value
-                  }))
-                }
+                value={recordDraft.artifactPath}
+                onChange={(event) => recordEditor.setDraftPatch({ artifactPath: event.target.value })}
               />
             </Field>
           </div>
@@ -1551,40 +1617,30 @@ function StageEditorPanel(props: {
           <Field label="Input / instructions">
             <textarea
               rows={5}
-              value={props.record.input}
-              onChange={(event) =>
-                props.updateProcessRecord(props.record!.id, (current) => ({
-                  ...current,
-                  input: event.target.value
-                }))
-              }
+              value={recordDraft.input}
+              onChange={(event) => recordEditor.setDraftPatch({ input: event.target.value })}
             />
           </Field>
           <Field label="Output / result">
             <textarea
               rows={8}
-              value={getRecordOutputForDisplay(props.record)}
-              onChange={(event) =>
-                props.updateProcessRecord(props.record!.id, (current) => ({
-                  ...current,
-                  output: event.target.value
-                }))
-              }
+              value={recordDraft.output}
+              onChange={(event) => recordEditor.setDraftPatch({ output: event.target.value })}
             />
           </Field>
           <ArtifactPreview artifactPath={props.record.artifactPath} />
           <Field label="Internal notes">
             <textarea
               rows={4}
-              value={props.record.notes}
-              onChange={(event) =>
-                props.updateProcessRecord(props.record!.id, (current) => ({
-                  ...current,
-                  notes: event.target.value
-                }))
-              }
+              value={recordDraft.notes}
+              onChange={(event) => recordEditor.setDraftPatch({ notes: event.target.value })}
             />
           </Field>
+          <EditableActionBar
+            isDirty={recordEditor.isDirty}
+            onCancel={recordEditor.resetDraft}
+            onSave={saveRecordDraft}
+          />
         </div>
       ) : null}
     </section>

@@ -1,5 +1,5 @@
 import { Bot, RefreshCw, ShieldCheck } from "lucide-react";
-import { Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import {
   getAgentTypeLabel,
   resetStaffAgents,
@@ -8,6 +8,7 @@ import {
   type StaffAgentStatus
 } from "../lib/agents.js";
 import type { AiToolEndpoint } from "../lib/admin-data.js";
+import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface AgentsPageProps {
@@ -21,34 +22,47 @@ const planningModeOptions: AgentPlanningMode[] = ["guided", "autonomous_reviewed
 
 export function AgentsPage(props: AgentsPageProps) {
   const producerAgent = props.agents[0];
+  const agentEditor = useEditableDraft(producerAgent ?? null, producerAgent ? `${producerAgent.id}:${producerAgent.updatedAt}` : null);
+  const agentDraft = agentEditor.draft;
 
-  function updateProducerAgent(patch: Partial<StaffAgent>) {
+  function patchProducerAgent(patch: Partial<StaffAgent>) {
+    agentEditor.setDraftPatch(patch);
+  }
+
+  function saveProducerAgent() {
+    if (!producerAgent || !agentDraft) {
+      return;
+    }
+
+    const nextDraft = { ...agentDraft, updatedAt: new Date().toISOString() };
+    const patch = createDraftPatch(producerAgent, nextDraft);
+
     props.setAgents((currentAgents) =>
       currentAgents.map((agent, index) =>
         index === 0
           ? {
               ...agent,
               ...patch,
-              updatedAt: new Date().toISOString()
             }
           : agent
       )
     );
+    agentEditor.markSaved(nextDraft);
   }
 
   function toggleTool(toolId: string) {
-    if (!producerAgent) {
+    if (!agentDraft) {
       return;
     }
 
-    const allowedToolIds = producerAgent.allowedToolIds.includes(toolId)
-      ? producerAgent.allowedToolIds.filter((allowedToolId) => allowedToolId !== toolId)
-      : [...producerAgent.allowedToolIds, toolId];
+    const allowedToolIds = agentDraft.allowedToolIds.includes(toolId)
+      ? agentDraft.allowedToolIds.filter((allowedToolId) => allowedToolId !== toolId)
+      : [...agentDraft.allowedToolIds, toolId];
 
-    updateProducerAgent({ allowedToolIds });
+    patchProducerAgent({ allowedToolIds });
   }
 
-  if (!producerAgent) {
+  if (!producerAgent || !agentDraft) {
     return null;
   }
 
@@ -59,7 +73,7 @@ export function AgentsPage(props: AgentsPageProps) {
           eyebrow="Agent studio"
           title="AI Producer Agent"
           action={
-            <button className="secondary-button" type="button" onClick={() => props.setAgents(() => resetStaffAgents())}>
+            <button className="secondary-button" type="button" onClick={() => window.confirm("确定重置主控 Agent 设置？未保存修改会被放弃。") && props.setAgents(() => resetStaffAgents())}>
               <RefreshCw size={15} />
               Reset agent
             </button>
@@ -71,49 +85,54 @@ export function AgentsPage(props: AgentsPageProps) {
             <Bot size={24} />
           </span>
           <div>
-            <strong>{producerAgent.name}</strong>
-            <span>{producerAgent.role}</span>
+            <strong>{agentDraft.name}</strong>
+            <span>{agentDraft.role}</span>
           </div>
-          <StatusPill tone={producerAgent.status === "active" ? "success" : producerAgent.status === "paused" ? "neutral" : "warning"}>
-            {producerAgent.status}
+          <StatusPill tone={agentDraft.status === "active" ? "success" : agentDraft.status === "paused" ? "neutral" : "warning"}>
+            {agentDraft.status}
           </StatusPill>
         </div>
 
         <div className="inspector-summary">
           <div>
             <span>Type</span>
-            <strong>{getAgentTypeLabel(producerAgent.type)}</strong>
+            <strong>{getAgentTypeLabel(agentDraft.type)}</strong>
           </div>
           <div>
             <span>Planning</span>
-            <strong>{producerAgent.planningMode}</strong>
+            <strong>{agentDraft.planningMode}</strong>
           </div>
           <div>
             <span>Budget guard</span>
-            <strong>RM {producerAgent.costGuardRM.toFixed(2)}</strong>
+            <strong>RM {agentDraft.costGuardRM.toFixed(2)}</strong>
           </div>
           <div>
             <span>Updated</span>
-            <strong>{formatDateTime(producerAgent.updatedAt)}</strong>
+            <strong>{formatDateTime(agentDraft.updatedAt)}</strong>
           </div>
         </div>
 
         <Field label="Agent name">
-          <input value={producerAgent.name} onChange={(event) => updateProducerAgent({ name: event.target.value })} />
+          <input value={agentDraft.name} onChange={(event) => patchProducerAgent({ name: event.target.value })} />
         </Field>
         <Field label="Mission">
-          <textarea rows={4} value={producerAgent.mission} onChange={(event) => updateProducerAgent({ mission: event.target.value })} />
+          <textarea rows={4} value={agentDraft.mission} onChange={(event) => patchProducerAgent({ mission: event.target.value })} />
         </Field>
         <Field label="System prompt">
-          <textarea rows={8} value={producerAgent.systemPrompt} onChange={(event) => updateProducerAgent({ systemPrompt: event.target.value })} />
+          <textarea rows={8} value={agentDraft.systemPrompt} onChange={(event) => patchProducerAgent({ systemPrompt: event.target.value })} />
         </Field>
+        <EditableActionBar
+          isDirty={agentEditor.isDirty}
+          onCancel={agentEditor.resetDraft}
+          onSave={saveProducerAgent}
+        />
       </section>
 
       <section className="panel agent-policy-panel">
         <SectionHeader eyebrow="Operating policy" title="Decision Boundaries" />
         <div className="two-column-fields">
           <Field label="Status">
-            <select value={producerAgent.status} onChange={(event) => updateProducerAgent({ status: event.target.value as StaffAgentStatus })}>
+            <select value={agentDraft.status} onChange={(event) => patchProducerAgent({ status: event.target.value as StaffAgentStatus })}>
               {agentStatusOptions.map((status) => (
                 <option key={status} value={status}>
                   {status}
@@ -122,7 +141,7 @@ export function AgentsPage(props: AgentsPageProps) {
             </select>
           </Field>
           <Field label="Planning mode">
-            <select value={producerAgent.planningMode} onChange={(event) => updateProducerAgent({ planningMode: event.target.value as AgentPlanningMode })}>
+            <select value={agentDraft.planningMode} onChange={(event) => patchProducerAgent({ planningMode: event.target.value as AgentPlanningMode })}>
               {planningModeOptions.map((mode) => (
                 <option key={mode} value={mode}>
                   {mode}
@@ -132,22 +151,22 @@ export function AgentsPage(props: AgentsPageProps) {
           </Field>
         </div>
         <Field label="Cost guard RM">
-          <input min={0} step={0.1} type="number" value={producerAgent.costGuardRM} onChange={(event) => updateProducerAgent({ costGuardRM: Number(event.target.value) })} />
+          <input min={0} step={0.1} type="number" value={agentDraft.costGuardRM} onChange={(event) => patchProducerAgent({ costGuardRM: Number(event.target.value) })} />
         </Field>
         <Field label="Human approval policy">
-          <textarea rows={4} value={producerAgent.humanApprovalPolicy} onChange={(event) => updateProducerAgent({ humanApprovalPolicy: event.target.value })} />
+          <textarea rows={4} value={agentDraft.humanApprovalPolicy} onChange={(event) => patchProducerAgent({ humanApprovalPolicy: event.target.value })} />
         </Field>
         <Field label="Publishing policy">
-          <textarea rows={4} value={producerAgent.publishingPolicy} onChange={(event) => updateProducerAgent({ publishingPolicy: event.target.value })} />
+          <textarea rows={4} value={agentDraft.publishingPolicy} onChange={(event) => patchProducerAgent({ publishingPolicy: event.target.value })} />
         </Field>
         <Field label="Fallback strategy">
-          <textarea rows={4} value={producerAgent.fallbackStrategy} onChange={(event) => updateProducerAgent({ fallbackStrategy: event.target.value })} />
+          <textarea rows={4} value={agentDraft.fallbackStrategy} onChange={(event) => patchProducerAgent({ fallbackStrategy: event.target.value })} />
         </Field>
         <Field label="Memory sources">
           <input
-            value={producerAgent.memorySources.join(", ")}
+            value={agentDraft.memorySources.join(", ")}
             onChange={(event) =>
-              updateProducerAgent({
+              patchProducerAgent({
                 memorySources: event.target.value
                   .split(",")
                   .map((source) => source.trim())
@@ -156,13 +175,18 @@ export function AgentsPage(props: AgentsPageProps) {
             }
           />
         </Field>
+        <EditableActionBar
+          isDirty={agentEditor.isDirty}
+          onCancel={agentEditor.resetDraft}
+          onSave={saveProducerAgent}
+        />
       </section>
 
       <section className="panel agent-tools-panel">
         <SectionHeader eyebrow="Tool permissions" title="Allowed Tools" />
         <div className="agent-tool-permission-list">
           {props.endpoints.map((endpoint) => {
-            const allowed = producerAgent.allowedToolIds.includes(endpoint.id);
+            const allowed = agentDraft.allowedToolIds.includes(endpoint.id);
 
             return (
               <article className="agent-tool-permission-row" key={endpoint.id}>
@@ -181,6 +205,11 @@ export function AgentsPage(props: AgentsPageProps) {
             );
           })}
         </div>
+        <EditableActionBar
+          isDirty={agentEditor.isDirty}
+          onCancel={agentEditor.resetDraft}
+          onSave={saveProducerAgent}
+        />
         <div className="policy-note">
           <ShieldCheck size={18} />
           <span>Tool permissions are the Agent's action boundary. Paid, upload, and storage tools should stay auditable and gated.</span>

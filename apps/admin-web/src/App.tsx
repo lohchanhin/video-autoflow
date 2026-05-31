@@ -3868,8 +3868,8 @@ export function App() {
             selectSeries={selectSeries}
             selectedSeriesId={selectedSeriesId}
             series={contentSeries}
-            updateEpisode={(seriesId, episodeId, patch) => void handleUpdateSeriesEpisode(seriesId, episodeId, patch)}
-            updateSeries={(id, patch) => void handleUpdateSeries(id, patch)}
+            updateEpisode={(seriesId, episodeId, patch) => handleUpdateSeriesEpisode(seriesId, episodeId, patch)}
+            updateSeries={(id, patch) => handleUpdateSeries(id, patch)}
           />
         ) : null}
 
@@ -4020,7 +4020,7 @@ export function App() {
             setFilterJobId={setAssetFilterJobId}
             setFilterStatus={setAssetFilterStatus}
             setFilterType={setAssetFilterType}
-            updateAsset={(id, patch) => void handleUpdateProductionAsset(id, patch)}
+            updateAsset={(id, patch) => handleUpdateProductionAsset(id, patch)}
           />
         ) : null}
 
