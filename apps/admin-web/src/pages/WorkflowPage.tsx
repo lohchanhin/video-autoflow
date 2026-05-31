@@ -28,6 +28,7 @@ import {
 interface WorkflowPageProps {
   agents: StaffAgent[];
   endpoints: AiToolEndpoint[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   resetSettings: () => void;
   resetEndpoints: () => void;
   settings: ToolProviderSettings[];
@@ -226,6 +227,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
               endpoints={props.endpoints}
               selectedStage={selectedStage}
               stageEndpoint={stageEndpoint}
+              reportDirtyState={props.reportDirtyState}
               updateStageEndpoint={updateStageEndpoint}
               producerAgent={producerAgent}
               openTools={(endpointId) => {
@@ -288,6 +290,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                 <ToolProviderEditor
                   modelSyncState={selectedModelSyncState}
                   onSyncModels={syncOpenAIModels}
+                  reportDirtyState={props.reportDirtyState}
                   setting={selectedToolSetting}
                   updateToolSetting={props.updateToolSetting}
                 />
@@ -352,6 +355,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
 function StageInspector(props: {
   endpoints: AiToolEndpoint[];
   producerAgent: StaffAgent | null;
+  reportDirtyState?: WorkflowPageProps["reportDirtyState"];
   selectedStage: ReturnType<typeof getProductionStage>;
   stageEndpoint: AiToolEndpoint | null;
   updateStageEndpoint: (stageId: ProductionStageId, endpointId: string) => void;
@@ -360,6 +364,13 @@ function StageInspector(props: {
   const toolAllowed = props.stageEndpoint ? Boolean(props.producerAgent?.allowedToolIds.includes(props.stageEndpoint.id)) : true;
   const routeEditor = useEditableDraft({ endpointId: props.stageEndpoint?.id ?? "" }, props.selectedStage.id);
   const draftEndpointId = routeEditor.draft?.endpointId ?? "";
+  const reportDirtyState = props.reportDirtyState;
+  const selectedStageId = props.selectedStage.id;
+
+  useEffect(() => {
+    reportDirtyState?.(`workflow-route:${selectedStageId}`, routeEditor.isDirty);
+    return () => reportDirtyState?.(`workflow-route:${selectedStageId}`, false);
+  }, [reportDirtyState, routeEditor.isDirty, selectedStageId]);
 
   return (
     <>
@@ -421,11 +432,19 @@ function StageInspector(props: {
 function ToolProviderEditor(props: {
   modelSyncState: ModelSyncState;
   onSyncModels: (setting: ToolProviderSettings) => void;
+  reportDirtyState?: WorkflowPageProps["reportDirtyState"];
   setting: ToolProviderSettings;
   updateToolSetting: (id: string, updater: (setting: ToolProviderSettings) => ToolProviderSettings) => void;
 }) {
   const editor = useEditableDraft(props.setting, `${props.setting.id}:${props.setting.updatedAt}`);
   const setting = editor.draft ?? props.setting;
+  const reportDirtyState = props.reportDirtyState;
+  const settingId = props.setting.id;
+
+  useEffect(() => {
+    reportDirtyState?.(`workflow-tool:${settingId}`, editor.isDirty);
+    return () => reportDirtyState?.(`workflow-tool:${settingId}`, false);
+  }, [editor.isDirty, reportDirtyState, settingId]);
 
   function patch(patchValue: Partial<ToolProviderSettings>) {
     editor.setDraftPatch({

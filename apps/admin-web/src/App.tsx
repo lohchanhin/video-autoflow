@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   BookOpen,
@@ -1087,6 +1087,7 @@ function defaultProductionAssetRole(type: ProductionAssetType): ProductionAsset[
 
 export function App() {
   const [activeView, setActiveView] = useState<ActiveView>(() => getInitialView());
+  const [dirtyDrafts, setDirtyDrafts] = useState<Record<string, boolean>>({});
   const [apiState, setApiState] = useState<ApiState>("checking");
   const [databaseState, setDatabaseState] = useState<ServiceState>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -1346,7 +1347,35 @@ export function App() {
     }
   }
 
+  const hasUnsavedDrafts = useMemo(() => Object.values(dirtyDrafts).some(Boolean), [dirtyDrafts]);
+
+  const reportDirtyDraft = useCallback((key: string, isDirty: boolean) => {
+    setDirtyDrafts((currentDrafts) => {
+      if (currentDrafts[key] === isDirty) {
+        return currentDrafts;
+      }
+
+      const nextDrafts = { ...currentDrafts };
+
+      if (isDirty) {
+        nextDrafts[key] = true;
+      } else {
+        delete nextDrafts[key];
+      }
+
+      return nextDrafts;
+    });
+  }, []);
+
   function switchView(view: ActiveView) {
+    if (view === activeView) {
+      return;
+    }
+
+    if (hasUnsavedDrafts && !window.confirm("当前页面还有未保存修改。切换页面会放弃这些草稿，确定继续吗？")) {
+      return;
+    }
+
     setActiveView(view);
     window.location.hash = view;
   }
@@ -3833,6 +3862,7 @@ export function App() {
             jobs={jobs}
             producerAgent={staffAgents[0] ?? null}
             publishingTargets={publishingTargets}
+            reportDirtyState={reportDirtyDraft}
             runSchedule={(scheduleId) => runProductionSchedule(scheduleId, "manual")}
             runs={scheduleRuns}
             schedules={productionSchedules}
@@ -3894,6 +3924,7 @@ export function App() {
               setSelectedJobId(id);
               switchView("cases");
             }}
+            reportDirtyState={reportDirtyDraft}
             refresh={() => void refreshSeries()}
             selectSeries={selectSeries}
             selectedSeriesId={selectedSeriesId}
@@ -4053,12 +4084,13 @@ export function App() {
           />
         ) : null}
 
-        {activeView === "agents" ? <AgentsPage agents={staffAgents} endpoints={aiToolEndpoints} setAgents={setStaffAgents} /> : null}
+        {activeView === "agents" ? <AgentsPage agents={staffAgents} endpoints={aiToolEndpoints} reportDirtyState={reportDirtyDraft} setAgents={setStaffAgents} /> : null}
 
         {activeView === "workflow" ? (
           <WorkflowPage
             agents={staffAgents}
             endpoints={aiToolEndpoints}
+            reportDirtyState={reportDirtyDraft}
             resetEndpoints={() => setAiToolEndpoints(resetAiToolEndpoints())}
             resetSettings={() => setToolProviderSettings(resetToolProviderSettings())}
             settings={toolProviderSettings}

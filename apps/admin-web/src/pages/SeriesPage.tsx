@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Loader2, Plus, RefreshCw, Sparkles, Trash2, XCircle } from "lucide-react";
 import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
@@ -18,6 +18,7 @@ interface SeriesPageProps {
   isLoading: boolean;
   jobs: AdminJob[];
   refresh: () => void;
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   selectSeries: (id: string | null) => void;
   selectedSeriesId: string | null;
   series: ContentSeries[];
@@ -40,6 +41,13 @@ export function SeriesPage(props: SeriesPageProps) {
   const approvedEpisodes = props.episodes.filter((episode) => episode.status === "approved").length;
   const convertedEpisodes = props.episodes.filter((episode) => episode.status === "converted_to_case").length;
   const generating = selectedSeries ? props.generatingSeriesIds.includes(selectedSeries._id) : false;
+  const reportDirtyState = props.reportDirtyState;
+  const selectedSeriesId = selectedSeries?._id ?? "none";
+
+  useEffect(() => {
+    reportDirtyState?.(`series:${selectedSeriesId}`, seriesEditor.isDirty);
+    return () => reportDirtyState?.(`series:${selectedSeriesId}`, false);
+  }, [reportDirtyState, selectedSeriesId, seriesEditor.isDirty]);
 
   function patchSeriesDraft(patch: Partial<ContentSeries>) {
     seriesEditor.setDraftPatch(patch);
@@ -286,6 +294,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 linkedJob={props.jobs.find((job) => job.id === episode.caseId) ?? null}
                 openCase={props.openCase}
                 selectedSeries={selectedSeries}
+                reportDirtyState={props.reportDirtyState}
                 updateEpisode={props.updateEpisode}
                 convertEpisodeToCase={props.convertEpisodeToCase}
               />
@@ -302,6 +311,7 @@ function EpisodeRow(props: {
   episode: SeriesEpisodeIdea;
   linkedJob: AdminJob | null;
   openCase: (id: string) => void;
+  reportDirtyState?: SeriesPageProps["reportDirtyState"];
   selectedSeries: ContentSeries;
   updateEpisode: SeriesPageProps["updateEpisode"];
 }) {
@@ -309,6 +319,13 @@ function EpisodeRow(props: {
   const episodeEditor = useEditableDraft(props.episode, `${props.episode._id}:${props.episode.updatedAt}`);
   const episodeDraft = episodeEditor.draft ?? props.episode;
   const canConvert = props.episode.status === "approved";
+  const reportDirtyState = props.reportDirtyState;
+  const episodeId = props.episode._id;
+
+  useEffect(() => {
+    reportDirtyState?.(`series-episode:${episodeId}`, episodeEditor.isDirty);
+    return () => reportDirtyState?.(`series-episode:${episodeId}`, false);
+  }, [episodeEditor.isDirty, episodeId, reportDirtyState]);
 
   function patchEpisodeDraft(patch: Partial<SeriesEpisodeIdea>) {
     episodeEditor.setDraftPatch(patch);

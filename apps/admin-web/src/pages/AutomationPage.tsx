@@ -1,4 +1,5 @@
 import { Play, Power, PowerOff } from "lucide-react";
+import { useEffect } from "react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
 import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type PublishingTarget, type ScheduleRun, type ToolProviderSettings } from "../lib/admin-data.js";
@@ -12,6 +13,7 @@ interface AutomationPageProps {
   jobs: AdminJob[];
   producerAgent: StaffAgent | null;
   publishingTargets: PublishingTarget[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   runSchedule: (scheduleId: string) => void;
   runs: ScheduleRun[];
   schedules: ProductionSchedule[];
@@ -56,6 +58,7 @@ export function AutomationPage(props: AutomationPageProps) {
               key={schedule.id}
               producerAgent={props.producerAgent}
               publishingTargets={props.publishingTargets}
+              reportDirtyState={props.reportDirtyState}
               runSchedule={props.runSchedule}
               schedule={schedule}
               settings={props.settings}
@@ -92,6 +95,7 @@ function ScheduleCard(props: {
   jobs: AdminJob[];
   producerAgent: StaffAgent | null;
   publishingTargets: PublishingTarget[];
+  reportDirtyState?: AutomationPageProps["reportDirtyState"];
   runSchedule: (scheduleId: string) => void;
   schedule: ProductionSchedule;
   settings: ToolProviderSettings[];
@@ -99,6 +103,8 @@ function ScheduleCard(props: {
 }) {
   const scheduleEditor = useEditableDraft(props.schedule, JSON.stringify(props.schedule));
   const draft = scheduleEditor.draft ?? props.schedule;
+  const reportDirtyState = props.reportDirtyState;
+  const scheduleId = props.schedule.id;
   const todayCases = props.jobs.filter((job) => job.source === "scheduled" && job.scheduleId === props.schedule.id && isSameLocalDay(job.createdAt));
   const enabledTargetCount = draft.targetIds.filter((targetId) => props.publishingTargets.some((target) => target.id === targetId && target.enabled)).length;
   const runGuard = evaluateScheduleRunGuard({
@@ -109,6 +115,11 @@ function ScheduleCard(props: {
     schedule: props.schedule,
     settings: props.settings
   });
+
+  useEffect(() => {
+    reportDirtyState?.(`automation:${scheduleId}`, scheduleEditor.isDirty);
+    return () => reportDirtyState?.(`automation:${scheduleId}`, false);
+  }, [reportDirtyState, scheduleEditor.isDirty, scheduleId]);
 
   function patchDraft(patch: Partial<ProductionSchedule>) {
     scheduleEditor.setDraftPatch(patch);

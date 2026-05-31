@@ -1,4 +1,5 @@
 import { Bot, RefreshCw, ShieldCheck } from "lucide-react";
+import { useEffect } from "react";
 import { EditableActionBar, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import {
   getAgentTypeLabel,
@@ -14,6 +15,7 @@ import { formatDateTime } from "../lib/view-helpers.js";
 interface AgentsPageProps {
   agents: StaffAgent[];
   endpoints: AiToolEndpoint[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   setAgents: (updater: (agents: StaffAgent[]) => StaffAgent[]) => void;
 }
 
@@ -21,9 +23,15 @@ const agentStatusOptions: StaffAgentStatus[] = ["active", "paused", "needs_setup
 const planningModeOptions: AgentPlanningMode[] = ["guided", "autonomous_reviewed", "manual_only"];
 
 export function AgentsPage(props: AgentsPageProps) {
+  const { reportDirtyState } = props;
   const producerAgent = props.agents[0];
   const agentEditor = useEditableDraft(producerAgent ?? null, producerAgent ? `${producerAgent.id}:${producerAgent.updatedAt}` : null);
   const agentDraft = agentEditor.draft;
+
+  useEffect(() => {
+    reportDirtyState?.("agents:producer", agentEditor.isDirty);
+    return () => reportDirtyState?.("agents:producer", false);
+  }, [agentEditor.isDirty, reportDirtyState]);
 
   function patchProducerAgent(patch: Partial<StaffAgent>) {
     agentEditor.setDraftPatch(patch);
