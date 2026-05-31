@@ -36,6 +36,8 @@ APP_DIR=/opt/ai-content-factory BRANCH=main bash infra/deploy/git-pull-deploy.sh
 - workspace build
 - `docker compose -f docker-compose.prod.yml up -d`
 
+如果 Droplet 宿主机没有安装 Node/Corepack，脚本会自动用 `node:22-bookworm-slim` Docker 容器执行 pnpm install/build/check。
+
 ## Ports
 
 - API: `http://<droplet-ip>:4000`

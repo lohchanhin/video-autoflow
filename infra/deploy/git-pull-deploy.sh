@@ -25,17 +25,31 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
+run_in_node() {
+  if command -v corepack >/dev/null 2>&1; then
+    corepack enable
+    "$@"
+    return
+  fi
+
+  docker run --rm \
+    -v "$APP_DIR:/workspace" \
+    -v ai-content-factory-pnpm-store:/root/.local/share/pnpm/store \
+    -w /workspace \
+    node:22-bookworm-slim \
+    sh -lc "corepack enable && $*"
+}
+
 echo "==> Installing dependencies"
-corepack enable
-corepack pnpm install --frozen-lockfile
+run_in_node corepack pnpm install --frozen-lockfile
 
 echo "==> Running checks"
-corepack pnpm type-check
-corepack pnpm lint
+run_in_node corepack pnpm type-check
+run_in_node corepack pnpm lint
 
 echo "==> Building workspace"
-corepack pnpm build
-corepack pnpm --filter @ai-content-factory/admin-web build
+run_in_node corepack pnpm build
+run_in_node corepack pnpm --filter @ai-content-factory/admin-web build
 
 echo "==> Restarting Docker Compose"
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
