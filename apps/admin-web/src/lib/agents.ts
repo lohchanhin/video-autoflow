@@ -88,6 +88,7 @@ export const defaultProducerAgent: StaffAgent = {
   allowedToolIds: [
     "tool_llm",
     "tool_image",
+    "tool_video",
     "tool_tts",
     "tool_music",
     "tool_subtitle",
@@ -172,7 +173,7 @@ function normalizeStaffAgents(agents: StaffAgent[]): StaffAgent[] {
       costGuardRM: producerCandidate.costGuardRM ?? defaultProducerAgent.costGuardRM,
       mission: normalizeLegacyAgentText(producerCandidate.mission, defaultProducerAgent.mission),
       systemPrompt: normalizeLegacyAgentText(producerCandidate.systemPrompt, defaultProducerAgent.systemPrompt),
-      allowedToolIds: producerCandidate.allowedToolIds ?? defaultProducerAgent.allowedToolIds,
+      allowedToolIds: normalizeAllowedToolIds(producerCandidate.allowedToolIds),
       memorySources: producerCandidate.memorySources ?? defaultProducerAgent.memorySources,
       planningMode: producerCandidate.planningMode ?? defaultProducerAgent.planningMode,
       humanApprovalPolicy: producerCandidate.humanApprovalPolicy ?? defaultProducerAgent.humanApprovalPolicy,
@@ -182,6 +183,22 @@ function normalizeStaffAgents(agents: StaffAgent[]): StaffAgent[] {
       updatedAt: producerCandidate.updatedAt ?? new Date().toISOString()
     }
   ];
+}
+
+function normalizeAllowedToolIds(allowedToolIds: string[] | undefined): string[] {
+  if (!allowedToolIds?.length) {
+    return defaultProducerAgent.allowedToolIds;
+  }
+
+  const defaultToolIds = defaultProducerAgent.allowedToolIds;
+  const legacyToolIds = defaultToolIds.filter((toolId) => toolId !== "tool_video");
+  const looksLikeLegacyFullAccess = legacyToolIds.every((toolId) => allowedToolIds.includes(toolId)) && !allowedToolIds.includes("tool_video");
+
+  if (!looksLikeLegacyFullAccess) {
+    return allowedToolIds;
+  }
+
+  return [...allowedToolIds, "tool_video"];
 }
 
 function normalizeLegacyAgentText(value: string | undefined, fallback: string): string {
