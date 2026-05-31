@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Sparkles, Square, UserRound, X } from "lucide-react";
 import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
@@ -102,6 +102,12 @@ function isSelectableDraftAsset(asset: ProductionAsset): boolean {
 export function CasesPage(props: CasesPageProps) {
   const [activeTab, setActiveTab] = useState<CaseTab>(props.selectedJob ? "production" : "new");
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(props.selectedRecords[0]?.id ?? null);
+  const [caseDirtyDrafts, setCaseDirtyDrafts] = useState<Record<string, boolean>>({});
+  const hasCaseDirtyDrafts = Object.values(caseDirtyDrafts).some(Boolean);
+  const reportCaseDirtyState = useCallback((key: string, isDirty: boolean) => {
+    setCaseDirtyDrafts((currentDrafts) => updateDirtyDraftMap(currentDrafts, key, isDirty));
+    props.reportDirtyState?.(key, isDirty);
+  }, [props.reportDirtyState]);
 
   useEffect(() => {
     if (!props.selectedRecords.some((record) => record.id === selectedRecordId)) {
@@ -124,7 +130,21 @@ export function CasesPage(props: CasesPageProps) {
   const selectedRecord = props.selectedRecords.find((record) => record.id === selectedRecordId) ?? props.selectedRecords[0] ?? null;
   const blockedCases = props.jobs.filter((job) => job.status === "FAILED").length;
 
+  function canLeaveCaseWorkspace(message = "当前 Case 工作台有未保存修改。确定放弃这些修改并切换吗？") {
+    return confirmDiscardDirtyDraft(hasCaseDirtyDrafts, message);
+  }
+
+  function switchCaseTab(tab: CaseTab) {
+    if (tab === activeTab || canLeaveCaseWorkspace()) {
+      setActiveTab(tab);
+    }
+  }
+
   function openCase(id: string) {
+    if (props.selectedJob?.id !== id && !canLeaveCaseWorkspace("当前 Case 工作台有未保存修改。确定放弃这些修改并打开另一个 Case 吗？")) {
+      return;
+    }
+
     props.selectCase(id);
     setActiveTab("production");
   }
@@ -135,6 +155,10 @@ export function CasesPage(props: CasesPageProps) {
   }
 
   function clearCases() {
+    if (!canLeaveCaseWorkspace("当前 Case 工作台有未保存修改。确定放弃这些修改并清空 Case 历史吗？")) {
+      return;
+    }
+
     if (!window.confirm("确定清空当前浏览器里的 Case 历史、阶段记录、活动记录和相关本地状态？这个动作不能撤销。")) {
       return;
     }
@@ -146,9 +170,9 @@ export function CasesPage(props: CasesPageProps) {
   return (
     <section className="cases-workbench">
       <div className="case-tabs" role="tablist" aria-label="Case workspace tabs">
-        <CaseTabButton active={activeTab === "new"} label="New Case" meta="Brief" onClick={() => setActiveTab("new")} />
-        <CaseTabButton active={activeTab === "queue"} label="Queue" meta={`${props.jobs.length} cases`} onClick={() => setActiveTab("queue")} />
-        <CaseTabButton active={activeTab === "production"} disabled={!props.selectedJob} label="Production" meta={props.selectedJob?.id ?? "Select case"} onClick={() => setActiveTab("production")} />
+        <CaseTabButton active={activeTab === "new"} label="New Case" meta="Brief" onClick={() => switchCaseTab("new")} />
+        <CaseTabButton active={activeTab === "queue"} label="Queue" meta={`${props.jobs.length} cases`} onClick={() => switchCaseTab("queue")} />
+        <CaseTabButton active={activeTab === "production"} disabled={!props.selectedJob} label="Production" meta={props.selectedJob?.id ?? "Select case"} onClick={() => switchCaseTab("production")} />
       </div>
 
       {activeTab === "new" ? <CreateCaseTab {...props} createCase={createCase} /> : null}
@@ -160,6 +184,7 @@ export function CasesPage(props: CasesPageProps) {
       {activeTab === "production" ? (
         <ProductionTab
           {...props}
+          reportDirtyState={reportCaseDirtyState}
           selectedRecord={selectedRecord}
           setSelectedRecordId={setSelectedRecordId}
         />
@@ -527,6 +552,12 @@ function ProductionTab(
   const [caseCostLogs, setCaseCostLogs] = useState<CostLog[]>([]);
   const [caseCostSummary, setCaseCostSummary] = useState<CostSummaryResponse | null>(null);
   const [isLoadingCaseCosts, setIsLoadingCaseCosts] = useState(false);
+  const [productionDirtyDrafts, setProductionDirtyDrafts] = useState<Record<string, boolean>>({});
+  const hasProductionDirtyDrafts = Object.values(productionDirtyDrafts).some(Boolean);
+  const reportProductionDirtyState = useCallback((key: string, isDirty: boolean) => {
+    setProductionDirtyDrafts((currentDrafts) => updateDirtyDraftMap(currentDrafts, key, isDirty));
+    props.reportDirtyState?.(key, isDirty);
+  }, [props.reportDirtyState]);
 
   useEffect(() => {
     if (!props.selectedJob || activeProductionTab !== "cost") {
@@ -613,6 +644,30 @@ function ProductionTab(
     }
   });
 
+  function canLeaveProductionDrafts(message = "当前生产工作台有未保存修改。确定放弃这些修改并切换吗？") {
+    return confirmDiscardDirtyDraft(hasProductionDirtyDrafts, message);
+  }
+
+  function switchProductionTab(tab: ProductionWorkbenchTab) {
+    if (tab === activeProductionTab || canLeaveProductionDrafts()) {
+      setActiveProductionTab(tab);
+    }
+  }
+
+  function selectProductionRecord(recordId: string) {
+    if (recordId === props.selectedRecord?.id || canLeaveProductionDrafts("当前阶段编辑器有未保存修改。确定放弃这些修改并查看另一个阶段吗？")) {
+      props.setSelectedRecordId(recordId);
+    }
+  }
+
+  function runProductionAction(action: () => void) {
+    if (!confirmDiscardDirtyDraft(hasProductionDirtyDrafts, "当前生产工作台有未保存修改。继续会使用已保存资料执行操作，确定继续吗？")) {
+      return;
+    }
+
+    action();
+  }
+
   return (
     <section className="production-tab">
       <div className="case-production-header panel">
@@ -654,15 +709,15 @@ function ProductionTab(
       ) : null}
 
       <div className="case-action-bar production-actions">
-        <button className="primary-button" type="button" disabled={nextAction.disabled} onClick={nextAction.onClick}>
+        <button className="primary-button" type="button" disabled={nextAction.disabled} onClick={() => runProductionAction(nextAction.onClick)}>
           {nextAction.loading ? <Loader2 size={16} className="spin" /> : nextAction.icon}
           {nextAction.label}
         </button>
-        <button className="secondary-button" type="button" onClick={() => setActiveProductionTab("overview")}>
+        <button className="secondary-button" type="button" onClick={() => switchProductionTab("overview")}>
           Overview
         </button>
         {props.selectedJob.status === "FAILED" ? (
-          <button className="secondary-button" type="button" onClick={() => props.updateJob(props.selectedJob!.id, retryCase)}>
+          <button className="secondary-button" type="button" onClick={() => runProductionAction(() => props.updateJob(props.selectedJob!.id, retryCase))}>
             <RotateCcw size={16} />
             Retry
           </button>
@@ -670,7 +725,7 @@ function ProductionTab(
           <button
             className="secondary-button"
             type="button"
-            onClick={() => window.confirm("确定手动推进这个 Case 的生产状态？这会写入活动记录。") && props.updateJob(props.selectedJob!.id, advanceCase)}
+            onClick={() => runProductionAction(() => window.confirm("确定手动推进这个 Case 的生产状态？这会写入活动记录。") && props.updateJob(props.selectedJob!.id, advanceCase))}
           >
             <Play size={16} />
             Advance
@@ -679,13 +734,13 @@ function ProductionTab(
         <button
           className="danger-button"
           type="button"
-          onClick={() => window.confirm("确定把这个 Case 标记为失败？这会影响 Dashboard、队列和后续自动化判断。") && props.updateJob(props.selectedJob!.id, failCase)}
+          onClick={() => runProductionAction(() => window.confirm("确定把这个 Case 标记为失败？这会影响 Dashboard、队列和后续自动化判断。") && props.updateJob(props.selectedJob!.id, failCase))}
         >
           <AlertTriangle size={16} />
           Mark failed
         </button>
         {["QC_PASSED", "READY_TO_UPLOAD", "UPLOADED_PRIVATE"].includes(props.selectedJob.status) ? (
-          <button className="secondary-button" type="button" disabled={isStored} onClick={() => props.selectedJob && props.addVideoForJob(props.selectedJob)}>
+          <button className="secondary-button" type="button" disabled={isStored} onClick={() => runProductionAction(() => props.selectedJob && props.addVideoForJob(props.selectedJob))}>
             <Save size={16} />
             {isStored ? "Stored" : "Store"}
           </button>
@@ -725,7 +780,7 @@ function ProductionTab(
 
       <div className="production-workbench-tabs" role="tablist" aria-label="Production workbench sections">
         {(["overview", "pipeline", "script", "assets", "voice", "music", "clips", "final", "cost", "publish", "activity"] as ProductionWorkbenchTab[]).map((tab) => (
-          <button className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`} key={tab} type="button" onClick={() => setActiveProductionTab(tab)}>
+          <button className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`} key={tab} type="button" onClick={() => switchProductionTab(tab)}>
             {formatProductionTab(tab)}
           </button>
         ))}
@@ -753,7 +808,7 @@ function ProductionTab(
                   className={`case-step-card ${props.selectedRecord?.id === record.id ? "selected" : ""}`}
                   key={record.id}
                   type="button"
-                  onClick={() => props.setSelectedRecordId(record.id)}
+                  onClick={() => selectProductionRecord(record.id)}
                 >
                   <span className={`timeline-dot ${record.status}`} />
                   <div>
@@ -771,7 +826,7 @@ function ProductionTab(
             characters={props.characters}
             job={props.selectedJob}
             record={props.selectedRecord}
-            reportDirtyState={props.reportDirtyState}
+            reportDirtyState={reportProductionDirtyState}
             updateCaseDetails={props.updateCaseDetails}
             updateProcessRecord={props.updateProcessRecord}
           />
@@ -798,7 +853,7 @@ function ProductionTab(
           qcReport={props.selectedQcReport}
           storedVideos={props.storedVideos}
           job={props.selectedJob}
-          reportDirtyState={props.reportDirtyState}
+          reportDirtyState={reportProductionDirtyState}
           updateSceneReview={props.updateSceneReview}
         />
       ) : null}
@@ -826,7 +881,7 @@ function ProductionTab(
             qcReport={props.selectedQcReport}
             storedVideos={props.storedVideos}
             job={props.selectedJob}
-            reportDirtyState={props.reportDirtyState}
+            reportDirtyState={reportProductionDirtyState}
             updateSceneReview={props.updateSceneReview}
           />
         </section>
@@ -1905,6 +1960,24 @@ function BudgetLine(props: { label: string; value: string }) {
       <strong>{props.value}</strong>
     </div>
   );
+}
+
+function updateDirtyDraftMap(currentDrafts: Record<string, boolean>, key: string, isDirty: boolean): Record<string, boolean> {
+  if (isDirty) {
+    if (currentDrafts[key]) {
+      return currentDrafts;
+    }
+
+    return { ...currentDrafts, [key]: true };
+  }
+
+  if (!currentDrafts[key]) {
+    return currentDrafts;
+  }
+
+  const nextDrafts = { ...currentDrafts };
+  delete nextDrafts[key];
+  return nextDrafts;
 }
 
 function ActivityLogPanel(props: { activities: CaseActivity[] }) {
