@@ -16,6 +16,13 @@ import {
 } from "../lib/admin-data.js";
 import { listOpenAIModels } from "../lib/api.js";
 import { getProductionStage, productionStages, type ProductionStageId } from "../lib/production.js";
+import {
+  findWorkflowToolSetting,
+  getToolTypeForEndpoint,
+  getToolTypeForStage,
+  getWorkflowOperationalState,
+  type WorkflowReadinessTone
+} from "../lib/workflow-readiness.js";
 
 interface WorkflowPageProps {
   agents: StaffAgent[];
@@ -28,7 +35,7 @@ interface WorkflowPageProps {
 }
 
 type WorkflowTab = "pipeline" | "tools" | "readiness";
-type PillTone = "neutral" | "active" | "success" | "danger" | "warning";
+type PillTone = WorkflowReadinessTone;
 type ModelSyncStatus = "idle" | "loading" | "loaded" | "error";
 
 interface ModelSyncState {
@@ -57,8 +64,10 @@ export function WorkflowPage(props: WorkflowPageProps) {
   const readiness = useMemo(() => {
     const rows = productionStages.map((stage) => {
       const endpoint = props.endpoints.find((candidate) => candidate.stageIds.includes(stage.id)) ?? null;
-      const state = getOperationalState(stage.id, endpoint, producerAgent);
-      return { stage, endpoint, ...state };
+      const toolType = getToolTypeForStage(stage.id, endpoint);
+      const setting = findWorkflowToolSetting(props.settings, toolType);
+      const state = getWorkflowOperationalState({ agent: producerAgent, endpoint, setting, stageId: stage.id });
+      return { stage, endpoint, setting, ...state };
     });
     const requiredRows = rows.filter((row) => row.required);
 
@@ -69,7 +78,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       issues: rows.filter((row) => row.tone === "danger" || row.tone === "warning"),
       issueCount: rows.filter((row) => row.tone === "danger").length
     };
-  }, [producerAgent, props.endpoints]);
+  }, [producerAgent, props.endpoints, props.settings]);
 
   useEffect(() => {
     if (selectedToolSetting?.provider !== "openai") {
@@ -292,17 +301,17 @@ export function WorkflowPage(props: WorkflowPageProps) {
             {readiness.issues.length === 0 ? (
               <StatusPill tone="success">没有阻塞问题</StatusPill>
             ) : (
-              readiness.issues.map(({ stage, endpoint, label, tone }) => (
+              readiness.issues.map(({ stage, endpoint, label, setting, tone }) => (
                 <div className="readiness-issue" key={stage.id}>
                   <strong>{stage.label}</strong>
-                  <span>{label} / {endpoint?.provider ?? "未绑定工具"}</span>
+                  <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
                   <StatusPill tone={tone}>{tone === "danger" ? "阻塞" : "需检查"}</StatusPill>
                 </div>
               ))
             )}
           </div>
           <div className="workflow-readiness-list">
-            {readiness.rows.map(({ stage, endpoint, label, tone }) => (
+            {readiness.rows.map(({ stage, endpoint, label, setting, tone }) => (
               <article className="workflow-readiness-row" key={stage.id}>
                 <span className="step-index">{stage.order}</span>
                 <div>
@@ -315,7 +324,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                 </div>
                 <div>
                   <span className="column-label">工具</span>
-                  <strong>{endpoint?.provider ?? "内部处理"}</strong>
+                  <strong>{setting ? `${setting.provider} / ${setting.model}` : endpoint?.provider ?? "内部处理"}</strong>
                 </div>
                 <div>
                   <span className="column-label">队列</span>
@@ -607,19 +616,6 @@ function getToolSettingTone(setting: ToolProviderSettings): PillTone {
   return "success";
 }
 
-function getToolTypeForEndpoint(endpoint: AiToolEndpoint): ToolProviderType {
-  if (endpoint.id === "tool_llm") return "llm";
-  if (endpoint.id === "tool_image") return "image";
-  if (endpoint.id === "tool_tts") return "tts";
-  if (endpoint.id === "tool_music") return "bgm";
-  if (endpoint.id === "tool_video") return "video";
-  if (endpoint.id === "tool_subtitle") return "subtitle";
-  if (endpoint.id === "tool_compose") return "compose";
-  if (endpoint.id === "tool_youtube") return "youtube";
-  if (endpoint.id === "tool_storage") return "storage";
-  return "llm";
-}
-
 function formatToolType(toolType: ToolProviderType): string {
   const labels: Record<ToolProviderType, string> = {
     bgm: "背景音乐",
@@ -644,36 +640,4 @@ function formatCostMode(setting: ToolProviderSettings): string {
   }
   if (setting.fallbackCostRM > 0) return `${setting.costMode} / 保底 RM ${setting.fallbackCostRM.toFixed(4)}`;
   return `${setting.costMode} / 未定价`;
-}
-
-function getOperationalState(stageId: ProductionStageId, endpoint: AiToolEndpoint | null, agent: StaffAgent | null): { label: string; tone: PillTone; ready: boolean; required: boolean } {
-  if (!agent || agent.status !== "active") {
-    return { label: "Agent 未启用", tone: "danger", ready: false, required: stageId !== "video" };
-  }
-
-  if (stageId === "brief") {
-    return { label: "就绪", tone: "success", ready: true, required: true };
-  }
-
-  if (!endpoint) {
-    return { label: "缺少工具", tone: "danger", ready: false, required: stageId !== "video" };
-  }
-
-  if (!agent.allowedToolIds.includes(endpoint.id)) {
-    return { label: "工具未授权", tone: "danger", ready: false, required: stageId !== "video" };
-  }
-
-  if (!endpoint.enabled || endpoint.status === "disabled") {
-    if (stageId === "video") {
-      return { label: "可选关闭", tone: "neutral", ready: true, required: false };
-    }
-
-    return { label: "已停用", tone: "danger", ready: false, required: true };
-  }
-
-  if (endpoint.status === "needs_setup") {
-    return { label: "需要设置", tone: "danger", ready: false, required: stageId !== "video" };
-  }
-
-  return { label: "就绪", tone: "success", ready: true, required: stageId !== "video" };
 }
