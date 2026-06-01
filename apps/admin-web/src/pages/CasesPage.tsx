@@ -320,7 +320,6 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
                 selectedIds={selectedCharacterIds}
                 onChange={(ids) => {
                   props.setDraftCharacterAssetIds(ids);
-                  props.setDraftCharacterAssetId(ids[0] ?? null);
                 }}
               />
               <AssetMultiSelect
@@ -331,7 +330,6 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
                 selectedIds={selectedSceneIds}
                 onChange={(ids) => {
                   props.setDraftSceneAssetIds(ids);
-                  props.setDraftBackgroundAssetId(ids[0] ?? null);
                 }}
               />
             </div>
