@@ -44,7 +44,7 @@ export function createImagesRouter(options: CreateImagesRouterOptions): Router {
         operation: "generation.scene_images",
         provider: response.provider,
         pricingSource: response.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-        pricingStatus: response.provider === "openai" ? imagePricingStatus(response.images.map((image) => image.usage)) : "local_zero",
+        pricingStatus: response.provider === "openai" ? imagePricingStatus(response.costRM, response.images.map((image) => image.usage)) : "local_zero",
         quantity: response.images.length,
         service: "image",
         unit: "image",
@@ -67,7 +67,7 @@ export function createImagesRouter(options: CreateImagesRouterOptions): Router {
         operation: "generation.scene_image",
         provider: response.provider,
         pricingSource: response.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-        pricingStatus: response.provider === "openai" ? imagePricingStatus([response.image.usage]) : "local_zero",
+        pricingStatus: response.provider === "openai" ? imagePricingStatus(response.costRM, [response.image.usage]) : "local_zero",
         quantity: 1,
         service: "image",
         unit: "image",
@@ -93,7 +93,7 @@ export function createImagesRouter(options: CreateImagesRouterOptions): Router {
         operation: `generation.reference_design.${response.designType}`,
         provider: response.provider,
         pricingSource: response.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-        pricingStatus: response.provider === "openai" ? imagePricingStatus([response.usage]) : "local_zero",
+        pricingStatus: response.provider === "openai" ? imagePricingStatus(response.costRM, [response.usage]) : "local_zero",
         quantity: 1,
         service: "reference_design",
         unit: "image",
@@ -143,8 +143,12 @@ function aggregateImageUsage(usages: Array<CostLogUsage | undefined>): CostLogUs
   return aggregate;
 }
 
-function imagePricingStatus(usages: Array<CostLogUsage | undefined>): "actual_usage" | "configured_rate" {
-  return usages.some((usage) => usage?.pricingMode === "token_usage") ? "actual_usage" : "configured_rate";
+function imagePricingStatus(costRM: number, usages: Array<CostLogUsage | undefined>): "actual_usage" | "configured_rate" | "pricing_missing" {
+  if (usages.some((usage) => usage?.pricingMode === "token_usage")) {
+    return "actual_usage";
+  }
+
+  return costRM > 0 ? "configured_rate" : "pricing_missing";
 }
 
 async function upsertReferenceDesignAsset(options: CreateImagesRouterOptions, response: Awaited<ReturnType<ImageGenerationService["generateReferenceDesign"]>>): Promise<void> {

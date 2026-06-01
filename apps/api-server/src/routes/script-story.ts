@@ -28,6 +28,7 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
   router.post("/generation/script", async (req: Request, res: Response, next) => {
     try {
       const response = await service.generateScriptStory(parseRequest(req.body));
+      const tokenQuantity = (response.usage?.inputTokens ?? 0) + (response.usage?.outputTokens ?? 0);
       await options.costRecorder?.record({
         costRM: response.costRM,
         exchangeRate: config.currency.usdToMyrRate,
@@ -36,13 +37,14 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
         operation: "generation.script_story",
         provider: response.provider,
         pricingSource: response.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-        pricingStatus: response.provider === "openai" ? "actual_usage" : "local_zero",
-        quantity: (response.usage?.inputTokens ?? 0) + (response.usage?.outputTokens ?? 0),
+        pricingStatus: response.provider === "openai" ? scriptPricingStatus(response.usage?.pricingMode, response.costRM, tokenQuantity) : "local_zero",
+        quantity: tokenQuantity,
         service: "script",
         unit: "tokens",
         usage: {
           inputTokens: response.usage?.inputTokens ?? 0,
-          outputTokens: response.usage?.outputTokens ?? 0
+          outputTokens: response.usage?.outputTokens ?? 0,
+          pricingMode: response.usage?.pricingMode
         }
       });
       res.status(201).json(response);
@@ -52,6 +54,26 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
   });
 
   return router;
+}
+
+function scriptPricingStatus(pricingMode: string | undefined, costRM: number, tokenQuantity: number): "actual_usage" | "configured_rate" | "pricing_missing" {
+  if (pricingMode === "token_usage") {
+    return "actual_usage";
+  }
+
+  if (pricingMode === "configured_rate") {
+    return "configured_rate";
+  }
+
+  if (costRM > 0 && tokenQuantity > 0) {
+    return "actual_usage";
+  }
+
+  if (costRM > 0) {
+    return "configured_rate";
+  }
+
+  return "pricing_missing";
 }
 
 function parseRequest(body: unknown): GenerateScriptStoryRequest {

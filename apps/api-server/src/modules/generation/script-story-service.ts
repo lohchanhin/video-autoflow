@@ -166,13 +166,16 @@ async function generateWithOpenAI(
     throw new Error("OpenAI script generation returned no content.");
   }
 
+  const estimatedCostRM = estimateOpenAICostRM(options.model, totalInputTokens, totalOutputTokens, options.usdToMyrRate);
+  const costRM = applyScriptCostOverride(estimatedCostRM, input);
   const usage = {
     inputTokens: totalInputTokens,
-    outputTokens: totalOutputTokens
+    outputTokens: totalOutputTokens,
+    pricingMode: determineScriptPricingMode(estimatedCostRM, costRM)
   };
 
   return {
-    costRM: applyScriptCostOverride(estimateOpenAICostRM(options.model, usage.inputTokens, usage.outputTokens, options.usdToMyrRate), input),
+    costRM,
     backgroundMusic: finalContent.backgroundMusic,
     interpretedIdea: finalContent.interpretedIdea,
     model: options.model,
@@ -192,6 +195,18 @@ function applyScriptCostOverride(costRM: number, input: NormalizedScriptStoryInp
   }
 
   return Number((input.cost?.fallbackCostRM ?? 0).toFixed(4));
+}
+
+function determineScriptPricingMode(estimatedCostRM: number, finalCostRM: number): NonNullable<GenerateScriptStoryResponse["usage"]>["pricingMode"] {
+  if (estimatedCostRM > 0) {
+    return "token_usage";
+  }
+
+  if (finalCostRM > 0) {
+    return "configured_rate";
+  }
+
+  return "pricing_missing";
 }
 
 function missingOpenAIKey(): never {

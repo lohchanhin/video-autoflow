@@ -1,7 +1,8 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import type { CostLog, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoResponse } from "@ai-content-factory/shared-types";
+import type { CostLog, GenerateImagesResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoResponse } from "@ai-content-factory/shared-types";
 import type { CostLogsRepository } from "@ai-content-factory/database";
+import type { ImageGenerationService } from "../src/modules/generation/image-service.js";
 import type { ScriptStoryService } from "../src/modules/generation/script-story-service.js";
 import type { TtsGenerationService } from "../src/modules/generation/tts-service.js";
 import type { VideoGenerationService } from "../src/modules/generation/local-pipeline.js";
@@ -36,10 +37,91 @@ describe("cost logging", () => {
       quantity: 300,
       service: "script",
       unit: "tokens",
-      usage: {
+      usage: expect.objectContaining({
         inputTokens: 100,
-        outputTokens: 200
-      }
+        outputTokens: 200,
+        pricingMode: "token_usage"
+      })
+    }));
+  });
+
+  it("marks OpenAI script calls as pricing_missing when a model has token usage but no configured price", async () => {
+    const costLogsRepository = createCostLogsRepositoryMock();
+    const scriptStoryService = {
+      generateScriptStory: vi.fn().mockResolvedValue(createScriptResponse({
+        costRM: 0,
+        model: "gpt-unknown-production-model",
+        usage: {
+          inputTokens: 100,
+          outputTokens: 200,
+          pricingMode: "pricing_missing"
+        }
+      }))
+    } as unknown as ScriptStoryService;
+
+    await request(createApp({ costLogsRepository, scriptStoryService }))
+      .post("/generation/script")
+      .send({
+        costLimitRM: 7.5,
+        language: "zh-CN",
+        prompt: "写一个原创短片",
+        sceneCount: 5,
+        templateType: "urban_legend",
+        topic: "雨夜便利店"
+      })
+      .expect(201);
+
+    expect(costLogsRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      costRM: 0,
+      model: "gpt-unknown-production-model",
+      pricingStatus: "pricing_missing",
+      quantity: 300,
+      service: "script",
+      unit: "tokens"
+    }));
+  });
+
+  it("marks OpenAI image calls as pricing_missing when no usage or configured estimate is available", async () => {
+    const costLogsRepository = createCostLogsRepositoryMock();
+    const imageGenerationService = {
+      generateImages: vi.fn().mockResolvedValue(createImagesResponse({
+        costRM: 0,
+        images: [
+          createImageAsset({
+            usage: {
+              pricingMode: "fallback_fixed_image_estimate",
+              quality: "medium",
+              size: "1024x1536"
+            }
+          })
+        ],
+        model: "custom-openai-image-model"
+      }))
+    } as unknown as ImageGenerationService;
+
+    await request(createApp({ costLogsRepository, imageGenerationService }))
+      .post("/generation/images")
+      .send({
+        costLimitRM: 7.5,
+        jobId: "job_image_cost",
+        language: "zh-CN",
+        prompt: "生成一张场景图",
+        sceneCount: 1,
+        templateType: "urban_legend",
+        topic: "雨夜便利店"
+      })
+      .expect(201);
+
+    expect(costLogsRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      costRM: 0,
+      jobId: "job_image_cost",
+      model: "custom-openai-image-model",
+      operation: "generation.scene_images",
+      pricingStatus: "pricing_missing",
+      provider: "openai",
+      quantity: 1,
+      service: "image",
+      unit: "image"
     }));
   });
 
@@ -163,7 +245,7 @@ function createCostLogsRepositoryMock(overrides: Partial<CostLogsRepository> = {
   };
 }
 
-function createScriptResponse(): GenerateScriptStoryResponse {
+function createScriptResponse(overrides: Partial<GenerateScriptStoryResponse> = {}): GenerateScriptStoryResponse {
   return {
     artifacts: {
       script: { driver: "local", storagePath: "local://script.json" },
@@ -212,7 +294,8 @@ function createScriptResponse(): GenerateScriptStoryResponse {
     storyboard: [],
     usage: {
       inputTokens: 100,
-      outputTokens: 200
+      outputTokens: 200,
+      pricingMode: "token_usage"
     },
     visualBible: {
       character: {
@@ -235,7 +318,66 @@ function createScriptResponse(): GenerateScriptStoryResponse {
       },
       negativePrompt: "no text",
       style: "cinematic"
-    }
+    },
+    ...overrides
+  };
+}
+
+function createImagesResponse(overrides: Partial<GenerateImagesResponse> = {}): GenerateImagesResponse {
+  return {
+    costRM: 0,
+    images: [createImageAsset()],
+    jobId: "job_image_cost",
+    model: "gpt-image-2",
+    provider: "openai",
+    requiresReview: false,
+    status: "IMAGE_DONE",
+    visualBible: createVisualBible(),
+    ...overrides
+  };
+}
+
+function createImageAsset(overrides: Partial<GenerateImagesResponse["images"][number]> = {}): GenerateImagesResponse["images"][number] {
+  return {
+    asset: {
+      driver: "local",
+      publicUrl: "http://localhost:4000/uploads/jobs/job_image_cost/images/scene_01.png",
+      storagePath: "local://uploads/jobs/job_image_cost/images/scene_01.png"
+    },
+    costRM: 0,
+    prompt: "scene image",
+    sceneId: 1,
+    usage: {
+      pricingMode: "fallback_fixed_image_estimate",
+      quality: "medium",
+      size: "1024x1536"
+    },
+    ...overrides
+  };
+}
+
+function createVisualBible(): GenerateImagesResponse["visualBible"] {
+  return {
+    character: {
+      ageRange: "adult",
+      bodyType: "average",
+      expressionRange: "calm",
+      fixedProps: [],
+      hair: "short hair",
+      name: "Lead",
+      role: "protagonist",
+      signatureDetails: "same outfit",
+      wardrobe: "jacket"
+    },
+    environment: {
+      keyObjects: [],
+      lighting: "soft",
+      location: "store",
+      palette: "blue",
+      recurringDetails: "rain"
+    },
+    negativePrompt: "no text",
+    style: "cinematic"
   };
 }
 

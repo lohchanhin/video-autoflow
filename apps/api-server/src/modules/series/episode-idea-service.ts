@@ -26,6 +26,7 @@ export interface GeneratedSeriesEpisodeIdeas {
   usage: {
     inputTokens: number;
     outputTokens: number;
+    pricingMode?: "configured_rate" | "pricing_missing" | "token_usage" | undefined;
   };
 }
 
@@ -96,13 +97,15 @@ export function createSeriesEpisodeIdeaService(options: SeriesEpisodeIdeaService
 
       const parsed = parseEpisodeIdeasJson(extractResponseText(body));
       const ideas = normalizeIdeas(parsed, input.count);
+      const estimatedCostRM = estimateOpenAICostRM(options.openai.model, body.usage?.input_tokens ?? 0, body.usage?.output_tokens ?? 0, options.openai.usdToMyrRate);
       const usage = {
         inputTokens: body.usage?.input_tokens ?? 0,
-        outputTokens: body.usage?.output_tokens ?? 0
+        outputTokens: body.usage?.output_tokens ?? 0,
+        pricingMode: estimatedCostRM > 0 ? "token_usage" as const : "pricing_missing" as const
       };
 
       return {
-        costRM: estimateOpenAICostRM(options.openai.model, usage.inputTokens, usage.outputTokens, options.openai.usdToMyrRate),
+        costRM: estimatedCostRM,
         ideas,
         model: options.openai.model,
         provider: "openai",

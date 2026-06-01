@@ -149,7 +149,7 @@ export function createProductionAssetsRouter(options: CreateProductionAssetsRout
             operation: generated.operation,
             provider: generated.provider,
             pricingSource: generated.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-            pricingStatus: generated.provider === "openai" ? imageUsagePricingStatus(generated.usage) : "local_zero",
+            pricingStatus: generated.provider === "openai" ? imageUsagePricingStatus(generated.costRM, generated.usage) : "local_zero",
             quantity: generated.quantity,
             service: generated.service,
             unit: generated.unit,
@@ -299,8 +299,12 @@ function getReferenceDesignStorageJobId(asset: ProductionAsset): string {
   return `${asset.jobId}/production_assets/${safeAssetId}`;
 }
 
-function imageUsagePricingStatus(usage: CostLogUsage | undefined): "actual_usage" | "configured_rate" {
-  return usage?.pricingMode === "token_usage" ? "actual_usage" : "configured_rate";
+function imageUsagePricingStatus(costRM: number, usage: CostLogUsage | undefined): "actual_usage" | "configured_rate" | "pricing_missing" {
+  if (usage?.pricingMode === "token_usage") {
+    return "actual_usage";
+  }
+
+  return costRM > 0 ? "configured_rate" : "pricing_missing";
 }
 
 function parseGenerationContext(body: unknown, asset: ProductionAsset) {

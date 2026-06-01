@@ -136,7 +136,7 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           operation: "series.episode_ideas.generate",
           provider: generated.provider,
           pricingSource: generated.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-          pricingStatus: generated.provider === "openai" ? "actual_usage" : "local_zero",
+          pricingStatus: generated.provider === "openai" ? scriptPricingStatus(generated.usage.pricingMode, generated.costRM, generated.usage.inputTokens + generated.usage.outputTokens) : "local_zero",
           quantity: generated.usage.inputTokens + generated.usage.outputTokens,
           service: "script",
           unit: "tokens",
@@ -144,6 +144,7 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
             episodeCount: episodes.length,
             inputTokens: generated.usage.inputTokens,
             outputTokens: generated.usage.outputTokens,
+            pricingMode: generated.usage.pricingMode,
             seriesId: series._id
           }
         });
@@ -230,6 +231,26 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
   });
 
   return router;
+}
+
+function scriptPricingStatus(pricingMode: string | undefined, costRM: number, tokenQuantity: number): "actual_usage" | "configured_rate" | "pricing_missing" {
+  if (pricingMode === "token_usage") {
+    return "actual_usage";
+  }
+
+  if (pricingMode === "configured_rate") {
+    return "configured_rate";
+  }
+
+  if (costRM > 0 && tokenQuantity > 0) {
+    return "actual_usage";
+  }
+
+  if (costRM > 0) {
+    return "configured_rate";
+  }
+
+  return "pricing_missing";
 }
 
 async function withContentSeriesRepository<T>(

@@ -642,6 +642,7 @@ export interface GenerateScriptStoryResponse {
   usage?: {
     inputTokens: number;
     outputTokens: number;
+    pricingMode?: "configured_rate" | "pricing_missing" | "token_usage" | undefined;
   } | undefined;
   visualBible: GeneratedVisualBible;
 }
