@@ -608,7 +608,7 @@ function buildPlannedProductionAssets(input: BootstrapProductionAssetsInput): Pr
       jobId: input.jobId,
       label: "Scene design",
       folderName: `Case ${input.jobId}`,
-      prompt: `${basePrompt}\nCreate the set, lighting, color, and recurring prop reference for this case.`,
+      prompt: `${basePrompt}\nCreate the reusable environment bible sheet for this case: same location across multiple angles, unlabeled spatial relationship, entrance/camera path, key prop close-ups, material details, lighting direction, color palette, and reusable camera positions.`,
       provider: "openai",
       role: "reference_image",
       sceneId: null,

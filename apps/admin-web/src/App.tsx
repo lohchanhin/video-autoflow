@@ -118,6 +118,7 @@ import { loadStaffAgents, saveStaffAgents, type StaffAgent } from "./lib/agents.
 import { evaluateCaseBudgetGuard } from "./lib/budget-guards.js";
 import {
   buildAssetContextBrief,
+  buildReferenceAssetPromptContext,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
@@ -444,6 +445,7 @@ interface SeedanceSceneClipInput {
   imageUrl?: string | undefined;
   lastFrameImageUrl?: string | undefined;
   prompt: string;
+  referenceContext: string;
   referenceImageUrls: string[];
   sceneId: number;
 }
@@ -471,13 +473,19 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
     const firstFrameAsset = enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === null);
     const lastFrameAsset = enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === null);
     const imageUrl = firstFrameAsset?.url || review?.artifactPath || sceneImage;
-    const referenceImageUrls = enabledAssets
+    const referenceAssetsForScene = enabledAssets
       .filter((asset) => asset.role === "reference_image" && (asset.sceneId === null || asset.sceneId === sceneId))
-      .map((asset) => asset.url)
-      .filter((url, index, urls) => url !== imageUrl && url !== lastFrameAsset?.url && urls.indexOf(url) === index)
+      .filter((asset, index, assets) => assets.findIndex((candidate) => candidate.url === asset.url) === index)
       .slice(0, 8);
+    const referenceImageUrls = referenceAssetsForScene
+      .map((asset) => asset.url)
+      .filter((url, index, urls) => url !== imageUrl && url !== lastFrameAsset?.url && urls.indexOf(url) === index);
     const imagePrompt = scenePromptMap.get(sceneId) ?? review?.prompt ?? "";
     const durationSeconds = getSeedanceDurationSeconds(timing?.durationSeconds, job.durationSeconds, sceneIds.length);
+    const referenceContext = referenceAssetsForScene
+      .map(buildReferenceAssetPromptContext)
+      .filter(Boolean)
+      .join("\n");
 
     return {
       durationSeconds,
@@ -487,10 +495,12 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
         durationSeconds,
         imagePrompt,
         referenceCount: referenceImageUrls.length,
+        referenceContext,
         sceneId,
         visual: timing?.visual ?? review?.prompt ?? imagePrompt,
         voiceText: timing?.voiceText ?? ""
       }),
+      referenceContext,
       referenceImageUrls,
       sceneId
     };
@@ -577,6 +587,7 @@ function buildSeedanceScenePrompt(input: {
   durationSeconds: number;
   imagePrompt: string;
   referenceCount: number;
+  referenceContext: string;
   sceneId: number;
   visual: string;
   voiceText: string;
@@ -587,6 +598,7 @@ function buildSeedanceScenePrompt(input: {
     input.voiceText ? `Narration/subtitle line for timing: ${input.voiceText}` : "",
     input.imagePrompt ? `Scene image prompt: ${input.imagePrompt}` : "",
     input.referenceCount > 0 ? `Use ${input.referenceCount} reference image(s) for character, setting, or style continuity. Preserve identity, wardrobe, lighting, and scene layout from references.` : "",
+    input.referenceContext ? `Approved reference context:\n${input.referenceContext}` : "",
     "Create one continuous vertical 9:16 cinematic shot with natural subject motion and smooth camera movement.",
     "Do not add subtitles, captions, UI panels, storyboards, tables, logos, watermarks, or readable text inside the video. Final FFmpeg composition will add voiceover and subtitles."
   ].filter(Boolean).join("\n\n");

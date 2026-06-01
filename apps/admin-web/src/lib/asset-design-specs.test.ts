@@ -6,11 +6,14 @@ describe("production asset design specs", () => {
     const spec = getProductionAssetDesignSpec("scene_design");
 
     expect(spec.title).toContain("多角度");
+    expect(spec.title).toContain("Environment Bible");
     expect(spec.deliverables).toContain("主建立镜头");
     expect(spec.deliverables).toContain("反打或侧向视角");
+    expect(spec.deliverables).toContain("低机位或高机位辅助视角");
     expect(spec.deliverables).toContain("入口 / 动线视角");
     expect(spec.deliverables).toContain("无文字空间平面关系");
     expect(spec.deliverables).toContain("关键道具特写");
+    expect(spec.deliverables).toContain("可复用机位范围");
     expect(spec.checks.join(" ")).toContain("同一地点");
     expect(spec.usage).toContain("Seedance");
   });

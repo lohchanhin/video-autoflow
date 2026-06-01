@@ -48,14 +48,37 @@ export function productionAssetToGenerationReference(asset: ProductionAsset): Ge
     return null;
   }
 
+  const cleanBrief = cleanAssetTextForCaseBrief(asset);
+
   return {
     label: asset.label,
-    notes: asset.notes || undefined,
-    prompt: asset.prompt || undefined,
+    notes: buildReferenceAssetPromptContext(asset) || undefined,
+    prompt: cleanBrief || undefined,
     role: asset.role,
     type: asset.type,
     url: asset.url
   };
+}
+
+export function buildReferenceAssetPromptContext(asset: ProductionAsset): string {
+  const cleanBrief = cleanAssetTextForCaseBrief(asset);
+  const notes = asset.notes.trim();
+  const lines = [
+    `${formatAssetTypeForPrompt(asset.type)}: ${asset.label}`,
+    cleanBrief ? `Visual facts: ${cleanBrief}` : "",
+    notes && notes !== cleanBrief ? `Approved notes: ${truncateForBrief(notes, 240)}` : "",
+    asset.type === "scene_design"
+      ? "Scene consistency contract: preserve the same spatial layout, door/window/furniture positions, hero props, material language, lighting direction, color palette, and reusable camera angles from this environment bible."
+      : "",
+    asset.type === "character_design"
+      ? "Character consistency contract: preserve the same identity, face, silhouette, wardrobe, color palette, and fixed props from this turnaround sheet."
+      : "",
+    asset.type === "style_reference"
+      ? "Style consistency contract: preserve color, lighting, material feel, lens texture, and mood without changing the story location."
+      : ""
+  ].filter(Boolean);
+
+  return truncateForBrief(lines.join(" "), 720);
 }
 
 function cleanAssetTextForCaseBrief(asset: ProductionAsset): string {
@@ -105,4 +128,17 @@ function isInternalAssetInstruction(value: string): boolean {
 
 function truncateForBrief(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength).trim()}...` : value;
+}
+
+function formatAssetTypeForPrompt(type: ProductionAsset["type"]): string {
+  const labels: Record<ProductionAsset["type"], string> = {
+    bgm_reference: "BGM reference",
+    character_design: "Character design reference",
+    first_frame: "First-frame reference",
+    last_frame: "Last-frame reference",
+    scene_design: "Environment bible reference",
+    style_reference: "Style reference"
+  };
+
+  return labels[type];
 }

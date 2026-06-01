@@ -484,7 +484,7 @@ function buildReferenceDesignPrompt(
   }
 
   return [
-    "Create one production-ready environment design sheet for an original short-form video case.",
+    "Create one production-ready environment bible sheet for an original short-form video case.",
     "Highest priority: follow the USER DESIGN BRIEF exactly. Do not replace the requested location, era, color palette, art style, objects, lighting, or mood with generic defaults.",
     `USER DESIGN BRIEF: ${designBrief}`,
     caseContext,
@@ -493,11 +493,11 @@ function buildReferenceDesignPrompt(
     `Fallback environment notes, only if compatible with the USER DESIGN BRIEF: ${formatVisualBibleEnvironment(visualBible)}`,
     `Character continuity if visible and compatible: ${formatVisualBibleCharacter(visualBible)}`,
     `Fallback style, only if the USER DESIGN BRIEF does not specify one: ${visualBible.style || getTemplateVisualStyle(input.templateType)}.`,
-    "Frame specification: one clean scene-design sheet containing 4-6 consistent views of the same location, not 4-6 different locations.",
-    "Required views: main establishing angle, reverse or side angle, entrance/camera-path angle, key prop close-ups, material details, and lighting/color details.",
-    "Continuity rule: all views must preserve the same spatial layout, door/window/furniture positions, hero props, era, material language, light direction, and color palette.",
+    "Frame specification: one clean environment bible sheet containing 6-8 consistent views/details of the same location, not 6-8 different locations.",
+    "Required views/details: main establishing angle, reverse angle, side angle, low-angle or high-angle auxiliary view, entrance/camera-path angle, unlabeled top-down spatial relationship, key prop close-ups, material swatches, lighting direction, and color palette details.",
+    "Continuity rule: every view must map back to the same spatial layout. Door/window/furniture positions, hero props, era, material language, light direction, color palette, and scale must stay consistent across all panels.",
     "Purpose: this image will be reused as a Seedance reference_image for set layout, lighting, color, prop placement, and camera continuity across multiple scene clips.",
-    "Do not create UI, readable text, labels, floor plan diagrams, storyboards showing time progression, comic panels, before/after comparisons, unrelated rooms, or random collage pieces.",
+    "Do not create UI, readable text, labels, storyboards showing time progression, comic panels, before/after comparisons, unrelated rooms, or random collage pieces. If a top-down layout appears, it must be visual-only with no labels or text.",
     `Negative prompt: ${visualBible.negativePrompt}`
   ].filter(Boolean).join("\n");
 }

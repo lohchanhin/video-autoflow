@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProductionAsset } from "@ai-content-factory/shared-types";
 import {
   buildAssetContextBrief,
+  buildReferenceAssetPromptContext,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
@@ -54,6 +55,12 @@ describe("case reference asset routing", () => {
   it("converts approved production assets into generation references", () => {
     const asset = createAsset({
       label: "Cathedral sheet",
+      prompt: [
+        "Create one production-ready environment bible sheet.",
+        "USER DESIGN BRIEF: grand cathedral, central round table, stained glass, same altar and chairs in every angle.",
+        "Frame specification: one image containing 6 views.",
+        "Do not create UI or readable text."
+      ].join("\n"),
       role: "reference_image",
       type: "scene_design",
       url: "https://cdn.test/cathedral.png"
@@ -61,12 +68,35 @@ describe("case reference asset routing", () => {
 
     expect(productionAssetToGenerationReference(asset)).toMatchObject({
       label: "Cathedral sheet",
+      prompt: "grand cathedral, central round table, stained glass, same altar and chairs in every angle.",
       role: "reference_image",
       type: "scene_design",
       url: "https://cdn.test/cathedral.png"
     });
 
+    const reference = productionAssetToGenerationReference(asset);
+    expect(reference?.notes).toContain("Environment bible reference");
+    expect(reference?.notes).toContain("Scene consistency contract");
+    expect(reference?.notes).not.toContain("Frame specification");
     expect(productionAssetToGenerationReference(createAsset({ status: "rejected" }))).toBeNull();
+  });
+
+  it("builds Seedance-safe context for scene design assets", () => {
+    const context = buildReferenceAssetPromptContext(createAsset({
+      label: "Convenience store environment bible",
+      prompt: [
+        "USER DESIGN BRIEF: rainy night convenience store, fixed shelves, cashier counter, old CCTV monitor, coffee machine.",
+        "Frame specification: one clean environment bible sheet.",
+        "Do not create readable text."
+      ].join("\n"),
+      type: "scene_design"
+    }));
+
+    expect(context).toContain("Environment bible reference");
+    expect(context).toContain("rainy night convenience store");
+    expect(context).toContain("Scene consistency contract");
+    expect(context).not.toContain("Frame specification");
+    expect(context).not.toContain("Do not create");
   });
 });
 

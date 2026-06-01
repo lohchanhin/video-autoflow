@@ -96,12 +96,15 @@ describe("reference design prompt fidelity", () => {
       }
     );
 
-    expect(prompt).toContain("environment design sheet");
-    expect(prompt).toContain("4-6 consistent views of the same location");
+    expect(prompt).toContain("environment bible sheet");
+    expect(prompt).toContain("6-8 consistent views/details of the same location");
     expect(prompt).toContain("main establishing angle");
-    expect(prompt).toContain("reverse or side angle");
+    expect(prompt).toContain("reverse angle");
+    expect(prompt).toContain("unlabeled top-down spatial relationship");
     expect(prompt).toContain("key prop close-ups");
+    expect(prompt).toContain("material swatches");
     expect(prompt).toContain("Continuity rule");
+    expect(prompt).not.toContain("Do not create UI, readable text, labels, floor plan diagrams");
     expect(prompt).not.toContain("one coherent vertical 9:16 cinematic establishing still");
   });
 });
