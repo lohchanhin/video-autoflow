@@ -1547,6 +1547,67 @@ textarea {
   background: #f3f7ff;
 }
 
+.asset-design-spec {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.asset-design-spec.compact {
+  background: #f8fbff;
+}
+
+.asset-design-spec h3 {
+  margin: 0;
+  color: #101828;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.asset-design-spec span,
+.asset-design-spec p {
+  margin: 0;
+  color: #52637c;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.asset-spec-columns {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.asset-spec-columns > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.asset-spec-columns strong {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.asset-spec-columns ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.asset-spec-columns li {
+  color: #40516d;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .asset-folder-rail button {
   align-items: center;
   background: #ffffff;

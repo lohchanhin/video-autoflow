@@ -1,4 +1,5 @@
 import type { ProductionAssetType } from "@ai-content-factory/shared-types";
+import { formatDesignSpecForPrompt } from "./asset-design-specs.js";
 
 export function buildDesignPromptForType(type: ProductionAssetType, prompt: string): string {
   const trimmedPrompt = prompt.trim();
@@ -11,6 +12,7 @@ export function buildDesignPromptForType(type: ProductionAssetType, prompt: stri
       "三视图必须保持同一张脸、同一发型、同一体型、同一服装/盔甲细节、同一固定道具和同一色彩方案。",
       "画风必须跟随用户描述；如果用户写 anime / 插画 / 写实 / 电影感，就按用户描述执行。",
       "如果用户指定背景或地点，保留为三视图背后的统一弱背景；如果没有指定，才使用干净中性背景。",
+      formatDesignSpecForPrompt(type),
       "禁止：文字、标签、UI、表格、漫画格、分镜格、多人变体、儿童角色、版权角色。"
     ].join("\n");
   }
@@ -23,6 +25,7 @@ export function buildDesignPromptForType(type: ProductionAssetType, prompt: stri
       "必须包含：主建立镜头、反打或侧向视角、入口/动线视角、关键道具特写、材质与灯光细节。所有视角必须属于同一空间。",
       "一致性要求：门窗、家具、道具、主要色彩、灯光方向、空间比例、时代风格必须在所有视角中保持一致。",
       "目的：后续图片和 Seedance 影片生成会使用这张图锁定场景布局、道具位置、灯光和色彩，避免每次生成漂移。",
+      formatDesignSpecForPrompt(type),
       "允许专业设计 sheet 的多视角布局；禁止文字标签、说明文字、UI、故事分镜、时间序列漫画格、多个无关地点、随机拼贴。"
     ].join("\n");
   }
@@ -32,6 +35,7 @@ export function buildDesignPromptForType(type: ProductionAssetType, prompt: stri
       trimmedPrompt,
       "用户描述是最高优先级：不要改变用户指定的画风、色彩、镜头质感、材质、灯光或情绪。",
       "输出规格：单张可复用视觉风格参考图，主体清楚，色彩和光影稳定，适合作为整支影片的风格锚点。",
+      formatDesignSpecForPrompt(type),
       "禁止：文字、标签、UI、表格、漫画格、分镜格、拼贴板、对比图。"
     ].join("\n");
   }
@@ -40,6 +44,7 @@ export function buildDesignPromptForType(type: ProductionAssetType, prompt: stri
     trimmedPrompt,
     "用户描述是最高优先级：不要改变用户指定的地点、画风、色彩、物件、灯光、角色或动作。",
     "输出规格：单张可复用影片帧，主体动作清楚，构图稳定，适合作为后续图片或视频生成参考。",
+    formatDesignSpecForPrompt(type),
     "禁止：文字、标签、UI、表格、漫画格、分镜格、拼贴板、对比图。"
   ].join("\n");
 }

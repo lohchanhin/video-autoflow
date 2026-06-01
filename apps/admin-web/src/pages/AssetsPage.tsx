@@ -12,6 +12,7 @@ import {
   type ProductionAssetType
 } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { getProductionAssetDesignSpec } from "../lib/asset-design-specs.js";
 import { buildDesignPromptForType, designHintForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
@@ -315,6 +316,7 @@ export function AssetsPage(props: AssetsPageProps) {
             <div className="asset-generation-hint">
               {designHintForType(draftType)}
             </div>
+            <AssetDesignSpecPanel type={draftType} />
             <Field label="标签（逗号分隔）">
               <input value={draftTags} placeholder="便利店, 夜班, 主角" onChange={(event) => setDraftTags(event.target.value)} />
             </Field>
@@ -530,6 +532,7 @@ function AssetInspector(props: {
       <div className="asset-preview-frame">
         {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
       </div>
+      <AssetDesignSpecPanel type={asset.type} compact />
       <div className="asset-inspector-actions">
         <button
           className="primary-button"
@@ -662,6 +665,37 @@ function FolderRail(props: { activeFolder: string; folders: Array<{ count: numbe
 
 function StudioTab(props: { active: boolean; label: string; onClick: () => void }) {
   return <button className={props.active ? "active" : ""} type="button" onClick={props.onClick}>{props.label}</button>;
+}
+
+function AssetDesignSpecPanel(props: { compact?: boolean | undefined; type: ProductionAssetType }) {
+  const spec = getProductionAssetDesignSpec(props.type);
+  const deliverables = props.compact ? spec.deliverables.slice(0, 4) : spec.deliverables;
+  const checks = props.compact ? spec.checks.slice(0, 3) : spec.checks;
+
+  return (
+    <section className={`asset-design-spec ${props.compact ? "compact" : ""}`.trim()}>
+      <div>
+        <p className="eyebrow">设计规格</p>
+        <h3>{spec.title}</h3>
+        <span>{spec.purpose}</span>
+      </div>
+      <div className="asset-spec-columns">
+        <div>
+          <strong>必须交付</strong>
+          <ul>
+            {deliverables.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+        <div>
+          <strong>检查标准</strong>
+          <ul>
+            {checks.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      </div>
+      {!props.compact ? <p>{spec.usage}</p> : null}
+    </section>
+  );
 }
 
 function MetricCard(props: { danger?: boolean | undefined; label: string; value: string }) {

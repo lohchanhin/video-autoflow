@@ -11,6 +11,8 @@ describe("design asset prompts", () => {
     expect(prompt).toContain("入口/动线视角");
     expect(prompt).toContain("关键道具特写");
     expect(prompt).toContain("所有视角必须属于同一空间");
+    expect(prompt).toContain("资产规格：场景多角度设定表规格");
+    expect(prompt).toContain("必须交付");
     expect(prompt).not.toContain("单张可复用设计参考图");
   });
 
