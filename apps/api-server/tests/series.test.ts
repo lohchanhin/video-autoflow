@@ -139,6 +139,36 @@ describe("series API", () => {
       status: "EPISODE_CONVERTED_TO_CASE"
     });
   });
+
+  it("keeps series reference assets generic when episode does not pin character or scene roles", async () => {
+    const series = createSeries({
+      referenceAssetIds: ["asset_character", "asset_scene"],
+      storyWorldId: "world_001"
+    });
+    const episode = createEpisode({
+      selectedCharacterAssetIds: [],
+      selectedSceneAssetIds: [],
+      status: "approved"
+    });
+    const repository = createSeriesRepositoryMock({
+      findEpisodeIdea: vi.fn().mockResolvedValue(episode),
+      findSeriesById: vi.fn().mockResolvedValue(series),
+      patchEpisodeIdea: vi.fn().mockResolvedValue({ ...episode, caseId: "job_generic", status: "converted_to_case" })
+    });
+
+    const response = await request(createApp({ contentSeriesRepository: repository }))
+      .post(`/series/${series._id}/episodes/${episode._id}/convert-case`)
+      .send({ caseId: "job_generic" })
+      .expect(201);
+
+    expect(response.body.caseSeed).toMatchObject({
+      characterAssetIds: [],
+      sceneAssetIds: [],
+      referenceAssetIds: ["asset_character", "asset_scene"]
+    });
+    expect(response.body.caseSeed.productionBrief.selectedCharacters).toEqual([]);
+    expect(response.body.caseSeed.productionBrief.selectedScenes).toEqual([]);
+  });
 });
 
 function createSeriesRepositoryMock(overrides: Partial<ContentSeriesRepository> = {}): ContentSeriesRepository {

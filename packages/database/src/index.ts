@@ -5,6 +5,7 @@ import type {
   ContentSeriesStatus,
   CostLog,
   CostLogPricingStatus,
+  CostLogToolType,
   CostLogUsage,
   ProductionAsset,
   ProductionAssetProvider,
@@ -105,6 +106,7 @@ export interface CostLogCreateInput {
   pricingStatus: CostLogPricingStatus;
   quantity: number;
   service: CostLog["service"];
+  toolType: CostLogToolType;
   unit: string;
   usage?: CostLogUsage | undefined;
 }
@@ -1124,6 +1126,7 @@ function normalizeCostLog(input: CostLogCreateInput, now = new Date().toISOStrin
     pricingStatus: normalizePricingStatus(input.pricingStatus),
     quantity: round6(numberOrDefault(input.quantity, 0)),
     service: normalizeCostService(input.service),
+    toolType: normalizeCostToolType(input.toolType, input.service),
     unit: input.unit.trim() || "unit",
     usage: normalizeCostUsage(input.usage)
   };
@@ -1143,6 +1146,7 @@ function stripCostLogDocument(log: CostLogDocument): CostLog {
     pricingStatus: normalizePricingStatus(log.pricingStatus),
     quantity: numberOrDefault(log.quantity, 0),
     service: normalizeCostService(log.service),
+    toolType: normalizeCostToolType(log.toolType, log.service),
     unit: log.unit,
     usage: normalizeCostUsage(log.usage)
   }, log.createdAt);
@@ -1156,6 +1160,33 @@ function normalizeCostService(value: string): CostLog["service"] {
   if (value === "script" || value === "image" || value === "reference_design" || value === "tts" || value === "bgm" || value === "video" || value === "compose" || value === "qc") {
     return value;
   }
+
+  return "other";
+}
+
+function normalizeCostToolType(value: string | undefined, service: string): CostLogToolType {
+  if (
+    value === "llm" ||
+    value === "image" ||
+    value === "design_image" ||
+    value === "tts" ||
+    value === "bgm" ||
+    value === "video" ||
+    value === "subtitle" ||
+    value === "compose" ||
+    value === "storage" ||
+    value === "youtube"
+  ) {
+    return value;
+  }
+
+  if (service === "script") return "llm";
+  if (service === "reference_design") return "design_image";
+  if (service === "image") return "image";
+  if (service === "tts") return "tts";
+  if (service === "bgm") return "bgm";
+  if (service === "video") return "video";
+  if (service === "compose") return "compose";
 
   return "other";
 }

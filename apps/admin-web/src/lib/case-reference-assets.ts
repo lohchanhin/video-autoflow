@@ -12,6 +12,17 @@ export function isBackgroundDesignAsset(asset: ProductionAsset): boolean {
   return asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame";
 }
 
+export function findReadyReferenceAssetsByIds(assets: ProductionAsset[], assetIds: Array<string | string[] | null | undefined>): ProductionAsset[] {
+  const ids = assetIds
+    .flatMap((id) => Array.isArray(id) ? id : [id])
+    .filter((id): id is string => Boolean(id));
+
+  return ids
+    .map((id) => assets.find((asset) => asset._id === id) ?? null)
+    .filter((asset, index, selectedAssets) => Boolean(asset) && selectedAssets.findIndex((candidate) => candidate?._id === asset?._id) === index)
+    .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
+}
+
 export function buildAssetContextBrief(characterAsset: ProductionAsset | null, backgroundAsset: ProductionAsset | null): string {
   const lines = [
     characterAsset

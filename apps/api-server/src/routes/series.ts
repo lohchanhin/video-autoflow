@@ -139,6 +139,7 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           pricingStatus: generated.provider === "openai" ? scriptPricingStatus(generated.usage.pricingMode, generated.costRM, generated.usage.inputTokens + generated.usage.outputTokens) : "local_zero",
           quantity: generated.usage.inputTokens + generated.usage.outputTokens,
           service: "script",
+          toolType: "llm",
           unit: "tokens",
           usage: {
             episodeCount: episodes.length,
@@ -288,12 +289,10 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
     selectedCharacterAssetIds?: string[];
     selectedSceneAssetIds?: string[];
   };
-  const characterAssetIds = episodeWithOptionalFields.selectedCharacterAssetIds?.length
-    ? episodeWithOptionalFields.selectedCharacterAssetIds
-    : series.referenceAssetIds;
-  const sceneAssetIds = episodeWithOptionalFields.selectedSceneAssetIds?.length
-    ? episodeWithOptionalFields.selectedSceneAssetIds
-    : series.referenceAssetIds;
+  const referenceAssetIds = uniqueStrings(series.referenceAssetIds);
+  const characterAssetIds = uniqueStrings(episodeWithOptionalFields.selectedCharacterAssetIds ?? []);
+  const sceneAssetIds = uniqueStrings(episodeWithOptionalFields.selectedSceneAssetIds ?? []);
+  const allReferenceAssetIds = uniqueStrings([...referenceAssetIds, ...characterAssetIds, ...sceneAssetIds]);
   const prompt = [
     `系列：${series.name}`,
     `单集题目：${episode.title}`,
@@ -365,7 +364,7 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
         "Reuse selected recurring characters and scene assets when provided. Do not swap the story world, cast, or main setting unless the episode explicitly asks for it."
       ].filter(Boolean)
     },
-    referenceAssetIds: series.referenceAssetIds,
+    referenceAssetIds: allReferenceAssetIds,
     sceneCount: series.sceneCount,
     sceneAssetIds,
     seriesId: series._id,
@@ -521,6 +520,10 @@ function stringArrayFromUnknown(value: unknown): string[] {
     return [];
   }
 
+  return uniqueStrings(value);
+}
+
+function uniqueStrings(value: unknown[]): string[] {
   return value
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .map((item) => item.trim())

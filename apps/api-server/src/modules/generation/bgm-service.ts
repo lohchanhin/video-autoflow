@@ -147,12 +147,36 @@ function normalizeInput(input: GenerateBgmRequest): NormalizedBgmInput {
     topic
   };
 
+  if (input.apiStyle?.trim()) {
+    normalized.apiStyle = input.apiStyle.trim();
+  }
+
+  if (input.baseUrl?.trim()) {
+    normalized.baseUrl = input.baseUrl.trim();
+  }
+
+  if (input.cost) {
+    normalized.cost = input.cost;
+  }
+
   if (input.jobId?.trim()) {
     normalized.jobId = input.jobId.trim();
   }
 
+  if (input.model?.trim()) {
+    normalized.model = input.model.trim();
+  }
+
   if (input.mood?.trim()) {
     normalized.mood = input.mood.trim();
+  }
+
+  if (input.params) {
+    normalized.params = input.params;
+  }
+
+  if (input.provider?.trim()) {
+    normalized.provider = input.provider.trim();
   }
 
   return normalized;

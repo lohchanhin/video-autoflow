@@ -1015,31 +1015,21 @@ function ProductionTab(
       ) : null}
 
       {activeProductionTab === "assets" ? (
-        <section className="production-tab-grid two">
+        <section className="case-assets-workbench">
           <AssetPlanSummaryPanel assets={props.selectedProductionAssets} job={props.selectedJob} openAssetPlan={props.openAssetPlanForJob} />
-          <CaseAssetsPanel job={props.selectedJob} qcReport={props.selectedQcReport} records={props.selectedRecords} sceneReviews={props.selectedSceneReviews} storedVideos={props.storedVideos} />
-          <StageOutputPanel
-            characters={props.characters}
-            generateBgmForJob={props.generateBgmForJob}
+          <SceneImageWorkbench
+            assets={props.selectedProductionAssets}
+            generatingSceneImageIds={props.generatingSceneImageIds}
             generateImagesForJob={props.generateImagesForJob}
             generateSceneImageForJob={props.generateSceneImageForJob}
-            generateTtsForJob={props.generateTtsForJob}
-            generateVideoClipForJob={props.generateVideoClipForJob}
-            runQcForJob={props.runQcForJob}
-            isGeneratingBgm={isGeneratingBgm}
             isGeneratingImages={isGeneratingImages}
-            generatingSceneImageIds={props.generatingSceneImageIds}
-            isGeneratingTts={isGeneratingTts}
-            isGeneratingVideoClip={isGeneratingVideoClip}
-            isRunningQc={isRunningQc}
-            record={props.selectedRecords.find((record) => record.stageId === "image") ?? null}
-            sceneReviews={props.selectedSceneReviews}
-            qcReport={props.selectedQcReport}
-            storedVideos={props.storedVideos}
             job={props.selectedJob}
+            records={props.selectedRecords}
             reportDirtyState={reportProductionDirtyState}
+            sceneReviews={props.selectedSceneReviews}
             updateSceneReview={props.updateSceneReview}
           />
+          <CaseAssetsPanel job={props.selectedJob} qcReport={props.selectedQcReport} records={props.selectedRecords} sceneReviews={props.selectedSceneReviews} storedVideos={props.storedVideos} />
         </section>
       ) : null}
 
@@ -1284,55 +1274,141 @@ function getCaseCostEstimateTone(estimate: CaseNextCostEstimate): "neutral" | "a
 }
 
 function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob; openAssetPlan: (jobId: string) => void }) {
-  const requiredTypes = ["character_design", "scene_design", "style_reference", "first_frame"] as const;
-  const missingTypes = requiredTypes.filter((type) => !props.assets.some((asset) => asset.type === type));
+  const referenceAssets = props.assets
+    .filter((asset) => asset.url.trim() && (asset.role === "reference_image" || asset.role === "first_frame" || asset.role === "last_frame" || asset.type === "character_design" || asset.type === "scene_design" || asset.type === "style_reference"))
+    .sort((left, right) => left.type.localeCompare(right.type) || left.label.localeCompare(right.label));
+  const characterCount = referenceAssets.filter((asset) => asset.type === "character_design").length;
+  const sceneCount = referenceAssets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame" || asset.type === "last_frame").length;
   const readyCount = props.assets.filter((asset) => asset.status === "ready" || asset.status === "approved").length;
   const approvedCount = props.assets.filter((asset) => asset.status === "approved").length;
-  const blockedCount = props.assets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
-  const seedanceReferenceCount = props.assets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && asset.url.trim() && (asset.role === "reference_image" || asset.role === "first_frame" || asset.role === "last_frame")).length;
 
   return (
-    <section className="asset-plan-summary panel">
+    <section className="case-reference-assets-panel panel">
       <SectionHeader
-        eyebrow="MongoDB 资产规划"
-        title="资产规划状态"
+        eyebrow="参考资产"
+        title="本 Case 使用的角色 / 场景 / 风格"
         action={
           <button className="secondary-button compact-button" type="button" onClick={() => props.openAssetPlan(props.job.id)}>
-            打开资产规划
+            打开资产库
           </button>
         }
       />
-      <div className="asset-plan-summary-grid">
+      <div className="asset-plan-summary-grid compact">
         <div>
-          <span>规划行</span>
-          <strong>{props.assets.length}</strong>
+          <span>角色参考</span>
+          <strong>{characterCount}</strong>
         </div>
         <div>
-          <span>就绪 / 已批准</span>
-          <strong>{readyCount} / {approvedCount}</strong>
+          <span>场景 / 风格</span>
+          <strong>{sceneCount}</strong>
         </div>
         <div>
-          <span>Seedance 参考</span>
-          <strong>{seedanceReferenceCount}</strong>
+          <span>就绪</span>
+          <strong>{readyCount}</strong>
         </div>
         <div>
-          <span>阻塞</span>
-          <strong>{blockedCount}</strong>
+          <span>已批准</span>
+          <strong>{approvedCount}</strong>
         </div>
       </div>
-      {props.assets.length === 0 ? (
-        <EmptyState title="还没有 MongoDB 资产规划" body="打开资产规划并为这个 Case 建立规划。Seedance 只会使用 MongoDB 中已就绪或已批准的参考资产。" />
+      {referenceAssets.length === 0 ? (
+        <EmptyState title="还没有绑定参考资产" body="没有参考资产也可以生成，但角色和场景一致性会弱。建议先从设计资产库选择角色三视图、场景设定图或风格参考。" />
       ) : null}
-      {missingTypes.length > 0 ? (
+      {referenceAssets.length > 0 ? (
+        <div className="case-reference-strip">
+          {referenceAssets.map((asset) => (
+            <article className="case-reference-tile" key={asset._id}>
+              <img alt={asset.label} src={asset.url} />
+              <div>
+                <strong>{asset.label}</strong>
+                <span>{formatAssetType(asset.type)} / {asset.status}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function formatAssetType(type: ProductionAsset["type"]): string {
+  const labels: Record<ProductionAsset["type"], string> = {
+    bgm_reference: "BGM 参考",
+    character_design: "角色设计",
+    first_frame: "首帧",
+    last_frame: "尾帧",
+    scene_design: "场景设计",
+    style_reference: "风格参考"
+  };
+
+  return labels[type];
+}
+
+function SceneImageWorkbench(props: {
+  assets: ProductionAsset[];
+  generateImagesForJob: (job: AdminJob) => void;
+  generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
+  generatingSceneImageIds: string[];
+  isGeneratingImages: boolean;
+  job: AdminJob;
+  records: JobProcessRecord[];
+  reportDirtyState?: CasesPageProps["reportDirtyState"];
+  sceneReviews: SceneReviewItem[];
+  updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
+}) {
+  const scriptReady = props.records.some((record) => record.stageId === "script" && record.status === "done");
+  const storyboardReady = props.records.some((record) => record.stageId === "storyboard" && record.status === "done");
+  const promptReady = props.records.some((record) => record.stageId === "prompt" && record.status === "done");
+  const imageRecord = props.records.find((record) => record.stageId === "image");
+  const readyReferences = props.assets.filter((asset) => asset.url.trim() && (asset.status === "approved" || asset.status === "ready")).length;
+  const canGenerateImages = scriptReady && storyboardReady && promptReady && !props.isGeneratingImages;
+
+  return (
+    <section className="scene-image-workbench panel">
+      <SectionHeader
+        eyebrow="场景图片审核"
+        title="按已确认分镜生成图片"
+        action={
+          <button className="primary-button compact-button" disabled={!canGenerateImages} type="button" onClick={() => props.generateImagesForJob(props.job)}>
+            {props.isGeneratingImages ? <Loader2 size={14} className="spin" /> : <ImageIcon size={14} />}
+            {props.isGeneratingImages ? "生成中" : props.sceneReviews.length > 0 ? "重新生成全部图片" : "生成场景图片"}
+          </button>
+        }
+      />
+      <div className="scene-workbench-metrics">
+        <div>
+          <span>分镜</span>
+          <strong>{storyboardReady ? `${props.job.sceneCount} 已确认` : "缺少"}</strong>
+        </div>
+        <div>
+          <span>参考资产</span>
+          <strong>{readyReferences}</strong>
+        </div>
+        <div>
+          <span>图片阶段</span>
+          <strong>{imageRecord?.status ?? "pending"}</strong>
+        </div>
+      </div>
+      {!canGenerateImages && !props.isGeneratingImages ? (
         <div className="reference-asset-note">
           <AlertTriangle size={15} />
-          <span>缺少必要资产规划：{missingTypes.join(", ")}。</span>
+          <span>缺少已确认脚本、分镜或图片提示词，不能生成图片。请先确认 AI 大纲，图片阶段不会重新编故事。</span>
         </div>
+      ) : null}
+      {props.sceneReviews.length === 0 ? (
+        <EmptyState
+          title="还没有场景图片审核记录"
+          body={storyboardReady ? `已确认 ${props.job.sceneCount} 个分镜。点击「生成场景图片」后，每个 Scene 会显示图片、prompt、参考资产和审核状态。` : "先确认大纲；确认后的分镜会成为图片生成的唯一来源。"}
+        />
       ) : (
-        <div className="reference-asset-note success">
-          <CheckCircle2 size={15} />
-          <span>核心资产规划已存在。生成并批准参考图后，再进入 Seedance 视频片段生成。</span>
-        </div>
+        <SceneReviewPanel
+          generatingSceneImageIds={props.generatingSceneImageIds}
+          generateSceneImageForJob={props.generateSceneImageForJob}
+          job={props.job}
+          reportDirtyState={props.reportDirtyState}
+          sceneReviews={props.sceneReviews}
+          updateSceneReview={props.updateSceneReview}
+        />
       )}
     </section>
   );
@@ -1357,8 +1433,8 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
   const audioAssetCount = [voiceoverPath && isAudioPath(voiceoverPath) ? voiceoverPath : "", bgmPath ?? "", sfxPath].filter(Boolean).length;
 
   return (
-    <section className="case-assets-panel panel">
-      <SectionHeader eyebrow="Case 产物" title="产物库" action={<StatusPill tone={videoPath ? "success" : "neutral"}>{videoPath ? "MP4 已就绪" : "等待中"}</StatusPill>} />
+    <section className="case-artifact-summary-panel panel">
+      <SectionHeader eyebrow="产物摘要" title="媒体文件" action={<StatusPill tone={videoPath ? "success" : "neutral"}>{videoPath ? "MP4 已就绪" : "等待中"}</StatusPill>} />
       {props.job.visualBible ? <VisualBibleCard visualBible={props.job.visualBible} /> : null}
       {videoPath ? (
         <div className="case-video-preview">

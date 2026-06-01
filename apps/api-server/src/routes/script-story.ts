@@ -28,25 +28,7 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
   router.post("/generation/script", async (req: Request, res: Response, next) => {
     try {
       const response = await service.generateScriptStory(parseRequest(req.body));
-      const tokenQuantity = (response.usage?.inputTokens ?? 0) + (response.usage?.outputTokens ?? 0);
-      await options.costRecorder?.record({
-        costRM: response.costRM,
-        exchangeRate: config.currency.usdToMyrRate,
-        jobId: response.jobId,
-        model: response.model,
-        operation: "generation.script_story",
-        provider: response.provider,
-        pricingSource: response.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
-        pricingStatus: response.provider === "openai" ? scriptPricingStatus(response.usage?.pricingMode, response.costRM, tokenQuantity) : "local_zero",
-        quantity: tokenQuantity,
-        service: "script",
-        unit: "tokens",
-        usage: {
-          inputTokens: response.usage?.inputTokens ?? 0,
-          outputTokens: response.usage?.outputTokens ?? 0,
-          pricingMode: response.usage?.pricingMode
-        }
-      });
+      await recordScriptStoryCost(options, response, "generation.script_story");
       res.status(201).json(response);
     } catch (error) {
       next(error);
@@ -56,6 +38,7 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
   router.post("/cases/draft-outline", async (req: Request, res: Response, next) => {
     try {
       const response = await service.generateScriptStory(parseRequest(req.body));
+      await recordScriptStoryCost(options, response, "cases.draft_outline");
       res.status(201).json(response);
     } catch (error) {
       next(error);
@@ -63,6 +46,34 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
   });
 
   return router;
+}
+
+async function recordScriptStoryCost(
+  options: CreateScriptStoryRouterOptions,
+  response: Awaited<ReturnType<ScriptStoryService["generateScriptStory"]>>,
+  operation: string
+): Promise<void> {
+  const tokenQuantity = (response.usage?.inputTokens ?? 0) + (response.usage?.outputTokens ?? 0);
+
+  await options.costRecorder?.record({
+    costRM: response.costRM,
+    exchangeRate: config.currency.usdToMyrRate,
+    jobId: response.jobId,
+    model: response.model,
+    operation,
+    provider: response.provider,
+    pricingSource: response.provider === "openai" ? "https://openai.com/api/pricing/" : "local",
+    pricingStatus: response.provider === "openai" ? scriptPricingStatus(response.usage?.pricingMode, response.costRM, tokenQuantity) : "local_zero",
+    quantity: tokenQuantity,
+    service: "script",
+    toolType: "llm",
+    unit: "tokens",
+    usage: {
+      inputTokens: response.usage?.inputTokens ?? 0,
+      outputTokens: response.usage?.outputTokens ?? 0,
+      pricingMode: response.usage?.pricingMode
+    }
+  });
 }
 
 function scriptPricingStatus(pricingMode: string | undefined, costRM: number, tokenQuantity: number): "actual_usage" | "configured_rate" | "pricing_missing" {

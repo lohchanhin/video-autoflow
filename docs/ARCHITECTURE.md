@@ -1,5 +1,7 @@
 # Architecture
 
+For the current product-level logic architecture and Mermaid flow diagrams, use `docs/LOGIC_ARCHITECTURE.md` as the implementation guide. This file remains the lower-level runtime and monorepo overview.
+
 ## Direction
 
 The project is a local-first TypeScript monorepo. The first deployment target is a single DigitalOcean Droplet running Docker Compose.

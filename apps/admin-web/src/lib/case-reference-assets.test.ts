@@ -3,6 +3,7 @@ import type { ProductionAsset } from "@ai-content-factory/shared-types";
 import {
   buildAssetContextBrief,
   buildReferenceAssetPromptContext,
+  findReadyReferenceAssetsByIds,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
@@ -79,6 +80,20 @@ describe("case reference asset routing", () => {
     expect(reference?.notes).toContain("Scene consistency contract");
     expect(reference?.notes).not.toContain("Frame specification");
     expect(productionAssetToGenerationReference(createAsset({ status: "rejected" }))).toBeNull();
+  });
+
+  it("keeps all selected ready character and scene assets without duplicate IDs", () => {
+    const paladin = createAsset({ _id: "asset_paladin", label: "Silver paladin", type: "character_design" });
+    const rabbit = createAsset({ _id: "asset_rabbit", label: "Rabbit hero", type: "character_design" });
+    const forest = createAsset({ _id: "asset_forest", label: "Rainbow forest", type: "scene_design" });
+    const rejectedScene = createAsset({ _id: "asset_rejected", label: "Rejected scene", status: "rejected", type: "scene_design" });
+
+    const selected = findReadyReferenceAssetsByIds(
+      [paladin, rabbit, forest, rejectedScene],
+      [["asset_paladin", "asset_rabbit"], ["asset_forest"], "asset_paladin", "asset_rejected", null]
+    );
+
+    expect(selected.map((asset) => asset._id)).toEqual(["asset_paladin", "asset_rabbit", "asset_forest"]);
   });
 
   it("builds Seedance-safe context for scene design assets", () => {

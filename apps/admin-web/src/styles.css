@@ -2118,9 +2118,30 @@ textarea {
   min-width: 0;
 }
 
+.case-assets-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.38fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.case-reference-assets-panel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+  min-width: 0;
+}
+
 .case-assets-panel {
   display: grid;
   gap: 12px;
+}
+
+.case-artifact-summary-panel,
+.scene-image-workbench {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .reference-assets-panel {
@@ -2870,6 +2891,87 @@ textarea {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.45;
+}
+
+.case-reference-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.case-reference-tile {
+  overflow: hidden;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.case-reference-tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 12;
+  object-fit: cover;
+  background: #0f172a;
+}
+
+.case-reference-tile div {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  min-width: 0;
+}
+
+.case-reference-tile strong,
+.case-reference-tile span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-reference-tile strong {
+  color: #182230;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.case-reference-tile span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.scene-workbench-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scene-workbench-metrics div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #e1e8f0;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.scene-workbench-metrics span {
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.scene-workbench-metrics strong {
+  overflow: hidden;
+  color: #182230;
+  font-size: 14px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .case-video-preview {
@@ -4480,7 +4582,8 @@ textarea {
   .trend-filter-grid,
   .asset-board-grid,
   .design-generator-grid,
-  .asset-library-layout {
+  .asset-library-layout,
+  .case-assets-workbench {
     grid-template-columns: 1fr;
   }
 

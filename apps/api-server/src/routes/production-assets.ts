@@ -152,6 +152,7 @@ export function createProductionAssetsRouter(options: CreateProductionAssetsRout
             pricingStatus: generated.provider === "openai" ? imageUsagePricingStatus(generated.costRM, generated.usage) : "local_zero",
             quantity: generated.quantity,
             service: generated.service,
+            toolType: generated.service === "reference_design" ? "design_image" : "image",
             unit: generated.unit,
             usage: {
               ...generated.usage,

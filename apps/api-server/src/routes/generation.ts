@@ -39,6 +39,7 @@ export function createGenerationRouter(options: CreateGenerationRouterOptions): 
         pricingStatus: response.costRM > 0 ? "configured_rate" : "local_zero",
         quantity: response.durationSeconds,
         service: "compose",
+        toolType: "compose",
         unit: "seconds",
         usage: {
           durationSeconds: response.durationSeconds,

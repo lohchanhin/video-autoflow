@@ -41,6 +41,7 @@ export function createBgmRouter(options: CreateBgmRouterOptions): Router {
         pricingStatus: response.costRM > 0 ? "configured_rate" : "pricing_missing",
         quantity: response.durationSeconds,
         service: "bgm",
+        toolType: "bgm",
         unit: "seconds",
         usage: response.usage
       });

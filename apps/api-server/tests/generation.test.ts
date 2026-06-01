@@ -414,6 +414,85 @@ describe("POST /generation/tts", () => {
 });
 
 describe("POST /generation/bgm", () => {
+  it("applies BGM tool provider overrides from workflow settings", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-bgm-override-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const fetchMock = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+      const urlValue = String(url);
+
+      if (urlValue.includes("/user/subscription")) {
+        return new Response(JSON.stringify({ character_count: 10, character_limit: 1000 }), {
+          headers: { "content-type": "application/json" },
+          status: 200
+        });
+      }
+
+      if (urlValue.includes("/music")) {
+        return new Response(Buffer.from("fake music"), {
+          headers: {
+            "content-type": "audio/mpeg",
+            "song-id": "song_override"
+          },
+          status: 200
+        });
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const bgmGenerationService = createBgmGenerationService({
+      elevenlabs: {
+        apiKey: "test-key",
+        baseUrl: "https://api.elevenlabs.io/v1",
+        costRMPerMinute: 0,
+        model: "music_v1",
+        outputFormat: "mp3_44100_128"
+      },
+      storage
+    });
+
+    const response = await bgmGenerationService.generateBgm({
+      baseUrl: "https://custom-music.example/v1",
+      cost: {
+        costMode: "second",
+        outputUnitPriceRM: 0.2
+      },
+      costLimitRM: 7.5,
+      durationSeconds: 12,
+      jobId: "job_bgm_override",
+      language: "zh-CN",
+      model: "music_custom_v2",
+      params: {
+        outputFormat: "mp3_22050_64"
+      },
+      prompt: "gentle forest music",
+      provider: "elevenlabs-compatible",
+      sceneCount: 3,
+      templateType: "fairy_tale",
+      topic: "forest lesson"
+    });
+
+    const musicCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/music"));
+    expect(String(musicCall?.[0])).toBe("https://custom-music.example/v1/music?output_format=mp3_22050_64");
+    expect(JSON.parse(String(musicCall?.[1]?.body))).toMatchObject({
+      force_instrumental: true,
+      model_id: "music_custom_v2",
+      music_length_ms: 12000
+    });
+    expect(response).toMatchObject({
+      costRM: 0.04,
+      durationSeconds: 12,
+      format: "mp3",
+      model: "music_custom_v2",
+      provider: "elevenlabs-compatible",
+      songId: "song_override"
+    });
+  });
+
   it("stores generated ElevenLabs background music through the storage adapter", async () => {
     const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-bgm-test-"));
     const storage = createStorageAdapter({

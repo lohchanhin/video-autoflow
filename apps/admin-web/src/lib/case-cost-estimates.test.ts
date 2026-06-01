@@ -120,6 +120,7 @@ function createJob(overrides: Partial<AdminJob> = {}): AdminJob {
     sceneCount: 5,
     sceneAssetIds: [],
     scheduleId: null,
+    scheduleRunId: null,
     seriesId: null,
     source: "manual",
     status: "PENDING",

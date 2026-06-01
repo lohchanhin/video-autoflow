@@ -117,6 +117,7 @@ export interface ProductionAsset {
 }
 
 export type CostLogPricingStatus = "actual_usage" | "configured_rate" | "pricing_missing" | "local_zero";
+export type CostLogToolType = "llm" | "image" | "design_image" | "tts" | "bgm" | "video" | "subtitle" | "compose" | "storage" | "youtube" | "other";
 
 export interface CostLogUsage {
   [key: string]: boolean | number | string | null | undefined;
@@ -137,6 +138,7 @@ export interface CostLog {
   pricingStatus: CostLogPricingStatus;
   quantity: number;
   service: "script" | "image" | "reference_design" | "tts" | "bgm" | "video" | "compose" | "qc" | "other";
+  toolType: CostLogToolType;
   unit: string;
   usage: CostLogUsage;
 }
@@ -158,6 +160,26 @@ export interface CostSummaryResponse {
 }
 
 export type ToolCostMode = "tokens" | "image" | "second" | "character" | "credit" | "free" | "custom";
+
+export type ToolProviderType = "llm" | "image" | "design_image" | "tts" | "bgm" | "video" | "subtitle" | "compose" | "storage" | "youtube";
+
+export interface ToolProviderSettings {
+  allowAutopilot: boolean;
+  apiStyle: string;
+  baseUrl: string;
+  costMode: ToolCostMode;
+  enabled: boolean;
+  fallbackCostRM: number;
+  id: string;
+  inputUnitPriceRM: number;
+  model: string;
+  outputUnitPriceRM: number;
+  params: Record<string, boolean | number | string>;
+  provider: string;
+  retryLimit: number;
+  toolType: ToolProviderType;
+  updatedAt: string;
+}
 
 export interface ToolCostOverride {
   costMode?: string | undefined;

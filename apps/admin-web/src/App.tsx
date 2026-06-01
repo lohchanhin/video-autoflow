@@ -121,6 +121,7 @@ import { evaluateCaseBudgetGuard } from "./lib/budget-guards.js";
 import {
   buildAssetContextBrief,
   buildReferenceAssetPromptContext,
+  findReadyReferenceAssetsByIds,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
@@ -686,6 +687,67 @@ function hasGeneratedScriptStory(records: JobProcessRecord[], jobId: string): bo
   return Boolean(scriptRecord?.status === "done" && storyboardRecord?.status === "done" && promptRecord?.status === "done");
 }
 
+function resetDownstreamRecordsAfterScriptOverwrite(records: JobProcessRecord[], jobId: string, now: string): JobProcessRecord[] {
+  const downstreamStages: ProductionStageId[] = ["image", "video", "tts", "bgm", "subtitle", "compose", "qc", "publish", "archive"];
+
+  return records.map((record) => {
+    if (record.jobId !== jobId || !downstreamStages.includes(record.stageId)) {
+      return record;
+    }
+
+    return {
+      ...record,
+      artifactPath: "",
+      costRM: 0,
+      notes: "脚本 / 分镜已被覆盖，下游产物需要重新生成。",
+      output: "等待根据新的已确认脚本和分镜重新生成。",
+      status: record.status === "skipped" ? "skipped" : "pending",
+      updatedAt: now
+    };
+  });
+}
+
+function enrichProductionBriefWithReferenceAssets(productionBrief: ProductionBrief | null, referenceAssets: ProductionAsset[]): ProductionBrief | null {
+  if (!productionBrief || referenceAssets.length === 0) {
+    return productionBrief;
+  }
+
+  const characterAssets = referenceAssets.filter(isCharacterDesignAsset);
+  const sceneAssets = referenceAssets.filter(isBackgroundDesignAsset);
+  const referenceContinuityRules = [
+    ...characterAssets.map((asset) => `${asset.label}: preserve character identity, silhouette, wardrobe, palette, and fixed props from the approved design asset.`),
+    ...sceneAssets.map((asset) => `${asset.label}: preserve environment layout, key props, color palette, lighting direction, and reusable camera zones from the approved design asset.`)
+  ];
+
+  return {
+    ...productionBrief,
+    selectedCharacters: characterAssets.length > 0
+      ? characterAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        notes: buildReferenceAssetPromptContext(asset),
+        role: asset.type,
+        url: asset.url,
+        visualIdentity: asset.prompt || asset.notes || asset.label
+      }))
+      : productionBrief.selectedCharacters,
+    selectedScenes: sceneAssets.length > 0
+      ? sceneAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        location: asset.folderName,
+        notes: buildReferenceAssetPromptContext(asset),
+        url: asset.url,
+        visualRules: asset.prompt || asset.notes || asset.label
+      }))
+      : productionBrief.selectedScenes,
+    visualContinuityRules: [
+      ...(productionBrief.visualContinuityRules ?? []),
+      ...referenceContinuityRules
+    ].filter((value, index, values) => Boolean(value && value.trim()) && values.indexOf(value) === index)
+  };
+}
+
 function extractVoiceoverTextFromRecords(records: JobProcessRecord[], jobId: string): string {
   const storyboardRecord = records.find((record) => record.jobId === jobId && record.stageId === "storyboard");
   const storyboardVoiceText = storyboardRecord?.output
@@ -715,12 +777,18 @@ function extractVoiceoverTextFromRecords(records: JobProcessRecord[], jobId: str
   return blocks.at(-1) ?? output;
 }
 
-function applyScriptStoryResultToRecords(records: JobProcessRecord[], jobId: string, result: GenerateScriptStoryResponse, now: string): JobProcessRecord[] {
+function applyScriptStoryResultToRecords(
+  records: JobProcessRecord[],
+  jobId: string,
+  result: GenerateScriptStoryResponse,
+  now: string,
+  options: { forceApproved?: boolean } = {}
+): JobProcessRecord[] {
   const scriptUrl = result.artifacts.script.publicUrl ?? result.artifacts.script.storagePath;
   const storyboardUrl = result.artifacts.storyboard.publicUrl ?? result.artifacts.storyboard.storagePath;
   const visualBibleUrl = result.artifacts.visualBible.publicUrl ?? result.artifacts.visualBible.storagePath;
   const backgroundMusicOutput = formatBackgroundMusicBrief(result);
-  const outlineNeedsReview = result.requiresReview || result.outlineQc.status !== "pass";
+  const outlineNeedsReview = !options.forceApproved && (result.requiresReview || result.outlineQc.status !== "pass");
   const outlineNotes = outlineNeedsReview ? result.outlineQc.summary : "";
   const outlineStatus: ProcessRecordStatus = outlineNeedsReview ? "failed" : "done";
 
@@ -1431,7 +1499,7 @@ export function App() {
     };
   }
 
-  function createCaseInputFromSchedule(schedule: ProductionSchedule, sequence: number): NewJobInput {
+  function createCaseInputFromSchedule(schedule: ProductionSchedule, sequence: number, scheduleRunId: string): NewJobInput {
     const firstTarget = publishingTargets.find((target) => schedule.targetIds.includes(target.id)) ?? publishingTargets.find((target) => target.enabled);
     const brief = createDefaultPromptForTarget(firstTarget, `${new Date().toLocaleDateString()} #${sequence}`);
 
@@ -1441,6 +1509,7 @@ export function App() {
       prompt: brief.prompt,
       sceneCount: 5,
       scheduleId: schedule.id,
+      scheduleRunId,
       source: "scheduled",
       templateType: firstTarget?.templateType ?? "rules_horror",
       topic: brief.topic
@@ -1498,7 +1567,7 @@ export function App() {
       setScheduleRuns((currentRuns) => [run, ...currentRuns]);
 
       for (let index = 0; index < plannedCaseCount; index += 1) {
-        const draftInput = createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1);
+        const draftInput = createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1, run.id);
 
         try {
           const generatedJob = await runAutopilotPipelineFromInput(draftInput, activeTargetIds, [], {
@@ -1540,7 +1609,14 @@ export function App() {
       return;
     }
 
-    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createJob(createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1)));
+    const queuedRun = createScheduleRun({
+      createdCaseIds: [],
+      plannedCaseCount,
+      scheduleId,
+      startedAt,
+      status: "queued"
+    });
+    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createJob(createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1, queuedRun.id)));
     const newRecords = createdJobs.flatMap((job) => createProcessRecordsForJob(job, staffAgents, aiToolEndpoints));
     const newPublishTargets = createdJobs.flatMap((job) => createCasePublishTargets(job.id, activeTargetIds));
     const newActivities = createdJobs.map((job) =>
@@ -1562,14 +1638,11 @@ export function App() {
     setCaseActivities((currentActivities) => [...newActivities, ...currentActivities]);
     createdJobs.forEach((job) => void handleBootstrapProductionAssets(job));
     setScheduleRuns((currentRuns) => [
-      createScheduleRun({
+      {
+        ...queuedRun,
         createdCaseIds: createdJobs.map((job) => job.id),
         finishedAt: now,
-        plannedCaseCount,
-        scheduleId,
-        startedAt,
-        status: "queued"
-      }),
+      },
       ...currentRuns
     ]);
     setProductionSchedules((currentSchedules) =>
@@ -1670,6 +1743,19 @@ export function App() {
       background,
       character
     };
+  }
+
+  function splitReadyReferenceAssetIdsByType(assetIds: string[]): { characterAssetIds: string[]; sceneAssetIds: string[] } {
+    const assets = findReadyReferenceAssetsByIds(productionAssets, assetIds);
+
+    return {
+      characterAssetIds: assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
+      sceneAssetIds: assets.filter(isBackgroundDesignAsset).map((asset) => asset._id)
+    };
+  }
+
+  function mergeIds(...groups: string[][]): string[] {
+    return groups.flat().filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index);
   }
 
   function buildProductionBriefFromDraft(referenceAssets = getSelectedDraftAssets()): ProductionBrief {
@@ -1918,7 +2004,13 @@ export function App() {
       updatedAt: now,
       visualBible: caseDraftPreview.result.visualBible
     };
-    const records = applyScriptStoryResultToRecords(createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), job.id, caseDraftPreview.result, now);
+    const records = applyScriptStoryResultToRecords(
+      createProcessRecordsForJob(job, staffAgents, aiToolEndpoints),
+      job.id,
+      caseDraftPreview.result,
+      now,
+      { forceApproved: true }
+    );
 
     setJobs((currentJobs) => [job, ...currentJobs.filter((currentJob) => currentJob.id !== job.id)]);
     setJobProcessRecords((currentRecords) => [...records, ...currentRecords.filter((record) => record.jobId !== job.id)]);
@@ -1926,7 +2018,12 @@ export function App() {
     appendCaseActivity(job.id, "script_preview_approved", "Script preview approved", "Generated script and storyboard were approved and converted into a production case.");
     appendCaseActivity(job.id, "case_created", "Case created", "Case entered production with script, storyboard, and image prompts already recorded.");
     void handleBootstrapProductionAssets(job);
-    void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(caseDraftPreview.input.characterAssetId, caseDraftPreview.input.backgroundAssetId));
+    void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(
+      caseDraftPreview.input.characterAssetIds ?? [],
+      caseDraftPreview.input.sceneAssetIds ?? [],
+      caseDraftPreview.input.characterAssetId,
+      caseDraftPreview.input.backgroundAssetId
+    ));
     setSelectedJobId(job.id);
     setTopic("");
     setPrompt("");
@@ -2682,14 +2779,16 @@ export function App() {
       const response = await requestConvertSeriesEpisodeToCase(series._id, episode._id, caseId);
       const seedReferenceIds = [...response.caseSeed.referenceAssetIds, ...response.caseSeed.characterAssetIds, ...response.caseSeed.sceneAssetIds]
         .filter((id, index, ids) => ids.indexOf(id) === index);
-      const referenceAssets = seedReferenceIds
-        .map((id) => productionAssets.find((asset) => asset._id === id) ?? null)
-        .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
+      const referenceAssets = findReadyReferenceAssetsByIds(productionAssets, seedReferenceIds);
+      const splitSeedAssetIds = splitReadyReferenceAssetIdsByType(seedReferenceIds);
+      const characterAssetIds = splitSeedAssetIds.characterAssetIds;
+      const sceneAssetIds = splitSeedAssetIds.sceneAssetIds;
       const characterAsset = referenceAssets.find(isCharacterDesignAsset) ?? null;
       const backgroundAsset = referenceAssets.find(isBackgroundDesignAsset) ?? null;
+      const productionBrief = enrichProductionBriefWithReferenceAssets(response.caseSeed.productionBrief, referenceAssets);
       const job = createJob({
         backgroundAssetId: response.caseSeed.backgroundAssetId ?? backgroundAsset?._id ?? null,
-        characterAssetIds: response.caseSeed.characterAssetIds,
+        characterAssetIds,
         characterAssetId: response.caseSeed.characterAssetId ?? characterAsset?._id ?? null,
         costLimitRM: response.caseSeed.costLimitRM,
         durationSeconds: response.caseSeed.durationSeconds,
@@ -2698,8 +2797,8 @@ export function App() {
         id: response.caseSeed.id,
         language: response.caseSeed.language,
         prompt: response.caseSeed.prompt,
-        productionBrief: response.caseSeed.productionBrief,
-        sceneAssetIds: response.caseSeed.sceneAssetIds,
+        productionBrief,
+        sceneAssetIds,
         sceneCount: response.caseSeed.sceneCount,
         seriesId: response.caseSeed.seriesId,
         storyWorldId: response.caseSeed.storyWorldId,
@@ -2751,12 +2850,8 @@ export function App() {
     }
   }
 
-  function getReferenceAssetsFromIds(characterAssetId?: string | null, backgroundAssetId?: string | null): ProductionAsset[] {
-    const ids = [characterAssetId, backgroundAssetId].filter((id): id is string => Boolean(id));
-
-    return ids
-      .map((id) => productionAssets.find((asset) => asset._id === id) ?? null)
-      .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
+  function getReferenceAssetsFromIds(...assetIds: Array<string | string[] | null | undefined>): ProductionAsset[] {
+    return findReadyReferenceAssetsByIds(productionAssets, assetIds);
   }
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
@@ -3061,6 +3156,12 @@ export function App() {
       return;
     }
 
+    const isOverwritingExistingScript = hasGeneratedScriptStory(jobProcessRecords, job.id);
+
+    if (isOverwritingExistingScript && !window.confirm("这个 Case 已经有已确认脚本、分镜和图片提示词。重新生成会覆盖脚本，并把图片、配音、字幕、BGM、视频片段、MP4 和 QC 标记为需要重跑。确定继续吗？")) {
+      return;
+    }
+
     if (blockIfCaseBudgetExceeded(job, "Script/story generation")) {
       return;
     }
@@ -3106,8 +3207,17 @@ export function App() {
             : currentJob
         )
       );
-      setJobProcessRecords((currentRecords) => applyScriptStoryResultToRecords(currentRecords, job.id, result, now));
-      appendCaseActivity(job.id, "script_generated", "Script/story generated", `${result.provider} ${result.model} generated script, storyboard, and image prompts. Cost RM ${result.costRM.toFixed(4)}.`);
+      setJobProcessRecords((currentRecords) => {
+        const updatedRecords = applyScriptStoryResultToRecords(currentRecords, job.id, result, now);
+        return isOverwritingExistingScript ? resetDownstreamRecordsAfterScriptOverwrite(updatedRecords, job.id, now) : updatedRecords;
+      });
+      if (isOverwritingExistingScript) {
+        setSceneReviews((currentReviews) => currentReviews.filter((review) => review.jobId !== job.id));
+        setCaseQcReports((currentReports) => currentReports.filter((report) => report.jobId !== job.id));
+        setStoredVideos((currentVideos) => currentVideos.filter((video) => video.jobId !== job.id));
+        appendCaseActivity(job.id, "stage_updated", "Script/story overwritten", "脚本和分镜已被重新生成；下游图片、音频、字幕、MP4 和 QC 已标记为需要重跑。");
+      }
+      appendCaseActivity(job.id, "script_generated", isOverwritingExistingScript ? "Script/story overwritten" : "Script/story generated", `${result.provider} ${result.model} generated script, storyboard, and image prompts. Cost RM ${result.costRM.toFixed(4)}.`);
       setSelectedJobId(job.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Script generation failed.";
@@ -3819,14 +3929,14 @@ export function App() {
             record.jobId === job.id && record.stageId === "tts"
               ? {
                   ...record,
-                  output: "Auto-generating OpenAI TTS voiceover before MP4 compose...",
+                  output: "Auto-generating configured TTS voiceover before MP4 compose...",
                   status: "working",
                   updatedAt: new Date().toISOString()
                 }
               : record
           )
         );
-        const ttsResult = await requestTtsGeneration(job, voiceoverText);
+        const ttsResult = await requestTtsGeneration(job, voiceoverText, getToolOverride("tts"));
         const ttsNow = new Date().toISOString();
         pipelineCostRM += ttsResult.costRM;
         workingRecords = applyTtsGenerationResultToRecords(workingRecords, job.id, ttsResult, ttsNow);
@@ -4554,26 +4664,62 @@ export function App() {
             setDraftSeriesId={(id) => {
               setSelectedCaseSeriesId(id);
               const nextSeries = contentSeries.find((series) => series._id === id) ?? null;
+              const nextStoryWorld = nextSeries?.storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === nextSeries.storyWorldId) ?? null : null;
+              const splitAssetIds = splitReadyReferenceAssetIdsByType(mergeIds(
+                nextSeries?.referenceAssetIds ?? [],
+                nextStoryWorld?.recurringCharacterAssetIds ?? [],
+                nextStoryWorld?.defaultSceneAssetIds ?? []
+              ));
+
               setSelectedCaseStoryWorldId(nextSeries?.storyWorldId ?? "");
+              setSelectedCharacterAssetIds(splitAssetIds.characterAssetIds);
+              setSelectedSceneAssetIds(splitAssetIds.sceneAssetIds);
+              setSelectedCharacterAssetId(splitAssetIds.characterAssetIds[0] ?? null);
+              setSelectedBackgroundAssetId(splitAssetIds.sceneAssetIds[0] ?? null);
               setCaseDraftPreview(null);
             }}
             setDraftEpisodeId={(id) => {
               const nextEpisode = seriesEpisodes.find((episode) => episode._id === id) ?? null;
               setSelectedCaseEpisodeId(id);
               if (nextEpisode) {
+                const activeSeries = contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null;
+                const activeStoryWorld = selectedCaseStoryWorldId || activeSeries?.storyWorldId
+                  ? storyWorlds.find((storyWorld) => storyWorld._id === (selectedCaseStoryWorldId || activeSeries?.storyWorldId)) ?? null
+                  : null;
+                const episodeHasExplicitAssets = nextEpisode.selectedCharacterAssetIds.length > 0 || nextEpisode.selectedSceneAssetIds.length > 0;
+                const splitAssetIds = splitReadyReferenceAssetIdsByType(
+                  episodeHasExplicitAssets
+                    ? mergeIds(nextEpisode.selectedCharacterAssetIds, nextEpisode.selectedSceneAssetIds)
+                    : mergeIds(activeSeries?.referenceAssetIds ?? [], activeStoryWorld?.recurringCharacterAssetIds ?? [], activeStoryWorld?.defaultSceneAssetIds ?? [])
+                );
+
                 setTopic(nextEpisode.title);
                 setCaseLessonOrTheme(nextEpisode.lessonOrTheme || nextEpisode.moralLesson);
                 setCaseGoal(nextEpisode.promptSeed);
                 setCaseConflict(nextEpisode.synopsis);
-                setSelectedCharacterAssetIds(nextEpisode.selectedCharacterAssetIds);
-                setSelectedSceneAssetIds(nextEpisode.selectedSceneAssetIds);
-                setSelectedCharacterAssetId(nextEpisode.selectedCharacterAssetIds[0] ?? null);
-                setSelectedBackgroundAssetId(nextEpisode.selectedSceneAssetIds[0] ?? null);
+                setSelectedCharacterAssetIds(splitAssetIds.characterAssetIds);
+                setSelectedSceneAssetIds(splitAssetIds.sceneAssetIds);
+                setSelectedCharacterAssetId(splitAssetIds.characterAssetIds[0] ?? null);
+                setSelectedBackgroundAssetId(splitAssetIds.sceneAssetIds[0] ?? null);
               }
               setCaseDraftPreview(null);
             }}
             setDraftStoryWorldId={(id) => {
+              const nextStoryWorld = storyWorlds.find((storyWorld) => storyWorld._id === id) ?? null;
+              const splitAssetIds = splitReadyReferenceAssetIdsByType(mergeIds(
+                nextStoryWorld?.recurringCharacterAssetIds ?? [],
+                nextStoryWorld?.defaultSceneAssetIds ?? []
+              ));
+
               setSelectedCaseStoryWorldId(id);
+              if (splitAssetIds.characterAssetIds.length > 0) {
+                setSelectedCharacterAssetIds((currentIds) => mergeIds(currentIds, splitAssetIds.characterAssetIds));
+                setSelectedCharacterAssetId((currentId) => currentId ?? splitAssetIds.characterAssetIds[0] ?? null);
+              }
+              if (splitAssetIds.sceneAssetIds.length > 0) {
+                setSelectedSceneAssetIds((currentIds) => mergeIds(currentIds, splitAssetIds.sceneAssetIds));
+                setSelectedBackgroundAssetId((currentId) => currentId ?? splitAssetIds.sceneAssetIds[0] ?? null);
+              }
               setCaseDraftPreview(null);
             }}
             setDraftLessonOrTheme={(value) => {

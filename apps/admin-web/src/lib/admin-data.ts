@@ -1,8 +1,10 @@
-import { contentTemplateTypes, type ContentTemplateType, type GenerateQcReportResponse, type ToolCostMode, type ToolProviderOverride, type TrendScanResponse } from "@ai-content-factory/shared-types";
+import { contentTemplateTypes, type ContentTemplateType, type GenerateQcReportResponse, type ToolCostMode, type ToolProviderOverride, type ToolProviderSettings, type ToolProviderType, type TrendScanResponse } from "@ai-content-factory/shared-types";
 import { createId } from "./ids.js";
 import { readJson, writeJson } from "./local-storage.js";
 import { isDemoCaseId } from "./jobs.js";
 import { type ProductionStageId } from "./production.js";
+
+export type { ToolProviderSettings, ToolProviderType } from "@ai-content-factory/shared-types";
 
 export type TemplateType = ContentTemplateType;
 export type ContentLanguage = "zh-CN" | "en-US";
@@ -140,26 +142,6 @@ export interface AiToolEndpoint {
   costMode: string;
   status: "needs_setup" | "ready" | "disabled";
   enabled: boolean;
-}
-
-export type ToolProviderType = "llm" | "image" | "design_image" | "tts" | "bgm" | "video" | "subtitle" | "compose" | "storage" | "youtube";
-
-export interface ToolProviderSettings {
-  id: string;
-  toolType: ToolProviderType;
-  provider: string;
-  apiStyle: string;
-  baseUrl: string;
-  model: string;
-  enabled: boolean;
-  allowAutopilot: boolean;
-  params: Record<string, boolean | number | string>;
-  costMode: ToolCostMode;
-  inputUnitPriceRM: number;
-  outputUnitPriceRM: number;
-  fallbackCostRM: number;
-  retryLimit: number;
-  updatedAt: string;
 }
 
 export interface ToolProviderPreset {

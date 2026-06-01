@@ -19,6 +19,7 @@ export interface AdminJob {
   id: string;
   source: "manual" | "scheduled";
   scheduleId: string | null;
+  scheduleRunId: string | null;
   seriesId: string | null;
   episodeId: string | null;
   topic: string;
@@ -51,6 +52,7 @@ export interface NewJobInput {
   id?: string;
   source?: AdminJob["source"];
   scheduleId?: string | null;
+  scheduleRunId?: string | null;
   seriesId?: string | null;
   episodeId?: string | null;
   topic: string;
@@ -174,6 +176,7 @@ export function loadJobs(): AdminJob[] {
     productionBrief: job.productionBrief ?? null,
     reviewStatus: job.reviewStatus ?? (job.status === "READY_TO_UPLOAD" || job.status === "QC_PASSED" ? "needs_review" : "draft"),
     scheduleId: job.scheduleId ?? null,
+    scheduleRunId: job.scheduleRunId ?? null,
     sceneAssetIds: Array.isArray(job.sceneAssetIds) ? job.sceneAssetIds : (job.backgroundAssetId ? [job.backgroundAssetId] : []),
     seriesId: job.seriesId ?? null,
     source: job.source ?? "manual",
@@ -197,6 +200,7 @@ export function createJob(input: NewJobInput): AdminJob {
     characterId: input.characterId ?? null,
     source: input.source ?? "manual",
     scheduleId: input.scheduleId ?? null,
+    scheduleRunId: input.scheduleRunId ?? null,
     seriesId: input.seriesId ?? null,
     episodeId: input.episodeId ?? null,
     topic: input.topic,

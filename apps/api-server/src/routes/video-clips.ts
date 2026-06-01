@@ -48,6 +48,7 @@ export function createVideoClipsRouter(options: CreateVideoClipsRouterOptions): 
         pricingStatus: typeof totalTokens === "number" && totalTokens > 0 ? "actual_usage" : response.costRM > 0 ? "configured_rate" : "pricing_missing",
         quantity: typeof totalTokens === "number" && totalTokens > 0 ? totalTokens : response.clip.durationSeconds,
         service: "video",
+        toolType: "video",
         unit: typeof totalTokens === "number" && totalTokens > 0 ? "tokens" : "seconds",
         usage: response.usage
       });

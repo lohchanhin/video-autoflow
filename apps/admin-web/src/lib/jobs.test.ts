@@ -105,6 +105,24 @@ describe("case process records", () => {
     expect(videoRecord?.status).toBe("skipped");
   });
 
+  it("keeps schedule run metadata on scheduled cases", () => {
+    const job = createJob({
+      costLimitRM: 7.5,
+      language: "zh-CN",
+      prompt: "Create scheduled content.",
+      sceneCount: 5,
+      scheduleId: "schedule_daily",
+      scheduleRunId: "run_001",
+      source: "scheduled",
+      templateType: "urban_legend",
+      topic: "Scheduled case"
+    });
+
+    expect(job.source).toBe("scheduled");
+    expect(job.scheduleId).toBe("schedule_daily");
+    expect(job.scheduleRunId).toBe("run_001");
+  });
+
   it("creates auditable case activity records", () => {
     const activity = createCaseActivity({
       detail: "Script preview was approved before creating the case.",

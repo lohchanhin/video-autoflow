@@ -47,6 +47,7 @@ export function createImagesRouter(options: CreateImagesRouterOptions): Router {
         pricingStatus: response.provider === "openai" ? imagePricingStatus(response.costRM, response.images.map((image) => image.usage)) : "local_zero",
         quantity: response.images.length,
         service: "image",
+        toolType: "image",
         unit: "image",
         usage: aggregateImageUsage(response.images.map((image) => image.usage))
       });
@@ -70,6 +71,7 @@ export function createImagesRouter(options: CreateImagesRouterOptions): Router {
         pricingStatus: response.provider === "openai" ? imagePricingStatus(response.costRM, [response.image.usage]) : "local_zero",
         quantity: 1,
         service: "image",
+        toolType: "image",
         unit: "image",
         usage: aggregateImageUsage([response.image.usage])
       });
@@ -96,6 +98,7 @@ export function createImagesRouter(options: CreateImagesRouterOptions): Router {
         pricingStatus: response.provider === "openai" ? imagePricingStatus(response.costRM, [response.usage]) : "local_zero",
         quantity: 1,
         service: "reference_design",
+        toolType: "design_image",
         unit: "image",
         usage: {
           ...aggregateImageUsage([response.usage]),
