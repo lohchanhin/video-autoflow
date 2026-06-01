@@ -484,7 +484,7 @@ function buildReferenceDesignPrompt(
   }
 
   return [
-    "Create one production-ready scene design reference image for an original short-form video case.",
+    "Create one production-ready environment design sheet for an original short-form video case.",
     "Highest priority: follow the USER DESIGN BRIEF exactly. Do not replace the requested location, era, color palette, art style, objects, lighting, or mood with generic defaults.",
     `USER DESIGN BRIEF: ${designBrief}`,
     caseContext,
@@ -493,9 +493,11 @@ function buildReferenceDesignPrompt(
     `Fallback environment notes, only if compatible with the USER DESIGN BRIEF: ${formatVisualBibleEnvironment(visualBible)}`,
     `Character continuity if visible and compatible: ${formatVisualBibleCharacter(visualBible)}`,
     `Fallback style, only if the USER DESIGN BRIEF does not specify one: ${visualBible.style || getTemplateVisualStyle(input.templateType)}.`,
-    "Frame: one coherent vertical 9:16 cinematic establishing still, clear location layout, recurring props visible, no readable text.",
-    "Purpose: this image will be reused as a Seedance reference_image for set, lighting, color, and prop continuity.",
-    "Do not create floor plans, UI, labels, text, storyboard panels, contact sheets, comic panels, before/after comparisons, or a collage.",
+    "Frame specification: one clean scene-design sheet containing 4-6 consistent views of the same location, not 4-6 different locations.",
+    "Required views: main establishing angle, reverse or side angle, entrance/camera-path angle, key prop close-ups, material details, and lighting/color details.",
+    "Continuity rule: all views must preserve the same spatial layout, door/window/furniture positions, hero props, era, material language, light direction, and color palette.",
+    "Purpose: this image will be reused as a Seedance reference_image for set layout, lighting, color, prop placement, and camera continuity across multiple scene clips.",
+    "Do not create UI, readable text, labels, floor plan diagrams, storyboards showing time progression, comic panels, before/after comparisons, unrelated rooms, or random collage pieces.",
     `Negative prompt: ${visualBible.negativePrompt}`
   ].filter(Boolean).join("\n");
 }
@@ -1180,7 +1182,7 @@ function createLocalReferenceDesignSvg(
   scene: GeneratedStoryboardScene | undefined
 ): string {
   const accent = input.designType === "character_design" ? "#38bdf8" : "#22c55e";
-  const label = input.designType === "character_design" ? "Character design" : scene ? `Scene ${scene.sceneId} design` : "Scene design";
+  const label = input.designType === "character_design" ? "Character design" : scene ? `Scene ${scene.sceneId} environment sheet` : "Environment design sheet";
   const description = input.designType === "character_design" ? formatVisualBibleCharacter(visualBible) : formatVisualBibleEnvironment(visualBible);
 
   return [
@@ -1190,7 +1192,7 @@ function createLocalReferenceDesignSvg(
     `<rect x="88" y="104" width="848" height="12" fill="${accent}"/>`,
     input.designType === "character_design"
       ? '<circle cx="512" cy="440" r="150" fill="#334155"/><rect x="350" y="640" width="324" height="540" rx="92" fill="#475569"/><rect x="404" y="760" width="216" height="44" rx="22" fill="#64748b"/>'
-      : '<rect x="140" y="360" width="744" height="520" rx="28" fill="#1f2937"/><rect x="220" y="450" width="224" height="330" fill="#334155"/><rect x="520" y="430" width="260" height="350" fill="#475569"/><circle cx="760" cy="310" r="80" fill="#64748b"/>',
+      : '<rect x="120" y="260" width="360" height="300" rx="24" fill="#1f2937"/><rect x="544" y="260" width="320" height="300" rx="24" fill="#243244"/><rect x="120" y="620" width="300" height="230" rx="24" fill="#334155"/><rect x="460" y="620" width="180" height="230" rx="24" fill="#475569"/><rect x="684" y="620" width="180" height="230" rx="24" fill="#64748b"/><rect x="120" y="910" width="744" height="190" rx="24" fill="#1f2937"/><circle cx="794" cy="218" r="62" fill="#64748b"/>',
     `<text x="96" y="1240" font-family="Arial, sans-serif" font-size="34" fill="#f8fafc">${escapeXml(label).slice(0, 48)}</text>`,
     `<text x="96" y="1302" font-family="Arial, sans-serif" font-size="24" fill="#cbd5e1">${escapeXml(input.topic).slice(0, 58)}</text>`,
     `<text x="96" y="1362" font-family="Arial, sans-serif" font-size="18" fill="#94a3b8">${escapeXml(description).slice(0, 110)}</text>`,

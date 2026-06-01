@@ -59,6 +59,51 @@ describe("reference design prompt fidelity", () => {
     expect(prompt).toContain("Fallback continuity notes, only if compatible");
     expect(prompt).not.toContain("Use a clean neutral background.");
   });
+
+  it("asks scene designs to lock multiple consistent angles and details", () => {
+    const prompt = buildReferenceDesignPromptForTest(
+      {
+        costLimitRM: 7.5,
+        designType: "scene_design",
+        jobId: "asset_library",
+        language: "zh-CN",
+        prompt: "rainy night convenience store, cold fluorescent light, old CCTV monitor, coffee machine, wet glass door reflections",
+        sceneCount: 5,
+        templateType: "urban_legend",
+        topic: "雨夜便利店"
+      },
+      {
+        character: {
+          ageRange: "adult",
+          bodyType: "average",
+          expressionRange: "alert",
+          fixedProps: [],
+          hair: "short hair",
+          name: "protagonist",
+          role: "night clerk",
+          signatureDetails: "",
+          wardrobe: "blue uniform"
+        },
+        environment: {
+          keyObjects: ["CCTV monitor", "coffee machine"],
+          lighting: "cold fluorescent light",
+          location: "convenience store",
+          palette: "blue green night",
+          recurringDetails: "rain reflections"
+        },
+        negativePrompt: "no text",
+        style: "cinematic realism"
+      }
+    );
+
+    expect(prompt).toContain("environment design sheet");
+    expect(prompt).toContain("4-6 consistent views of the same location");
+    expect(prompt).toContain("main establishing angle");
+    expect(prompt).toContain("reverse or side angle");
+    expect(prompt).toContain("key prop close-ups");
+    expect(prompt).toContain("Continuity rule");
+    expect(prompt).not.toContain("one coherent vertical 9:16 cinematic establishing still");
+  });
 });
 
 describe("POST /generation/video", () => {
