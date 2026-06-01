@@ -103,6 +103,7 @@ describe("reference design prompt fidelity", () => {
     expect(prompt).toContain("unlabeled top-down spatial relationship");
     expect(prompt).toContain("key prop close-ups");
     expect(prompt).toContain("material swatches");
+    expect(prompt).toContain("safe composition boundaries");
     expect(prompt).toContain("Continuity rule");
     expect(prompt).not.toContain("Do not create UI, readable text, labels, floor plan diagrams");
     expect(prompt).not.toContain("one coherent vertical 9:16 cinematic establishing still");

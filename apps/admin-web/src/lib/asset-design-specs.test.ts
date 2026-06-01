@@ -5,16 +5,18 @@ describe("production asset design specs", () => {
   it("defines scene designs as reusable multi-angle environment sheets", () => {
     const spec = getProductionAssetDesignSpec("scene_design");
 
+    expect(spec.title).toContain("场景设定表");
     expect(spec.title).toContain("多角度");
     expect(spec.title).toContain("Environment Bible");
-    expect(spec.deliverables).toContain("主建立镜头");
-    expect(spec.deliverables).toContain("反打或侧向视角");
-    expect(spec.deliverables).toContain("低机位或高机位辅助视角");
+    expect(spec.deliverables).toContain("主建立镜头 / wide establishing view");
+    expect(spec.deliverables).toContain("反打或侧向视角 / reverse or side view");
+    expect(spec.deliverables).toContain("低机位或高机位辅助视角 / alternate camera height");
     expect(spec.deliverables).toContain("入口 / 动线视角");
     expect(spec.deliverables).toContain("无文字空间平面关系");
     expect(spec.deliverables).toContain("关键道具特写");
-    expect(spec.deliverables).toContain("可复用机位范围");
+    expect(spec.deliverables).toContain("可复用机位范围与安全构图边界");
     expect(spec.checks.join(" ")).toContain("同一地点");
+    expect(spec.checks.join(" ")).toContain("单张好看的背景图");
     expect(spec.usage).toContain("Seedance");
   });
 

@@ -207,7 +207,7 @@ export function SeriesPage(props: SeriesPageProps) {
               <section className="series-asset-binding">
                 <SectionHeader eyebrow="资产绑定" title="固定角色 / 场景 / 风格参考" />
                 {generatedAssets.length === 0 ? (
-                  <EmptyState title="还没有可绑定资产" body="先到设计资产中心生成并保存角色三视图、场景设计或风格参考，再回到这里绑定。" />
+                  <EmptyState title="还没有可绑定资产" body="先到设计资产中心生成并保存角色三视图、场景设定表或风格参考，再回到这里绑定。" />
                 ) : (
                   <div className="series-asset-grid">
                     {generatedAssets.map((asset) => (
@@ -433,7 +433,7 @@ function assetTypeLabel(type: ProductionAsset["type"]): string {
     character_design: "角色设计",
     first_frame: "首帧",
     last_frame: "尾帧",
-    scene_design: "场景设计",
+    scene_design: "场景设定表",
     style_reference: "风格参考"
   };
   return labels[type];

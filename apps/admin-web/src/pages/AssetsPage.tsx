@@ -248,7 +248,7 @@ export function AssetsPage(props: AssetsPageProps) {
         <div>
           <p className="eyebrow">设计管理</p>
           <h2>设计资产中心</h2>
-          <span>用 prompt 生成角色设计、场景设计、风格参考和首帧；满意后保存入库，并通过文件夹快速查找。</span>
+          <span>用 prompt 生成角色三视图、场景设定表、风格参考和首帧；满意后保存入库，并通过文件夹快速查找。</span>
         </div>
         <div className="asset-board-actions">
           <button className="secondary-button" type="button" onClick={props.refreshAssets}>
@@ -387,7 +387,7 @@ export function AssetsPage(props: AssetsPageProps) {
                 </Field>
               </div>
               {libraryVisibleAssets.length === 0 ? (
-                <EmptyState title="暂无设计资产" body="先到「生成设计」输入 prompt 生成角色或场景设计；满意后保存入库，之后就能按文件夹查找。" />
+                <EmptyState title="暂无设计资产" body="先到「生成设计」输入 prompt 生成角色三视图或场景设定表；满意后保存入库，之后就能按文件夹查找。" />
               ) : (
                 <div className="asset-gallery-grid">
                   {libraryVisibleAssets.map((asset) => (
@@ -446,7 +446,7 @@ export function AssetsPage(props: AssetsPageProps) {
               为选中 Case 建立资产规划表
             </button>
             {!props.filterJobId ? (
-              <EmptyState title="先选择一个 Case" body="Case 规划只显示该影片需要的角色设计、场景设计、风格参考、首帧和尾帧占位，不会混入资产库。" />
+              <EmptyState title="先选择一个 Case" body="Case 规划只显示该影片需要的角色设计、场景设定表、风格参考、首帧和尾帧占位，不会混入资产库。" />
             ) : casePlanDisplayAssets.length === 0 ? (
               <EmptyState title="这个 Case 还没有资产规划" body="点击「为选中 Case 建立资产规划表」，系统会建立规划占位；生成并保存后才会进入资产库。" />
             ) : (
@@ -754,7 +754,7 @@ function splitTags(value: string): string[] {
 
 function defaultFolderForType(type: ProductionAssetType): string {
   if (type === "character_design") return "角色设计";
-  if (type === "scene_design") return "场景设计";
+  if (type === "scene_design") return "场景设定表";
   if (type === "style_reference") return "风格参考";
   if (type === "first_frame") return "首帧设计";
   if (type === "last_frame") return "尾帧设计";
@@ -773,7 +773,7 @@ function assetTypeLabel(type: ProductionAssetType): string {
     character_design: "角色设计",
     first_frame: "首帧",
     last_frame: "尾帧",
-    scene_design: "场景设计",
+    scene_design: "场景设定表",
     style_reference: "风格参考"
   };
   return labels[type];

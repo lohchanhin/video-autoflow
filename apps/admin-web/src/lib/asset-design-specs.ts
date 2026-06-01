@@ -63,7 +63,7 @@ const assetDesignSpecs: Record<ProductionAssetType, ProductionAssetDesignSpec> =
   last_frame: {
     checks: [
       "画面是单一可拍镜头，不是故事板或对比图",
-      "与首帧和场景设计保持同一空间关系",
+      "与首帧和场景设定表保持同一空间关系",
       "结尾动作或情绪落点清楚",
       "没有字幕、文字、UI 或表格"
     ],
@@ -82,22 +82,23 @@ const assetDesignSpecs: Record<ProductionAssetType, ProductionAssetDesignSpec> =
       "所有角度属于同一地点，不是多个随机地点拼贴",
       "门窗、家具、道具位置、灯光方向和空间比例一致",
       "每个角度都能对应到同一套空间平面关系，不能互相矛盾",
+      "必须能支持后续多个镜头复用，不能只是单张好看的背景图",
       "包含关键道具、材质、灯光和动线细节",
       "没有文字标签、说明文字、UI、故事分镜或时间序列漫画格"
     ],
     deliverables: [
-      "主建立镜头",
-      "反打或侧向视角",
-      "低机位或高机位辅助视角",
+      "主建立镜头 / wide establishing view",
+      "反打或侧向视角 / reverse or side view",
+      "低机位或高机位辅助视角 / alternate camera height",
       "入口 / 动线视角",
       "无文字空间平面关系",
       "关键道具特写",
       "材质与灯光细节",
       "色彩和空间比例规则",
-      "可复用机位范围"
+      "可复用机位范围与安全构图边界"
     ],
     purpose: "作为可重复场景资产，锁定地点布局、道具位置、灯光、色彩、材质和可拍机位，后续每个镜头都引用同一套环境规则。",
-    title: "场景多角度设定表 / Environment Bible 规格",
+    title: "场景设定表 / 多角度 Environment Bible 规格",
     usage: "可作为 reference_image 和文字场景约束传给图片模型和 Seedance，避免同一地点在不同镜头中漂移。"
   },
   style_reference: {
@@ -116,7 +117,7 @@ const assetDesignSpecs: Record<ProductionAssetType, ProductionAssetDesignSpec> =
     ],
     purpose: "作为视觉锚点，保证同系列影片的画面质感统一。",
     title: "风格锚点规格",
-    usage: "作为图片和视频生成的风格参考，不替代角色或场景设计。"
+    usage: "作为图片和视频生成的风格参考，不替代角色或场景设定表。"
   }
 };
 

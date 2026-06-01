@@ -494,7 +494,7 @@ function buildReferenceDesignPrompt(
     `Character continuity if visible and compatible: ${formatVisualBibleCharacter(visualBible)}`,
     `Fallback style, only if the USER DESIGN BRIEF does not specify one: ${visualBible.style || getTemplateVisualStyle(input.templateType)}.`,
     "Frame specification: one clean environment bible sheet containing 6-8 consistent views/details of the same location, not 6-8 different locations.",
-    "Required views/details: main establishing angle, reverse angle, side angle, low-angle or high-angle auxiliary view, entrance/camera-path angle, unlabeled top-down spatial relationship, key prop close-ups, material swatches, lighting direction, and color palette details.",
+    "Required views/details: main establishing angle, reverse angle, side angle, low-angle or high-angle auxiliary view, entrance/camera-path angle, unlabeled top-down spatial relationship, key prop close-ups, material swatches, lighting direction, color palette details, reusable camera zones, and safe composition boundaries.",
     "Continuity rule: every view must map back to the same spatial layout. Door/window/furniture positions, hero props, era, material language, light direction, color palette, and scale must stay consistent across all panels.",
     "Purpose: this image will be reused as a Seedance reference_image for set layout, lighting, color, prop placement, and camera continuity across multiple scene clips.",
     "Do not create UI, readable text, labels, storyboards showing time progression, comic panels, before/after comparisons, unrelated rooms, or random collage pieces. If a top-down layout appears, it must be visual-only with no labels or text.",

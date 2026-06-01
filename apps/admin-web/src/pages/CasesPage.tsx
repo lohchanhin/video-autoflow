@@ -261,7 +261,7 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
           </div>
           {characterAssets.length === 0 && backgroundAssets.length === 0 ? (
             <div className="draft-reference-help">
-              还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设计；这里不选择也能继续生成。
+              还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设定表；这里不选择也能继续生成。
             </div>
           ) : null}
           <div className="simple-case-actions">
