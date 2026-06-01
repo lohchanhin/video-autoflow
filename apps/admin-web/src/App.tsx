@@ -150,6 +150,7 @@ import {
 import type { ProductionStageId } from "./lib/production.js";
 import { buildProductionAssetVersionDraft } from "./lib/production-assets.js";
 import { evaluateScheduleRunGuard } from "./lib/schedule-guards.js";
+import { tryAcquireScheduleRunLock } from "./lib/schedule-run-locks.js";
 import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
 
@@ -1516,6 +1517,10 @@ export function App() {
 
     for (const schedule of productionSchedules) {
       if (schedule.enabled && new Date(schedule.nextRunAt) <= now) {
+        if (!tryAcquireScheduleRunLock({ now, runAt: schedule.nextRunAt, scheduleId: schedule.id })) {
+          continue;
+        }
+
         runProductionSchedule(schedule.id, "due");
       }
     }
