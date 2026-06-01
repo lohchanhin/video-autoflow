@@ -253,27 +253,27 @@ function YouTubeAccountSettingsRow(props: {
     }
 
     editor.markSaved(nextDraft);
-    setSavedMessage("åˆšåˆšä¿å­˜");
+    setSavedMessage("刚刚保存");
   }
 
   return (
     <article className="settings-row youtube-account-row">
       <div>
-        <strong>{draft.channelName || "æœªå‘½åé¢‘é“"}</strong>
-        <span>{draft.youtubeChannelId || "ç¼ºå°‘ YouTube Channel ID"}</span>
+        <strong>{draft.channelName || "未命名频道"}</strong>
+        <span>{draft.youtubeChannelId || "缺少 YouTube Channel ID"}</span>
       </div>
-      <StatusPill tone={draft.status === "connected" ? "success" : "danger"}>{draft.status === "connected" ? "å·²è¿žæŽ¥" : "éœ€é‡è¿ž"}</StatusPill>
+      <StatusPill tone={draft.status === "connected" ? "success" : "danger"}>{draft.status === "connected" ? "已连接" : "需重连"}</StatusPill>
       <StatusPill tone="success">{draft.defaultPrivacy}</StatusPill>
-      <Field label="é¢‘é“åç§°">
+      <Field label="频道名称">
         <input value={draft.channelName} onChange={(event) => patchDraft({ channelName: event.target.value })} />
       </Field>
       <Field label="Channel ID">
         <input value={draft.youtubeChannelId} onChange={(event) => patchDraft({ youtubeChannelId: event.target.value })} />
       </Field>
-      <Field label="OAuth çŠ¶æ€">
+      <Field label="OAuth 状态">
         <select value={draft.status} onChange={(event) => patchDraft({ status: event.target.value as YouTubeAccount["status"] })}>
-          <option value="connected">å·²è¿žæŽ¥</option>
-          <option value="needs_reconnect">éœ€è¦é‡è¿ž</option>
+          <option value="connected">已连接</option>
+          <option value="needs_reconnect">需要重连</option>
         </select>
       </Field>
       <button className="secondary-button" type="button" onClick={() => patchDraft({ status: "needs_reconnect" })}>

@@ -9,7 +9,7 @@ import {
   type StaffAgentStatus
 } from "../lib/agents.js";
 import type { AiToolEndpoint } from "../lib/admin-data.js";
-import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface AgentsPageProps {
@@ -50,12 +50,22 @@ export function AgentsPage(props: AgentsPageProps) {
         index === 0
           ? {
               ...agent,
-              ...patch,
+              ...patch
             }
           : agent
       )
     );
     agentEditor.markSaved(nextDraft);
+  }
+
+  function resetAgentSettings() {
+    if (!confirmDiscardDirtyDraft(agentEditor.isDirty, "当前主控 Agent 有未保存修改。确定要放弃修改并重置吗？")) {
+      return;
+    }
+
+    if (window.confirm("确定重置主控 Agent 设置吗？")) {
+      props.setAgents(() => resetStaffAgents());
+    }
   }
 
   function toggleTool(toolId: string) {
@@ -78,12 +88,12 @@ export function AgentsPage(props: AgentsPageProps) {
     <section className="agent-studio-layout">
       <section className="panel agent-profile-panel">
         <SectionHeader
-          eyebrow="Agent studio"
+          eyebrow="主控 Agent"
           title="AI Producer Agent"
           action={
-            <button className="secondary-button" type="button" onClick={() => window.confirm("确定重置主控 Agent 设置？未保存修改会被放弃。") && props.setAgents(() => resetStaffAgents())}>
+            <button className="secondary-button" type="button" onClick={resetAgentSettings}>
               <RefreshCw size={15} />
-              Reset agent
+              重置 Agent
             </button>
           }
         />
@@ -103,43 +113,39 @@ export function AgentsPage(props: AgentsPageProps) {
 
         <div className="inspector-summary">
           <div>
-            <span>Type</span>
+            <span>类型</span>
             <strong>{getAgentTypeLabel(agentDraft.type)}</strong>
           </div>
           <div>
-            <span>Planning</span>
+            <span>规划模式</span>
             <strong>{agentDraft.planningMode}</strong>
           </div>
           <div>
-            <span>Budget guard</span>
+            <span>预算上限</span>
             <strong>RM {agentDraft.costGuardRM.toFixed(2)}</strong>
           </div>
           <div>
-            <span>Updated</span>
+            <span>更新时间</span>
             <strong>{formatDateTime(agentDraft.updatedAt)}</strong>
           </div>
         </div>
 
-        <Field label="Agent name">
+        <Field label="Agent 名称">
           <input value={agentDraft.name} onChange={(event) => patchProducerAgent({ name: event.target.value })} />
         </Field>
-        <Field label="Mission">
+        <Field label="任务定位">
           <textarea rows={4} value={agentDraft.mission} onChange={(event) => patchProducerAgent({ mission: event.target.value })} />
         </Field>
-        <Field label="System prompt">
+        <Field label="系统提示词">
           <textarea rows={8} value={agentDraft.systemPrompt} onChange={(event) => patchProducerAgent({ systemPrompt: event.target.value })} />
         </Field>
-        <EditableActionBar
-          isDirty={agentEditor.isDirty}
-          onCancel={agentEditor.resetDraft}
-          onSave={saveProducerAgent}
-        />
+        <EditableActionBar isDirty={agentEditor.isDirty} onCancel={agentEditor.resetDraft} onSave={saveProducerAgent} />
       </section>
 
       <section className="panel agent-policy-panel">
-        <SectionHeader eyebrow="Operating policy" title="Decision Boundaries" />
+        <SectionHeader eyebrow="运行策略" title="决策边界" />
         <div className="two-column-fields">
-          <Field label="Status">
+          <Field label="状态">
             <select value={agentDraft.status} onChange={(event) => patchProducerAgent({ status: event.target.value as StaffAgentStatus })}>
               {agentStatusOptions.map((status) => (
                 <option key={status} value={status}>
@@ -148,7 +154,7 @@ export function AgentsPage(props: AgentsPageProps) {
               ))}
             </select>
           </Field>
-          <Field label="Planning mode">
+          <Field label="规划模式">
             <select value={agentDraft.planningMode} onChange={(event) => patchProducerAgent({ planningMode: event.target.value as AgentPlanningMode })}>
               {planningModeOptions.map((mode) => (
                 <option key={mode} value={mode}>
@@ -158,19 +164,19 @@ export function AgentsPage(props: AgentsPageProps) {
             </select>
           </Field>
         </div>
-        <Field label="Cost guard RM">
+        <Field label="单 Case 成本上限 RM">
           <input min={0} step={0.1} type="number" value={agentDraft.costGuardRM} onChange={(event) => patchProducerAgent({ costGuardRM: Number(event.target.value) })} />
         </Field>
-        <Field label="Human approval policy">
+        <Field label="人工审核策略">
           <textarea rows={4} value={agentDraft.humanApprovalPolicy} onChange={(event) => patchProducerAgent({ humanApprovalPolicy: event.target.value })} />
         </Field>
-        <Field label="Publishing policy">
+        <Field label="发布策略">
           <textarea rows={4} value={agentDraft.publishingPolicy} onChange={(event) => patchProducerAgent({ publishingPolicy: event.target.value })} />
         </Field>
-        <Field label="Fallback strategy">
+        <Field label="失败处理策略">
           <textarea rows={4} value={agentDraft.fallbackStrategy} onChange={(event) => patchProducerAgent({ fallbackStrategy: event.target.value })} />
         </Field>
-        <Field label="Memory sources">
+        <Field label="记忆来源">
           <input
             value={agentDraft.memorySources.join(", ")}
             onChange={(event) =>
@@ -183,15 +189,11 @@ export function AgentsPage(props: AgentsPageProps) {
             }
           />
         </Field>
-        <EditableActionBar
-          isDirty={agentEditor.isDirty}
-          onCancel={agentEditor.resetDraft}
-          onSave={saveProducerAgent}
-        />
+        <EditableActionBar isDirty={agentEditor.isDirty} onCancel={agentEditor.resetDraft} onSave={saveProducerAgent} />
       </section>
 
       <section className="panel agent-tools-panel">
-        <SectionHeader eyebrow="Tool permissions" title="Allowed Tools" />
+        <SectionHeader eyebrow="工具权限" title="允许调用的工具" />
         <div className="agent-tool-permission-list">
           {props.endpoints.map((endpoint) => {
             const allowed = agentDraft.allowedToolIds.includes(endpoint.id);
@@ -207,20 +209,16 @@ export function AgentsPage(props: AgentsPageProps) {
                   <span>{endpoint.queueName}</span>
                 </div>
                 <StatusPill tone={allowed && endpoint.enabled ? "success" : allowed ? "warning" : "neutral"}>
-                  {allowed ? (endpoint.enabled ? "allowed" : "tool off") : "blocked"}
+                  {allowed ? (endpoint.enabled ? "允许" : "工具关闭") : "阻止"}
                 </StatusPill>
               </article>
             );
           })}
         </div>
-        <EditableActionBar
-          isDirty={agentEditor.isDirty}
-          onCancel={agentEditor.resetDraft}
-          onSave={saveProducerAgent}
-        />
+        <EditableActionBar isDirty={agentEditor.isDirty} onCancel={agentEditor.resetDraft} onSave={saveProducerAgent} />
         <div className="policy-note">
           <ShieldCheck size={18} />
-          <span>Tool permissions are the Agent's action boundary. Paid, upload, and storage tools should stay auditable and gated.</span>
+          <span>工具权限就是主控 Agent 的行动边界。付费、上传和存储工具必须保持可审计，并保留人工审核入口。</span>
         </div>
       </section>
     </section>
