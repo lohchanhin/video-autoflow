@@ -9,6 +9,7 @@ describe("production asset design specs", () => {
     expect(spec.deliverables).toContain("主建立镜头");
     expect(spec.deliverables).toContain("反打或侧向视角");
     expect(spec.deliverables).toContain("入口 / 动线视角");
+    expect(spec.deliverables).toContain("无文字空间平面关系");
     expect(spec.deliverables).toContain("关键道具特写");
     expect(spec.checks.join(" ")).toContain("同一地点");
     expect(spec.usage).toContain("Seedance");

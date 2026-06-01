@@ -9,6 +9,8 @@ describe("design asset prompts", () => {
     expect(prompt).toContain("主建立镜头");
     expect(prompt).toContain("反打或侧向视角");
     expect(prompt).toContain("入口/动线视角");
+    expect(prompt).toContain("无文字空间平面关系");
+    expect(prompt).toContain("无文字的俯视布局");
     expect(prompt).toContain("关键道具特写");
     expect(prompt).toContain("所有视角必须属于同一空间");
     expect(prompt).toContain("资产规格：场景多角度设定表规格");
@@ -25,7 +27,10 @@ describe("design asset prompts", () => {
 
   it("explains scene design consistency in the UI hint and example", () => {
     expect(designHintForType("scene_design")).toContain("主视角");
+    expect(designHintForType("scene_design")).toContain("无文字空间关系");
     expect(designHintForType("scene_design")).toContain("关键道具");
+    expect(examplePromptForType("scene_design")).toContain("多角度场景设计设定表");
+    expect(examplePromptForType("scene_design")).toContain("无文字俯视空间关系");
     expect(examplePromptForType("scene_design")).toContain("同一空间布局");
   });
 });

@@ -763,6 +763,7 @@ function defaultFolderForType(type: ProductionAssetType): string {
 
 function defaultDraftLabelForType(type: ProductionAssetType): string {
   if (type === "character_design") return "新角色三视图";
+  if (type === "scene_design") return "新场景多角度设定表";
   return `新${assetTypeLabel(type)}`;
 }
 

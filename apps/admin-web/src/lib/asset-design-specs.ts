@@ -88,6 +88,7 @@ const assetDesignSpecs: Record<ProductionAssetType, ProductionAssetDesignSpec> =
       "主建立镜头",
       "反打或侧向视角",
       "入口 / 动线视角",
+      "无文字空间平面关系",
       "关键道具特写",
       "材质与灯光细节",
       "色彩和空间比例规则"
