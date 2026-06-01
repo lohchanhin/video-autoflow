@@ -13,6 +13,7 @@ import {
 } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getProductionAssetDesignSpec } from "../lib/asset-design-specs.js";
+import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from "../lib/asset-readiness.js";
 import { buildDesignPromptForType, designHintForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
@@ -525,6 +526,7 @@ function AssetInspector(props: {
 
   const asset = props.asset;
   const approvedLibraryAsset = Boolean(props.protectRegenerate && asset.status === "approved");
+  const readiness = evaluateProductionAssetReadiness(asset);
 
   return (
     <section className="asset-inspector panel">
@@ -532,6 +534,7 @@ function AssetInspector(props: {
       <div className="asset-preview-frame">
         {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
       </div>
+      <AssetReadinessPanel readiness={readiness} />
       <AssetDesignSpecPanel type={asset.type} compact />
       <div className="asset-inspector-actions">
         <button
@@ -665,6 +668,26 @@ function FolderRail(props: { activeFolder: string; folders: Array<{ count: numbe
 
 function StudioTab(props: { active: boolean; label: string; onClick: () => void }) {
   return <button className={props.active ? "active" : ""} type="button" onClick={props.onClick}>{props.label}</button>;
+}
+
+function AssetReadinessPanel(props: { readiness: ProductionAssetReadiness }) {
+  const messages = [...props.readiness.blockers, ...props.readiness.warnings];
+
+  return (
+    <section className={`asset-readiness-panel ${props.readiness.state}`}>
+      <div>
+        <p className="eyebrow">下游可用性</p>
+        <h3>{props.readiness.label}</h3>
+        <StatusPill tone={props.readiness.tone}>{props.readiness.canUseAsReference ? "可传给模型" : "不可自动使用"}</StatusPill>
+      </div>
+      <span>{props.readiness.nextAction}</span>
+      {messages.length > 0 ? (
+        <ul>
+          {messages.map((message) => <li key={message}>{message}</li>)}
+        </ul>
+      ) : null}
+    </section>
+  );
 }
 
 function AssetDesignSpecPanel(props: { compact?: boolean | undefined; type: ProductionAssetType }) {
