@@ -80,8 +80,8 @@ export function AutomationPage(props: AutomationPageProps) {
                   <span>{formatDateTime(run.startedAt)}</span>
                 </div>
                 <span>{run.createdCaseIds.length} cases</span>
-                <StatusPill tone={run.status === "completed" ? "success" : run.status === "blocked" ? "warning" : "danger"}>
-                  {run.error ?? run.status}
+                <StatusPill tone={getScheduleRunTone(run.status)}>
+                  {run.error ?? getScheduleRunLabel(run.status)}
                 </StatusPill>
               </article>
             ))}
@@ -289,6 +289,20 @@ function AutomationStat(props: { label: string; value: string }) {
       <strong>{props.value}</strong>
     </div>
   );
+}
+
+function getScheduleRunLabel(status: ScheduleRun["status"]): string {
+  if (status === "queued") return "已排队";
+  if (status === "completed") return "已完成";
+  if (status === "blocked") return "已阻塞";
+  return "失败";
+}
+
+function getScheduleRunTone(status: ScheduleRun["status"]): "danger" | "neutral" | "success" | "warning" {
+  if (status === "completed") return "success";
+  if (status === "queued") return "neutral";
+  if (status === "blocked") return "warning";
+  return "danger";
 }
 
 function getNextRunLabel(schedules: ProductionSchedule[]): string {

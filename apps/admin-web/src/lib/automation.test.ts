@@ -50,11 +50,12 @@ describe("automation and publishing models", () => {
       createdCaseIds: ["job_1", "job_2"],
       plannedCaseCount: 2,
       scheduleId: "schedule_daily_horror_shorts",
-      status: "completed"
+      status: "queued"
     });
 
     expect(run.createdCaseIds).toEqual(["job_1", "job_2"]);
     expect(run.error).toBeNull();
+    expect(run.status).toBe("queued");
   });
 
   it("keeps publishing target privacy locked to private", () => {

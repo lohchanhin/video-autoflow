@@ -67,7 +67,7 @@ export interface ProductionSchedule {
 export interface ScheduleRun {
   id: string;
   scheduleId: string;
-  status: "completed" | "blocked" | "failed";
+  status: "queued" | "completed" | "blocked" | "failed";
   plannedCaseCount: number;
   createdCaseIds: string[];
   startedAt: string;
@@ -1855,8 +1855,16 @@ function normalizeScheduleRun(run: ScheduleRun): ScheduleRun {
     plannedCaseCount: run.plannedCaseCount ?? 0,
     scheduleId: run.scheduleId,
     startedAt: run.startedAt ?? now,
-    status: run.status ?? "completed"
+    status: normalizeScheduleRunStatus(run.status)
   };
+}
+
+function normalizeScheduleRunStatus(status: ScheduleRun["status"] | undefined): ScheduleRun["status"] {
+  if (status === "queued" || status === "completed" || status === "blocked" || status === "failed") {
+    return status;
+  }
+
+  return "completed";
 }
 
 function normalizeDaysOfWeek(days: number[]): number[] {

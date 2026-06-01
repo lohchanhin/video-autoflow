@@ -1475,10 +1475,10 @@ export function App() {
       createCaseActivity({
         detail:
           activeTargetIds.length > 0
-            ? `${mode === "manual" ? "Run now" : "Due schedule"} created this case for ${activeTargetIds.length} private upload target(s).`
-            : `${mode === "manual" ? "Run now" : "Due schedule"} created this case without YouTube targets. It will stop at MP4/QC review.`,
+            ? `${mode === "manual" ? "Run now" : "Due schedule"} queued this case for production with ${activeTargetIds.length} private upload target(s).`
+            : `${mode === "manual" ? "Run now" : "Due schedule"} queued this case for production without YouTube targets. It must reach MP4/QC before upload can be added.`,
         jobId: job.id,
-        title: "Scheduled case created",
+        title: "Scheduled case queued",
         type: "schedule_run"
       })
     );
@@ -1496,7 +1496,7 @@ export function App() {
         plannedCaseCount,
         scheduleId,
         startedAt,
-        status: "completed"
+        status: "queued"
       }),
       ...currentRuns
     ]);
