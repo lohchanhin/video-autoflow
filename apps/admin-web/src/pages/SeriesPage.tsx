@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Loader2, Plus, RefreshCw, Sparkles, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, X, XCircle } from "lucide-react";
 import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
@@ -47,7 +47,6 @@ export function SeriesPage(props: SeriesPageProps) {
   const seriesDraft = seriesEditor.draft;
   const selectedSeriesJobs = selectedSeries ? props.jobs.filter((job) => job.seriesId === selectedSeries._id) : [];
   const generatedAssets = props.assets.filter((asset) => Boolean(asset.url.trim()) && (asset.status === "ready" || asset.status === "approved"));
-  const selectedReferenceIds = new Set(seriesDraft?.referenceAssetIds ?? []);
   const approvedEpisodes = props.episodes.filter((episode) => episode.status === "approved").length;
   const convertedEpisodes = props.episodes.filter((episode) => episode.status === "converted_to_case").length;
   const generating = selectedSeries ? props.generatingSeriesIds.includes(selectedSeries._id) : false;
@@ -291,28 +290,16 @@ export function SeriesPage(props: SeriesPageProps) {
               />
 
               <section className="series-asset-binding">
-                <SectionHeader eyebrow="资产绑定" title="固定角色 / 场景 / 风格参考" />
                 {generatedAssets.length === 0 ? (
                   <EmptyState title="还没有可绑定资产" body="先到设计资产中心生成并保存角色三视图、场景设定表或风格参考，再回到这里绑定。" />
                 ) : (
-                  <div className="series-asset-grid">
-                    {generatedAssets.map((asset) => (
-                      <label key={asset._id} className={`series-asset-option ${selectedReferenceIds.has(asset._id) ? "selected" : ""}`}>
-                        <input
-                          checked={selectedReferenceIds.has(asset._id)}
-                          type="checkbox"
-                          onChange={(event) => patchSeriesDraft({
-                            referenceAssetIds: event.target.checked
-                              ? [...selectedReferenceIds, asset._id]
-                              : seriesDraft.referenceAssetIds.filter((id) => id !== asset._id)
-                          })}
-                        />
-                        <span>{asset.url ? <img src={asset.url} alt={asset.label} /> : null}</span>
-                        <strong>{asset.label}</strong>
-                        <small>{assetTypeLabel(asset.type)} / {asset.folderName}</small>
-                      </label>
-                    ))}
-                  </div>
+                  <AssetBindingPicker
+                    assets={generatedAssets}
+                    description="绑定到系列后，AI 生成选题和 Case 会继承这些固定角色、场景与风格参考。这里是选择器，不是审图页。"
+                    label="固定角色 / 场景 / 风格参考"
+                    selectedIds={seriesDraft.referenceAssetIds}
+                    onChange={(ids) => patchSeriesDraft({ referenceAssetIds: ids })}
+                  />
                 )}
               </section>
             </>
@@ -519,25 +506,111 @@ function EpisodeRow(props: {
 }
 
 function AssetCheckboxGroup(props: { assets: ProductionAsset[]; label: string; onChange: (ids: string[]) => void; selectedIds: string[] }) {
+  return (
+    <div className="series-asset-binding episode-asset-binding">
+      {props.assets.length === 0 ? (
+        <span className="muted">还没有可用资产。先到设计资产中心生成并保存。</span>
+      ) : (
+        <AssetBindingPicker
+          assets={props.assets}
+          compact
+          description="只影响这一集；保存后转 Case 会带入所选资产。"
+          label={props.label}
+          selectedIds={props.selectedIds}
+          onChange={props.onChange}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssetBindingPicker(props: {
+  assets: ProductionAsset[];
+  compact?: boolean;
+  description: string;
+  label: string;
+  onChange: (ids: string[]) => void;
+  selectedIds: string[];
+}) {
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<ProductionAsset["type"] | "all">("all");
+  const selectedAssets = props.selectedIds
+    .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
+    .filter((asset): asset is ProductionAsset => Boolean(asset));
+  const availableTypes = assetPickerTypeOrder.filter((type) => props.assets.some((asset) => asset.type === type));
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredAssets = props.assets.filter((asset) => {
+    const matchesType = typeFilter === "all" || asset.type === typeFilter;
+    const searchable = [asset.label, asset.folderName, asset.prompt, asset.notes, assetTypeLabel(asset.type)].join(" ").toLowerCase();
+
+    return matchesType && (!normalizedQuery || searchable.includes(normalizedQuery));
+  });
+
   function toggle(id: string) {
     props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
   }
 
+  function remove(id: string) {
+    props.onChange(props.selectedIds.filter((currentId) => currentId !== id));
+  }
+
   return (
-    <div className="series-asset-binding episode-asset-binding">
-      <strong>{props.label}</strong>
-      {props.assets.length === 0 ? (
-        <span className="muted">还没有可用资产。先到设计资产中心生成并保存。</span>
-      ) : (
-        <div className="series-asset-grid">
-          {props.assets.map((asset) => (
-            <label key={asset._id} className={`series-asset-option ${props.selectedIds.includes(asset._id) ? "selected" : ""}`}>
-              <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggle(asset._id)} />
-              <span>{asset.url ? <img src={asset.url} alt={asset.label} /> : null}</span>
-              <strong>{asset.label}</strong>
-              <small>{assetTypeLabel(asset.type)} / {asset.folderName}</small>
-            </label>
+    <div className={`asset-binding-picker ${props.compact ? "compact" : ""}`}>
+      <div className="asset-binding-header">
+        <div>
+          <strong>{props.label}</strong>
+          <span>{props.description}</span>
+        </div>
+        <em>{selectedAssets.length} 已选</em>
+      </div>
+
+      {selectedAssets.length > 0 ? (
+        <div className="asset-selected-strip" aria-label="已选资产">
+          {selectedAssets.map((asset) => (
+            <button key={asset._id} type="button" onClick={() => remove(asset._id)} title={`移除 ${asset.label}`}>
+              {asset.url ? <img alt={asset.label} src={asset.url} /> : <ImageIcon size={16} />}
+              <span>{asset.label}</span>
+              <X size={14} />
+            </button>
           ))}
+        </div>
+      ) : null}
+
+      <div className="asset-picker-controls">
+        <label className="asset-picker-search">
+          <Search size={16} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、文件夹、prompt" />
+        </label>
+        <div className="asset-type-filter">
+          <button className={typeFilter === "all" ? "active" : ""} type="button" onClick={() => setTypeFilter("all")}>
+            全部
+          </button>
+          {availableTypes.map((type) => (
+            <button key={type} className={typeFilter === type ? "active" : ""} type="button" onClick={() => setTypeFilter(type)}>
+              {assetTypeLabel(type)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredAssets.length === 0 ? (
+        <EmptyState title="没有符合筛选的资产" body="换一个类型或搜索关键词。" />
+      ) : (
+        <div className="asset-picker-grid">
+          {filteredAssets.map((asset) => {
+            const selected = props.selectedIds.includes(asset._id);
+
+            return (
+              <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
+                <span className="asset-picker-thumb">
+                  {asset.url ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={22} />}
+                  <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
+                </span>
+                <strong>{asset.label}</strong>
+                <small>{assetTypeLabel(asset.type)} · {asset.folderName || "未分类"}</small>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -575,3 +648,12 @@ function assetTypeLabel(type: ProductionAsset["type"]): string {
   };
   return labels[type];
 }
+
+const assetPickerTypeOrder: ProductionAsset["type"][] = [
+  "character_design",
+  "scene_design",
+  "style_reference",
+  "first_frame",
+  "last_frame",
+  "bgm_reference"
+];
