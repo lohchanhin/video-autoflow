@@ -172,9 +172,9 @@ export function CasesPage(props: CasesPageProps) {
   return (
     <section className="cases-workbench">
       <div className="case-tabs" role="tablist" aria-label="Case workspace tabs">
-        <CaseTabButton active={activeTab === "new"} label="New Case" meta="Brief" onClick={() => switchCaseTab("new")} />
-        <CaseTabButton active={activeTab === "queue"} label="Queue" meta={`${props.jobs.length} cases`} onClick={() => switchCaseTab("queue")} />
-        <CaseTabButton active={activeTab === "production"} disabled={!props.selectedJob} label="Production" meta={props.selectedJob?.id ?? "Select case"} onClick={() => switchCaseTab("production")} />
+        <CaseTabButton active={activeTab === "new"} label="新建 Case" meta="输入需求" onClick={() => switchCaseTab("new")} />
+        <CaseTabButton active={activeTab === "queue"} label="Case 队列" meta={`${props.jobs.length} 个 Case`} onClick={() => switchCaseTab("queue")} />
+        <CaseTabButton active={activeTab === "production"} disabled={!props.selectedJob} label="生产工作台" meta={props.selectedJob?.id ?? "选择 Case"} onClick={() => switchCaseTab("production")} />
       </div>
 
       {activeTab === "new" ? <CreateCaseTab {...props} createCase={createCase} /> : null}
@@ -384,7 +384,7 @@ function DraftPreviewPanel(props: {
       />
       <div className="draft-preview-summary">
         <div>
-          <span>Cost</span>
+          <span>成本</span>
           <strong>RM {props.draftPreview.result.costRM.toFixed(4)}</strong>
         </div>
         <div>
@@ -514,9 +514,9 @@ function CaseQueueTab(props: {
       />
       <div className="queue-stats">
         <span>{props.jobs.length} total</span>
-        <span>{props.blockedCases} blocked</span>
+        <span>{props.blockedCases} 个阻塞</span>
       </div>
-      {props.jobs.length === 0 ? <EmptyState title="No cases" body="Create a video case to start the production flow." /> : null}
+      {props.jobs.length === 0 ? <EmptyState title="还没有 Case" body="先建立一个影片 Case，系统会从脚本、分镜、图片、配音一路推进到 MP4。" /> : null}
       <div className="case-queue-table">
         {props.jobs.map((job) => (
           <button
@@ -594,7 +594,7 @@ function ProductionTab(
   if (!props.selectedJob) {
     return (
       <section className="panel">
-        <EmptyState title="No case selected" body="Select a case from the queue to inspect production steps." />
+        <EmptyState title="尚未选择 Case" body="从 Case 队列选择一支影片，查看生产进度、产物、成本和审核状态。" />
       </section>
     );
   }
@@ -675,7 +675,7 @@ function ProductionTab(
     <section className="production-tab">
       <div className="case-production-header panel">
         <div>
-          <p className="eyebrow">Production case</p>
+          <p className="eyebrow">生产案件</p>
           <h2>{props.selectedJob.topic}</h2>
           <div className="case-meta-strip">
             <span>{props.selectedJob.id}</span>
@@ -717,12 +717,12 @@ function ProductionTab(
           {nextAction.label}
         </button>
         <button className="secondary-button" type="button" onClick={() => switchProductionTab("overview")}>
-          Overview
+          总览
         </button>
         {props.selectedJob.status === "FAILED" ? (
           <button className="secondary-button" type="button" onClick={() => runProductionAction(() => props.updateJob(props.selectedJob!.id, retryCase))}>
             <RotateCcw size={16} />
-            Retry
+            重试
           </button>
         ) : (
           <button
@@ -731,7 +731,7 @@ function ProductionTab(
             onClick={() => runProductionAction(() => window.confirm("确定手动推进这个 Case 的生产状态？这会写入活动记录。") && props.updateJob(props.selectedJob!.id, advanceCase))}
           >
             <Play size={16} />
-            Advance
+            手动推进
           </button>
         )}
         <button
@@ -740,12 +740,12 @@ function ProductionTab(
           onClick={() => runProductionAction(() => window.confirm("确定把这个 Case 标记为失败？这会影响 Dashboard、队列和后续自动化判断。") && props.updateJob(props.selectedJob!.id, failCase))}
         >
           <AlertTriangle size={16} />
-          Mark failed
+          标记失败
         </button>
         {["QC_PASSED", "READY_TO_UPLOAD", "UPLOADED_PRIVATE"].includes(props.selectedJob.status) ? (
           <button className="secondary-button" type="button" disabled={isStored} onClick={() => runProductionAction(() => props.selectedJob && props.addVideoForJob(props.selectedJob))}>
             <Save size={16} />
-            {isStored ? "Stored" : "Store"}
+            {isStored ? "已入库" : "存入影片库"}
           </button>
         ) : null}
       </div>
@@ -753,35 +753,35 @@ function ProductionTab(
       {!scriptStoryReady ? (
         <div className="pipeline-gate-note">
           <FilePenLine size={16} />
-          <span>Image generation is locked until script/storyboard/image prompts are generated. Missing stages show as setup blockers instead of using mock data.</span>
+          <span>图片生成必须等脚本、分镜和图片提示词完成；缺少阶段会显示阻塞，不会用 mock 资料硬凑。</span>
         </div>
       ) : null}
 
       {scriptStoryReady && !imageReadyForCompose ? (
         <div className="pipeline-gate-note">
           <ImageIcon size={16} />
-          <span>{hasBlockedSceneReview ? "Compose is locked because one or more scene images failed visual QC. Regenerate or approve the scene images first." : "Compose is locked until Image stage has real PNG/JPG/WebP assets. Click Generate images, inspect the thumbnails, then generate video."}</span>
+          <span>{hasBlockedSceneReview ? "合成已锁定：有场景图片未通过视觉检查。请先重生成或批准图片。" : "合成必须等图片阶段产出真实 PNG/JPG/WebP。请先生成图片、检查缩略图，再生成影片。"}</span>
         </div>
       ) : null}
 
       {scriptStoryReady && imageReadyForCompose && !voiceoverReadyForCompose ? (
         <div className="pipeline-gate-note">
           <Music2 size={16} />
-          <span>Compose is locked until Voiceover has a real OpenAI TTS audio file. Click Generate voiceover, listen to the audio, then generate video.</span>
+          <span>合成必须等配音阶段产出真实音频。请先生成配音、试听确认，再生成影片。</span>
         </div>
       ) : null}
 
       {scriptStoryReady && imageReadyForCompose && voiceoverReadyForCompose && !bgmReadyForCompose ? (
         <div className="pipeline-gate-note">
           <Music2 size={16} />
-          <span>BGM is optional. Click Generate BGM to create ElevenLabs background music before composing, or generate video now without music.</span>
+          <span>BGM 是可选项。可以先生成背景音乐再合成，也可以直接生成无背景音乐的影片。</span>
         </div>
       ) : null}
 
       {budgetExhausted ? (
         <div className="pipeline-gate-note">
           <AlertTriangle size={16} />
-          <span>Case budget is exhausted: RM {props.selectedJob.actualCostRM.toFixed(4)} / RM {props.selectedJob.costLimitRM.toFixed(2)}. Paid generation actions are locked; adjust the Case budget and save before continuing.</span>
+          <span>Case 预算已用完：RM {props.selectedJob.actualCostRM.toFixed(4)} / RM {props.selectedJob.costLimitRM.toFixed(2)}。付费生成已锁定；请调整预算并保存后再继续。</span>
         </div>
       ) : null}
 
@@ -813,7 +813,7 @@ function ProductionTab(
       {activeProductionTab === "pipeline" ? (
         <section className="production-tab-grid two">
           <section className="case-step-section panel">
-            <SectionHeader eyebrow="Pipeline" title="Production Steps" />
+            <SectionHeader eyebrow="生产流程" title="阶段进度" />
             <div className="case-step-rail">
               {props.selectedRecords.map((record) => (
                 <button
@@ -957,7 +957,7 @@ function getNextCaseAction(input: {
     return {
       disabled: input.apiUnavailable || input.isWriting,
       icon: <FilePenLine size={16} />,
-      label: input.isWriting ? "Writing script/story" : "Generate script/story",
+      label: input.isWriting ? "正在生成脚本/分镜" : "生成脚本/分镜",
       loading: input.isWriting,
       onClick: input.handlers.generateScript
     };
@@ -967,7 +967,7 @@ function getNextCaseAction(input: {
     return {
       disabled: input.apiUnavailable || input.isGeneratingImages,
       icon: <ImageIcon size={16} />,
-      label: input.isGeneratingImages ? "Generating images" : "Generate images",
+      label: input.isGeneratingImages ? "正在生成图片" : "生成图片",
       loading: input.isGeneratingImages,
       onClick: input.handlers.generateImages
     };
@@ -977,7 +977,7 @@ function getNextCaseAction(input: {
     return {
       disabled: input.apiUnavailable || input.isGeneratingTts,
       icon: <Music2 size={16} />,
-      label: input.isGeneratingTts ? "Generating voiceover" : "Generate voiceover",
+      label: input.isGeneratingTts ? "正在生成配音" : "生成配音",
       loading: input.isGeneratingTts,
       onClick: input.handlers.generateTts
     };
@@ -987,7 +987,7 @@ function getNextCaseAction(input: {
     return {
       disabled: input.apiUnavailable || input.isRendering,
       icon: <FileVideo size={16} />,
-      label: input.isRendering ? "Generating MP4" : "Generate full MP4",
+      label: input.isRendering ? "正在生成 MP4" : "生成完整 MP4",
       loading: input.isRendering,
       onClick: input.handlers.generateVideo
     };
@@ -997,7 +997,7 @@ function getNextCaseAction(input: {
     return {
       disabled: input.apiUnavailable || input.isRunningQc,
       icon: <CheckCircle2 size={16} />,
-      label: input.isRunningQc ? "Running QC" : "Run QC",
+      label: input.isRunningQc ? "正在检查 QC" : "执行 QC",
       loading: input.isRunningQc,
       onClick: input.handlers.runQc
     };
@@ -1006,7 +1006,7 @@ function getNextCaseAction(input: {
   return {
     disabled: !input.canApproveMp4 || input.job.reviewStatus === "approved",
     icon: <CheckCircle2 size={16} />,
-    label: input.job.reviewStatus === "approved" ? "Approved" : "Approve MP4",
+    label: input.job.reviewStatus === "approved" ? "已批准" : "批准 MP4",
     loading: false,
     onClick: input.handlers.approve
   };
@@ -1026,17 +1026,17 @@ function getRecordForProductionTab(tab: ProductionWorkbenchTab, records: JobProc
 
 function formatProductionTab(tab: ProductionWorkbenchTab): string {
   const labels: Record<ProductionWorkbenchTab, string> = {
-    activity: "Activity",
-    assets: "Assets",
-    clips: "Clips",
-    cost: "Cost",
-    final: "Final MP4",
-    music: "Music",
-    overview: "Overview",
-    pipeline: "Pipeline",
-    publish: "Publish",
-    script: "Script",
-    voice: "Voice"
+    activity: "活动记录",
+    assets: "资产",
+    clips: "视频片段",
+    cost: "成本",
+    final: "最终 MP4",
+    music: "音乐",
+    overview: "总览",
+    pipeline: "流程",
+    publish: "发布",
+    script: "脚本",
+    voice: "配音"
   };
 
   return labels[tab];
@@ -1067,16 +1067,16 @@ function CaseOverviewPanel(props: {
     settings: props.toolProviderSettings
   });
   const blockers = [
-    props.scriptStoryReady ? "" : "Script/story is missing.",
-    props.imageReadyForCompose ? "" : "Scene images are not ready or still need review.",
-    props.voiceoverReadyForCompose ? "" : "Voiceover audio is missing.",
-    props.finalMp4Ready ? "" : "Final MP4 has not been composed."
+    props.scriptStoryReady ? "" : "脚本、分镜或图片提示词还没完成。",
+    props.imageReadyForCompose ? "" : "场景图片还没准备好，或仍需要审核。",
+    props.voiceoverReadyForCompose ? "" : "配音音频还没生成。",
+    props.finalMp4Ready ? "" : "最终 MP4 还没合成。"
   ].filter(Boolean);
 
   return (
     <section className="case-overview-grid">
       <section className="panel case-overview-main">
-        <SectionHeader eyebrow="Next action" title={props.nextAction.label} action={<StatusPill tone={blockers.length > 0 ? "warning" : "success"}>{blockers.length > 0 ? "in progress" : "ready"}</StatusPill>} />
+        <SectionHeader eyebrow="下一步" title={props.nextAction.label} action={<StatusPill tone={blockers.length > 0 ? "warning" : "success"}>{blockers.length > 0 ? "处理中" : "可执行"}</StatusPill>} />
         <button className="primary-button overview-cta" type="button" disabled={props.nextAction.disabled} onClick={props.nextAction.onClick}>
           {props.nextAction.loading ? <Loader2 size={17} className="spin" /> : props.nextAction.icon}
           {props.nextAction.label}
@@ -1090,12 +1090,12 @@ function CaseOverviewPanel(props: {
         ) : (
           <div className="reference-asset-note success">
             <CheckCircle2 size={15} />
-            <span>This case is ready for review or the next publishing gate.</span>
+            <span>这个 Case 已准备进入审核或下一个发布闸口。</span>
           </div>
         )}
       </section>
       <section className="panel case-overview-side">
-        <SectionHeader eyebrow="Budget" title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`} />
+        <SectionHeader eyebrow="预算" title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`} />
         <div className="budget-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
         <div className="case-next-cost-card">
           <div>
@@ -1107,10 +1107,10 @@ function CaseOverviewPanel(props: {
           <small>剩余预算 RM {nextCostEstimate.remainingRM.toFixed(4)}</small>
         </div>
         <div className="asset-plan-summary-grid compact">
-          <div><span>Script</span><strong>{props.scriptStoryReady ? "ready" : "missing"}</strong></div>
-          <div><span>Images</span><strong>{props.imageReadyForCompose ? "ready" : "blocked"}</strong></div>
-          <div><span>Voice</span><strong>{props.voiceoverReadyForCompose ? "ready" : "missing"}</strong></div>
-          <div><span>Assets</span><strong>{readyAssets}/{props.assets.length}</strong></div>
+          <div><span>脚本</span><strong>{props.scriptStoryReady ? "已就绪" : "缺少"}</strong></div>
+          <div><span>图片</span><strong>{props.imageReadyForCompose ? "已就绪" : "阻塞"}</strong></div>
+          <div><span>配音</span><strong>{props.voiceoverReadyForCompose ? "已就绪" : "缺少"}</strong></div>
+          <div><span>资产</span><strong>{readyAssets}/{props.assets.length}</strong></div>
         </div>
       </section>
     </section>
@@ -1150,44 +1150,44 @@ function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob
   return (
     <section className="asset-plan-summary panel">
       <SectionHeader
-        eyebrow="MongoDB asset plan"
-        title="Asset Plan Status"
+        eyebrow="MongoDB 资产规划"
+        title="资产规划状态"
         action={
           <button className="secondary-button compact-button" type="button" onClick={() => props.openAssetPlan(props.job.id)}>
-            Open Asset Plan
+            打开资产规划
           </button>
         }
       />
       <div className="asset-plan-summary-grid">
         <div>
-          <span>Rows</span>
+          <span>规划行</span>
           <strong>{props.assets.length}</strong>
         </div>
         <div>
-          <span>Ready / approved</span>
+          <span>就绪 / 已批准</span>
           <strong>{readyCount} / {approvedCount}</strong>
         </div>
         <div>
-          <span>Seedance refs</span>
+          <span>Seedance 参考</span>
           <strong>{seedanceReferenceCount}</strong>
         </div>
         <div>
-          <span>Blocked</span>
+          <span>阻塞</span>
           <strong>{blockedCount}</strong>
         </div>
       </div>
       {props.assets.length === 0 ? (
-        <EmptyState title="No MongoDB asset plan yet" body="Open Asset Plan and bootstrap this case. Seedance will only use ready or approved reference assets from MongoDB." />
+        <EmptyState title="还没有 MongoDB 资产规划" body="打开资产规划并为这个 Case 建立规划。Seedance 只会使用 MongoDB 中已就绪或已批准的参考资产。" />
       ) : null}
       {missingTypes.length > 0 ? (
         <div className="reference-asset-note">
           <AlertTriangle size={15} />
-          <span>Missing required plan rows: {missingTypes.join(", ")}.</span>
+          <span>缺少必要资产规划：{missingTypes.join(", ")}。</span>
         </div>
       ) : (
         <div className="reference-asset-note success">
           <CheckCircle2 size={15} />
-          <span>Core asset rows exist. Generate and approve references before Seedance video generation.</span>
+          <span>核心资产规划已存在。生成并批准参考图后，再进入 Seedance 视频片段生成。</span>
         </div>
       )}
     </section>
@@ -1214,7 +1214,7 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
 
   return (
     <section className="case-assets-panel panel">
-      <SectionHeader eyebrow="Case assets" title="Artifact Library" action={<StatusPill tone={videoPath ? "success" : "neutral"}>{videoPath ? "MP4 ready" : "waiting"}</StatusPill>} />
+      <SectionHeader eyebrow="Case 产物" title="产物库" action={<StatusPill tone={videoPath ? "success" : "neutral"}>{videoPath ? "MP4 已就绪" : "等待中"}</StatusPill>} />
       {props.job.visualBible ? <VisualBibleCard visualBible={props.job.visualBible} /> : null}
       {videoPath ? (
         <div className="case-video-preview">
@@ -1224,13 +1224,13 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
           </a>
         </div>
       ) : (
-        <EmptyState title="No final video yet" body="Generate video to create the MP4, images, subtitles, and SFX manifest." />
+        <EmptyState title="还没有最终影片" body="生成影片后，这里会显示 MP4、图片、字幕、音效和音频产物。" />
       )}
 
       <div className="asset-library-grid">
-        <AssetCount icon={<ImageIcon size={15} />} label="Images" value={String(resolvedImagePaths.length)} />
-        <AssetCount icon={<Music2 size={15} />} label="Voice / SFX" value={String(audioAssetCount)} />
-        <AssetCount icon={<Captions size={15} />} label="Subtitles" value={subtitlePath ? "1" : "0"} />
+        <AssetCount icon={<ImageIcon size={15} />} label="图片" value={String(resolvedImagePaths.length)} />
+        <AssetCount icon={<Music2 size={15} />} label="配音 / 音效" value={String(audioAssetCount)} />
+        <AssetCount icon={<Captions size={15} />} label="字幕" value={subtitlePath ? "1" : "0"} />
       </div>
 
       {props.qcReport ? (
@@ -1246,7 +1246,7 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
           {resolvedImagePaths.map((path, index) => (
             <a className="image-asset-tile" href={path.startsWith("http") ? path : undefined} target="_blank" rel="noreferrer" key={`${path}-${index}`}>
               <img src={path} alt={`Scene ${index + 1}`} />
-              <span>Scene {index + 1} / {props.sceneReviews.find((review) => review.sceneId === index + 1)?.status ?? "unreviewed"}</span>
+              <span>场景 {index + 1} / {props.sceneReviews.find((review) => review.sceneId === index + 1)?.status ?? "未审核"}</span>
             </a>
           ))}
         </div>
@@ -1257,26 +1257,26 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
           <div className="audio-preview-row">
             <div>
               <Music2 size={14} />
-              <span>Voiceover audio</span>
+              <span>配音音频</span>
             </div>
             <audio controls src={voiceoverPath} />
             <a href={voiceoverPath.startsWith("http") ? voiceoverPath : undefined} target="_blank" rel="noreferrer">{voiceoverPath}</a>
           </div>
         ) : voiceoverPath ? (
-          <ArtifactLink icon={<Music2 size={14} />} label="Voiceover text" path={voiceoverPath} />
+          <ArtifactLink icon={<Music2 size={14} />} label="配音文本" path={voiceoverPath} />
         ) : null}
         {bgmPath ? (
           <div className="audio-preview-row">
             <div>
               <Music2 size={14} />
-              <span>Background music</span>
+              <span>背景音乐</span>
             </div>
             <audio controls src={bgmPath} />
             <a href={bgmPath.startsWith("http") ? bgmPath : undefined} target="_blank" rel="noreferrer">{bgmPath}</a>
           </div>
         ) : null}
-        {sfxPath ? <ArtifactLink icon={<Music2 size={14} />} label="SFX cues" path={sfxPath} /> : null}
-        {subtitlePath ? <ArtifactLink icon={<Captions size={14} />} label="Subtitles" path={subtitlePath} /> : null}
+        {sfxPath ? <ArtifactLink icon={<Music2 size={14} />} label="音效提示" path={sfxPath} /> : null}
+        {subtitlePath ? <ArtifactLink icon={<Captions size={14} />} label="字幕" path={subtitlePath} /> : null}
       </div>
     </section>
   );
@@ -1336,34 +1336,34 @@ function StageOutputPanel(props: {
   return (
     <section className="stage-output-panel panel">
       <SectionHeader
-        eyebrow="Artifact review"
-        title={props.record ? props.record.stageName : "No stage selected"}
+        eyebrow="产物审核"
+        title={props.record ? props.record.stageName : "未选择阶段"}
         action={
           props.record ? (
             isImageStage ? (
               <button className="secondary-button compact-button" disabled={props.isGeneratingImages} type="button" onClick={() => props.generateImagesForJob(props.job)}>
                 {props.isGeneratingImages ? <Loader2 size={14} className="spin" /> : <ImageIcon size={14} />}
-                {props.isGeneratingImages ? "Generating" : "Regenerate images"}
+                {props.isGeneratingImages ? "生成中" : "重新生成图片"}
               </button>
             ) : isTtsStage ? (
               <button className="secondary-button compact-button" disabled={props.isGeneratingTts} type="button" onClick={() => props.generateTtsForJob(props.job)}>
                 {props.isGeneratingTts ? <Loader2 size={14} className="spin" /> : <Music2 size={14} />}
-                {props.isGeneratingTts ? "Generating" : "Regenerate voiceover"}
+                {props.isGeneratingTts ? "生成中" : "重新生成配音"}
               </button>
             ) : isBgmStage ? (
               <button className="secondary-button compact-button" disabled={props.isGeneratingBgm} type="button" onClick={() => props.generateBgmForJob(props.job)}>
                 {props.isGeneratingBgm ? <Loader2 size={14} className="spin" /> : <Music2 size={14} />}
-                {props.isGeneratingBgm ? "Generating" : "Regenerate BGM"}
+                {props.isGeneratingBgm ? "生成中" : "重新生成 BGM"}
               </button>
             ) : isVideoStage ? (
               <button className="secondary-button compact-button" disabled={props.isGeneratingVideoClip} type="button" onClick={() => props.generateVideoClipForJob(props.job)}>
                 {props.isGeneratingVideoClip ? <Loader2 size={14} className="spin" /> : <FileVideo size={14} />}
-                {props.isGeneratingVideoClip ? "Seedance running" : "Generate scene clips"}
+                {props.isGeneratingVideoClip ? "Seedance 执行中" : "生成场景片段"}
               </button>
             ) : isQcStage ? (
               <button className="secondary-button compact-button" disabled={props.isRunningQc} type="button" onClick={() => props.runQcForJob(props.job)}>
                 {props.isRunningQc ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-                {props.isRunningQc ? "Checking" : "Run QC"}
+                {props.isRunningQc ? "检查中" : "执行 QC"}
               </button>
             ) : (
               <StatusPill tone={getRecordTone(props.record.status)}>{props.record.status}</StatusPill>
@@ -1375,15 +1375,15 @@ function StageOutputPanel(props: {
         <>
           <div className="artifact-summary-grid">
             <div>
-              <span>Tool</span>
+              <span>工具</span>
               <strong>{props.record.provider}</strong>
             </div>
             <div>
-              <span>Queue</span>
+              <span>队列</span>
               <strong>{props.record.queueName}</strong>
             </div>
             <div>
-              <span>Cost</span>
+              <span>成本</span>
               <strong>RM {props.record.costRM.toFixed(2)}</strong>
             </div>
           </div>
@@ -1391,14 +1391,14 @@ function StageOutputPanel(props: {
             <div className="stage-error-panel">
               <AlertTriangle size={16} />
               <div>
-                <strong>Failure reason</strong>
+                <strong>失败原因</strong>
                 <span>{props.record.notes}</span>
               </div>
             </div>
           ) : null}
           <div className="artifact-output-block">
-            <span>Output</span>
-            <pre>{getRecordOutputForDisplay(props.record) || "No output recorded yet."}</pre>
+            <span>输出</span>
+            <pre>{getRecordOutputForDisplay(props.record) || "还没有记录输出。"}</pre>
           </div>
           <ArtifactPreview artifactPath={props.record.artifactPath || storedVideo?.publicUrl || storedVideo?.storagePath || ""} />
           {isImageStage ? (
@@ -1429,7 +1429,7 @@ function SceneReviewPanel(props: {
   updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
 }) {
   if (props.sceneReviews.length === 0) {
-    return <EmptyState title="No scene review records" body="Generate images first. Each scene will appear here with prompt, image, approval state, and regenerate controls." />;
+    return <EmptyState title="还没有场景审核记录" body="请先生成图片。每个场景都会显示 prompt、图片、审核状态和重新生成操作。" />;
   }
 
   return (
@@ -1531,7 +1531,7 @@ function SceneReviewCard(props: {
             }}
           >
             {props.isGenerating ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
-            {props.isGenerating ? "Regenerating" : "Regenerate this scene"}
+            {props.isGenerating ? "重新生成中" : "重新生成此场景"}
           </button>
           <button className="secondary-button compact-button" type="button" onClick={() => saveSceneDraft({ status: "approved" })}>
             <LockKeyhole size={14} />
@@ -1579,7 +1579,7 @@ function ServiceIssueBanner(props: { action: string; apiState: CasesPageProps["a
       <AlertTriangle size={17} />
       <div>
         <strong>{props.action} is paused</strong>
-        <span>{props.apiState === "checking" ? "Checking API server status. Wait a moment or click the API status badge in the top bar." : "API server is offline. Start or restart the API server, then retry this case."}</span>
+        <span>{props.apiState === "checking" ? "正在检查 API server 状态。请稍等，或点击顶部 API 状态徽章刷新。" : "API server 离线。请启动或重启 API server 后，再重试这个 Case。"}</span>
       </div>
     </div>
   );
@@ -1594,7 +1594,7 @@ function PublishTargetMatrix(props: {
   return (
     <section className="publish-target-panel panel">
       <SectionHeader eyebrow="Private upload matrix" title="YouTube Targets" />
-      {props.caseTargets.length === 0 ? <EmptyState title="No YouTube targets" body="This case will stop at MP4/QC. Add YouTube targets later when you are ready for private upload." /> : null}
+      {props.caseTargets.length === 0 ? <EmptyState title="还没有 YouTube 目标" body="这个 Case 会停在 MP4/QC。准备好 private upload 后，再新增 YouTube 发布目标。" /> : null}
       <div className="publish-target-list">
         {props.caseTargets.map((caseTarget) => {
           const target = props.publishingTargets.find((candidate) => candidate.id === caseTarget.targetId);
@@ -1698,7 +1698,7 @@ function StageEditorPanel(props: {
   if (!props.job) {
     return (
       <section className="stage-editor-panel panel">
-        <EmptyState title="No case file" body="Case metadata and selected stage details will appear here." />
+        <EmptyState title="还没有 Case 档案" body="这里会显示 Case 元数据和选中阶段的详细资料。" />
       </section>
     );
   }
@@ -1720,7 +1720,7 @@ function StageEditorPanel(props: {
           <strong>{props.job.privacy}</strong>
         </div>
         <div>
-          <span>Cost</span>
+          <span>成本</span>
           <strong>RM {props.job.actualCostRM.toFixed(2)}</strong>
         </div>
       </div>
@@ -1775,7 +1775,7 @@ function StageEditorPanel(props: {
                 ))}
               </select>
             </Field>
-            <Field label="Cost RM">
+            <Field label="成本 RM">
               <input
                 min={0}
                 step={0.01}
@@ -1802,7 +1802,7 @@ function StageEditorPanel(props: {
                 onChange={(event) => recordEditor.setDraftPatch({ provider: event.target.value })}
               />
             </Field>
-            <Field label="Queue">
+            <Field label="队列">
               <input
                 value={recordDraft.queueName}
                 onChange={(event) => recordEditor.setDraftPatch({ queueName: event.target.value })}
@@ -1828,7 +1828,7 @@ function StageEditorPanel(props: {
               onChange={(event) => recordEditor.setDraftPatch({ input: event.target.value })}
             />
           </Field>
-          <Field label="Output / result">
+          <Field label="输出 / 结果">
             <textarea
               rows={8}
               value={recordDraft.output}
@@ -1937,10 +1937,10 @@ function getRecordOutputForDisplay(record: JobProcessRecord): string {
   const rasterCount = artifacts.filter(isRasterImagePath).length;
 
   if (rasterCount > 0) {
-    return `${rasterCount} generated scene image(s) are ready for review. These PNG/JPG assets are the images used by video compose.`;
+    return `${rasterCount} 张场景图片已生成，等待审核。这些 PNG/JPG 会用于影片合成。`;
   }
 
-  return "Required OpenAI scene images are missing. Click Generate images to create reviewable PNG scene assets.";
+  return "缺少必要的场景图片。请点击生成图片，产出可审核的 PNG 场景资产。";
 }
 
 function CaseCostLedgerPanel(props: {
@@ -1953,7 +1953,7 @@ function CaseCostLedgerPanel(props: {
   return (
     <section className="production-tab-grid two">
       <section className="panel">
-        <SectionHeader eyebrow="Cost ledger" title="Case 成本账本" action={<StatusPill tone={props.summary?.pricingMissingCount ? "warning" : "success"}>{props.summary?.pricingMissingCount ? "需要补单价" : "已记录"}</StatusPill>} />
+        <SectionHeader eyebrow="成本账本" title="Case 成本账本" action={<StatusPill tone={props.summary?.pricingMissingCount ? "warning" : "success"}>{props.summary?.pricingMissingCount ? "需要补单价" : "已记录"}</StatusPill>} />
         <div className="budget-stack">
           <BudgetLine label="MongoDB 账本合计" value={`RM ${(props.summary?.totalCostRM ?? 0).toFixed(4)}`} />
           <BudgetLine label="Case 本地累计" value={`RM ${props.job.actualCostRM.toFixed(2)}`} />
@@ -2047,7 +2047,7 @@ function updateDirtyDraftMap(currentDrafts: Record<string, boolean>, key: string
 function ActivityLogPanel(props: { activities: CaseActivity[] }) {
   return (
     <section className="activity-log-panel panel">
-      <SectionHeader eyebrow="Audit trail" title="Case Activity" />
+      <SectionHeader eyebrow="审计记录" title="Case 活动" />
       {props.activities.length === 0 ? <EmptyState title="No activity yet" body="Generation, approval, status changes, and storage actions will be recorded here." /> : null}
       <div className="activity-log-list">
         {props.activities.map((activity) => (
