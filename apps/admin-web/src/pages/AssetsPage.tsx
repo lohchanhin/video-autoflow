@@ -599,7 +599,7 @@ function AssetInspector(props: {
           </Field>
         </div>
         <div className="asset-two-col">
-          <Field label="类型">
+          <Field label="资产类型（保存后生效）">
             <select value={asset.type} onChange={(event) => props.updateAssetDraft({ type: event.target.value as ProductionAssetType })}>
               {productionAssetTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
             </select>
@@ -649,7 +649,7 @@ function AssetInspector(props: {
 function FolderRail(props: { activeFolder: string; folders: Array<{ count: number; name: string }>; setActiveFolder: (folder: string) => void; totalCount: number }) {
   return (
     <section className="asset-folder-rail panel">
-      <SectionHeader eyebrow="文件夹" title="分类浏览" />
+      <SectionHeader eyebrow="资产库" title="资产文件夹" />
       <button className={props.activeFolder === "全部" ? "active" : ""} type="button" onClick={() => props.setActiveFolder("全部")}>
         <Folder size={15} />
         <span>全部</span>
