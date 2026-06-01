@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Database,
+  FilePenLine,
   FileVideo,
   KeyRound,
   LayoutDashboard,
@@ -154,6 +155,7 @@ import { evaluateScheduleRunGuard } from "./lib/schedule-guards.js";
 import { tryAcquireScheduleRunLock } from "./lib/schedule-run-locks.js";
 import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
+import { countDirtyDrafts, updateDirtyDraftMap } from "./lib/editable-draft.js";
 
 type ApiState = "checking" | "online" | "offline";
 type ServiceState = "checking" | "online" | "offline" | "warning";
@@ -992,7 +994,8 @@ function defaultProductionAssetRole(type: ProductionAssetType): ProductionAsset[
 export function App() {
   const [activeView, setActiveView] = useState<ActiveView>(() => getInitialView());
   const [dirtyDrafts, setDirtyDrafts] = useState<Record<string, boolean>>({});
-  const hasUnsavedDrafts = useMemo(() => Object.values(dirtyDrafts).some(Boolean), [dirtyDrafts]);
+  const dirtyDraftCount = useMemo(() => countDirtyDrafts(dirtyDrafts), [dirtyDrafts]);
+  const hasUnsavedDrafts = dirtyDraftCount > 0;
   const activeViewRef = useRef(activeView);
   const hasUnsavedDraftsRef = useRef(hasUnsavedDrafts);
   const [apiState, setApiState] = useState<ApiState>("checking");
@@ -1285,21 +1288,7 @@ export function App() {
   }
 
   const reportDirtyDraft = useCallback((key: string, isDirty: boolean) => {
-    setDirtyDrafts((currentDrafts) => {
-      if (currentDrafts[key] === isDirty) {
-        return currentDrafts;
-      }
-
-      const nextDrafts = { ...currentDrafts };
-
-      if (isDirty) {
-        nextDrafts[key] = true;
-      } else {
-        delete nextDrafts[key];
-      }
-
-      return nextDrafts;
-    });
+    setDirtyDrafts((currentDrafts) => updateDirtyDraftMap(currentDrafts, key, isDirty));
   }, []);
 
   useEffect(() => {
@@ -3824,6 +3813,13 @@ export function App() {
             <h1>{viewTitles[activeView].title}</h1>
           </div>
           <div className="topbar-status-group">
+            {hasUnsavedDrafts ? (
+              <div className="unsaved-draft-badge" title="当前有业务资料草稿尚未保存；保存或取消后再切换页面更安全。">
+                <FilePenLine size={16} />
+                <span>未保存修改</span>
+                <strong>{dirtyDraftCount}</strong>
+              </div>
+            ) : null}
             <StatusButton
               state={apiState}
               label={apiState === "online" ? `API ${health?.env ?? "online"}` : apiState === "offline" ? "API 离线" : "检查 API"}

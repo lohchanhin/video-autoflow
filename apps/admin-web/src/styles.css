@@ -154,6 +154,29 @@ button:disabled {
   max-width: 760px;
 }
 
+.unsaved-draft-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #fedf89;
+  border-radius: 8px;
+  color: #7a4b00;
+  font-size: 13px;
+  font-weight: 900;
+  background: #fffbeb;
+}
+
+.unsaved-draft-badge strong {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #7a271a;
+  text-align: center;
+  background: #fee4e2;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: #667085;

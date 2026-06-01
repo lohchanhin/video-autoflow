@@ -29,6 +29,28 @@ export function createDraftPatch<T extends object>(source: T, draft: T): Partial
   return patch;
 }
 
+export function updateDirtyDraftMap(currentDrafts: Record<string, boolean>, key: string, isDirty: boolean): Record<string, boolean> {
+  if (isDirty) {
+    if (currentDrafts[key]) {
+      return currentDrafts;
+    }
+
+    return { ...currentDrafts, [key]: true };
+  }
+
+  if (!currentDrafts[key]) {
+    return currentDrafts;
+  }
+
+  const nextDrafts = { ...currentDrafts };
+  delete nextDrafts[key];
+  return nextDrafts;
+}
+
+export function countDirtyDrafts(drafts: Record<string, boolean>): number {
+  return Object.values(drafts).filter(Boolean).length;
+}
+
 export function useEditableDraft<T extends object>(source: T | null, sourceKey: string | number | null) {
   const [baseline, setBaseline] = useState<T | null>(() => (source ? cloneDraft(source) : null));
   const [draft, setDraft] = useState<T | null>(() => (source ? cloneDraft(source) : null));

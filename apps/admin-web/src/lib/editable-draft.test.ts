@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { areDraftsEqual, confirmDiscardDirtyDraft, createDraftPatch } from "./editable-draft.js";
+import { areDraftsEqual, confirmDiscardDirtyDraft, countDirtyDrafts, createDraftPatch, updateDirtyDraftMap } from "./editable-draft.js";
 
 describe("editable draft helpers", () => {
   it("detects equal objects even when key order differs", () => {
@@ -18,6 +18,17 @@ describe("editable draft helpers", () => {
 
   it("does not prompt when there are no dirty changes", () => {
     expect(confirmDiscardDirtyDraft(false)).toBe(true);
+  });
+
+  it("tracks dirty draft keys without preserving false entries", () => {
+    const first = updateDirtyDraftMap({}, "asset:1", true);
+    const second = updateDirtyDraftMap(first, "case:1", true);
+    const third = updateDirtyDraftMap(second, "asset:1", false);
+
+    expect(first).toEqual({ "asset:1": true });
+    expect(second).toEqual({ "asset:1": true, "case:1": true });
+    expect(third).toEqual({ "case:1": true });
+    expect(countDirtyDrafts(third)).toBe(1);
   });
 
   it("uses browser confirm when dirty", () => {

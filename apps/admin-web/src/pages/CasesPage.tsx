@@ -6,7 +6,7 @@ import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents
 import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo, ToolProviderSettings } from "../lib/admin-data.js";
 import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
-import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEditableDraft } from "../lib/editable-draft.js";
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import type { ProductionStageId } from "../lib/production.js";
@@ -2024,24 +2024,6 @@ function BudgetLine(props: { label: string; value: string }) {
       <strong>{props.value}</strong>
     </div>
   );
-}
-
-function updateDirtyDraftMap(currentDrafts: Record<string, boolean>, key: string, isDirty: boolean): Record<string, boolean> {
-  if (isDirty) {
-    if (currentDrafts[key]) {
-      return currentDrafts;
-    }
-
-    return { ...currentDrafts, [key]: true };
-  }
-
-  if (!currentDrafts[key]) {
-    return currentDrafts;
-  }
-
-  const nextDrafts = { ...currentDrafts };
-  delete nextDrafts[key];
-  return nextDrafts;
 }
 
 function ActivityLogPanel(props: { activities: CaseActivity[] }) {
