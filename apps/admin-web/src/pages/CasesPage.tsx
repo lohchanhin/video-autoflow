@@ -4,9 +4,10 @@ import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, Seri
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
-import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo } from "../lib/admin-data.js";
+import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo, ToolProviderSettings } from "../lib/admin-data.js";
 import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import type { ProductionStageId } from "../lib/production.js";
 import type { CaseDraftPreview } from "../App.js";
@@ -40,6 +41,7 @@ interface CasesPageProps {
   productionSchedules: ProductionSchedule[];
   storedVideos: StoredVideo[];
   templateType: AdminJob["templateType"];
+  toolProviderSettings: ToolProviderSettings[];
   topic: string;
   addVideoForJob: (job: AdminJob) => void;
   approveCaseForPublishing: (job: AdminJob) => void;
@@ -801,7 +803,9 @@ function ProductionTab(
           imageReadyForCompose={imageReadyForCompose}
           job={props.selectedJob}
           nextAction={nextAction}
+          records={props.selectedRecords}
           scriptStoryReady={scriptStoryReady}
+          toolProviderSettings={props.toolProviderSettings}
           voiceoverReadyForCompose={voiceoverReadyForCompose}
         />
       ) : null}
@@ -1044,11 +1048,24 @@ function CaseOverviewPanel(props: {
   imageReadyForCompose: boolean;
   job: AdminJob;
   nextAction: CaseNextAction;
+  records: JobProcessRecord[];
   scriptStoryReady: boolean;
+  toolProviderSettings: ToolProviderSettings[];
   voiceoverReadyForCompose: boolean;
 }) {
   const budgetUsedPct = props.job.costLimitRM > 0 ? Math.min(100, Math.round((props.job.actualCostRM / props.job.costLimitRM) * 100)) : 0;
   const readyAssets = props.assets.filter((asset) => asset.status === "ready" || asset.status === "approved").length;
+  const nextCostEstimate = estimateNextCaseCost({
+    job: props.job,
+    readiness: {
+      finalMp4Ready: props.finalMp4Ready,
+      imageReadyForCompose: props.imageReadyForCompose,
+      scriptStoryReady: props.scriptStoryReady,
+      voiceoverReadyForCompose: props.voiceoverReadyForCompose
+    },
+    records: props.records,
+    settings: props.toolProviderSettings
+  });
   const blockers = [
     props.scriptStoryReady ? "" : "Script/story is missing.",
     props.imageReadyForCompose ? "" : "Scene images are not ready or still need review.",
@@ -1080,6 +1097,15 @@ function CaseOverviewPanel(props: {
       <section className="panel case-overview-side">
         <SectionHeader eyebrow="Budget" title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`} />
         <div className="budget-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
+        <div className="case-next-cost-card">
+          <div>
+            <span>下一步预计</span>
+            <strong>{formatCaseCostEstimateAmount(nextCostEstimate)}</strong>
+          </div>
+          <StatusPill tone={getCaseCostEstimateTone(nextCostEstimate)}>{formatCaseCostEstimateStatus(nextCostEstimate)}</StatusPill>
+          <p>{nextCostEstimate.detail}</p>
+          <small>剩余预算 RM {nextCostEstimate.remainingRM.toFixed(4)}</small>
+        </div>
         <div className="asset-plan-summary-grid compact">
           <div><span>Script</span><strong>{props.scriptStoryReady ? "ready" : "missing"}</strong></div>
           <div><span>Images</span><strong>{props.imageReadyForCompose ? "ready" : "blocked"}</strong></div>
@@ -1089,6 +1115,28 @@ function CaseOverviewPanel(props: {
       </section>
     </section>
   );
+}
+
+function formatCaseCostEstimateAmount(estimate: CaseNextCostEstimate): string {
+  if (estimate.estimatedCostRM === null) return "需设置单价";
+  return `RM ${estimate.estimatedCostRM.toFixed(4)}`;
+}
+
+function formatCaseCostEstimateStatus(estimate: CaseNextCostEstimate): string {
+  if (estimate.exceedsBudget) return "超出预算";
+  if (estimate.pricingStatus === "missing_tool") return "缺少工具";
+  if (estimate.pricingStatus === "disabled") return "工具停用";
+  if (estimate.pricingStatus === "missing_price") return "未定价";
+  if (estimate.pricingStatus === "free") return "免费";
+  if (estimate.pricingStatus === "not_applicable") return "无付费步骤";
+  return "可执行";
+}
+
+function getCaseCostEstimateTone(estimate: CaseNextCostEstimate): "neutral" | "active" | "success" | "danger" | "warning" {
+  if (estimate.exceedsBudget) return "danger";
+  if (estimate.pricingStatus === "missing_tool" || estimate.pricingStatus === "disabled" || estimate.pricingStatus === "missing_price") return "warning";
+  if (estimate.pricingStatus === "priced" || estimate.pricingStatus === "free") return "success";
+  return "neutral";
 }
 
 function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob; openAssetPlan: (jobId: string) => void }) {

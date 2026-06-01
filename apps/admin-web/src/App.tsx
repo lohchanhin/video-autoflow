@@ -4058,6 +4058,7 @@ export function App() {
             series={contentSeries}
             seriesEpisodes={seriesEpisodes}
             templateType={templateType}
+            toolProviderSettings={toolProviderSettings}
             topic={topic}
             updateCaseDetails={updateCaseDetails}
             updateJob={updateJob}
