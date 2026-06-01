@@ -1235,7 +1235,7 @@ export function App() {
     const timer = window.setInterval(runDueProductionSchedules, 60_000);
 
     return () => window.clearInterval(timer);
-  }, [productionSchedules, publishingTargets, jobs, staffAgents, aiToolEndpoints]);
+  }, [productionSchedules, publishingTargets, jobs, staffAgents, aiToolEndpoints, providerKeys, toolProviderSettings]);
 
   async function refreshOperationalStatus() {
     await Promise.all([refreshHealth(), refreshDatabaseStatus(), refreshProviderSecretStatuses()]);
