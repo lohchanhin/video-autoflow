@@ -14,7 +14,7 @@ import {
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getProductionAssetDesignSpec } from "../lib/asset-design-specs.js";
 import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from "../lib/asset-readiness.js";
-import { buildDesignPromptForType, designHintForType, examplePromptForType } from "../lib/design-prompts.js";
+import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 
@@ -310,7 +310,7 @@ export function AssetsPage(props: AssetsPageProps) {
               <textarea
                 rows={9}
                 value={draftPrompt}
-                placeholder="例如：30 岁亚洲男性主角，便利店夜班员工，疲惫但敏锐，蓝色工作服，固定道具是旧收银机钥匙。系统会自动补成角色三视图规格。"
+                placeholder={designPromptPlaceholderForType(draftType)}
                 onChange={(event) => setDraftPrompt(event.target.value)}
               />
             </Field>

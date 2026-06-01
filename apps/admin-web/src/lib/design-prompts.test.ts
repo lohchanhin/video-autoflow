@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDesignPromptForType, designHintForType, examplePromptForType } from "./design-prompts.js";
+import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "./design-prompts.js";
 
 describe("design asset prompts", () => {
   it("generates scene design prompts as multi-angle environment sheets", () => {
@@ -38,5 +38,12 @@ describe("design asset prompts", () => {
     expect(examplePromptForType("scene_design")).toContain("6-8 个一致视角");
     expect(examplePromptForType("scene_design")).toContain("无文字俯视空间关系");
     expect(examplePromptForType("scene_design")).toContain("同一空间布局");
+  });
+
+  it("uses type-specific placeholders so scene design is not prompted like a character asset", () => {
+    expect(designPromptPlaceholderForType("character_design")).toContain("角色三视图");
+    expect(designPromptPlaceholderForType("scene_design")).toContain("场景设定表");
+    expect(designPromptPlaceholderForType("scene_design")).toContain("6-8 个一致视角");
+    expect(designPromptPlaceholderForType("scene_design")).not.toContain("角色三视图");
   });
 });

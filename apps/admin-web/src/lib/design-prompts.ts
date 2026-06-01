@@ -66,6 +66,30 @@ export function designHintForType(type: ProductionAssetType): string {
   return "首帧和尾帧会按单张可复用影片帧生成，避免表格、字幕、UI 和分镜格。";
 }
 
+export function designPromptPlaceholderForType(type: ProductionAssetType): string {
+  if (type === "character_design") {
+    return "例如：30 岁亚洲男性主角，便利店夜班员工，疲惫但敏锐，蓝色工作服，固定道具是旧收银机钥匙。系统会自动补成角色三视图规格。";
+  }
+
+  if (type === "scene_design") {
+    return "例如：雨夜便利店，冷白荧光灯，玻璃门外有雨水反光，收银台、旧监控屏、咖啡机、货架和入口动线固定。系统会自动补成 6-8 个一致视角的场景设定表。";
+  }
+
+  if (type === "style_reference") {
+    return "例如：现代城市夜景，低饱和蓝绿色调，真实电影感，浅景深，细雨，柔和噪点。系统会生成可复用的视觉风格锚点。";
+  }
+
+  if (type === "first_frame") {
+    return "例如：主角站在便利店收银台后，看向玻璃门外最后一位客人，竖屏 9:16，电影感构图，无文字字幕。";
+  }
+
+  if (type === "last_frame") {
+    return "例如：玻璃门自动合上，收银台灯光熄灭，主角留下旧钥匙，竖屏 9:16，结尾情绪明确，无文字字幕。";
+  }
+
+  return "例如：慢速、温暖、轻微弦乐和木琴，适合温和叙事短片，可循环，不包含歌词或版权旋律。";
+}
+
 export function examplePromptForType(type: ProductionAssetType): string {
   if (type === "character_design") {
     return "生成一个原创成年主角的三视图设定稿。亚洲男性，30岁左右，夜班便利店员工，短黑发，疲惫但敏锐，蓝色制服，固定道具是一串旧收银机钥匙。需要同一角色的正面、侧面、背面全身视图，同一张脸、同一服装、同一体型，中性干净背景，无文字、无标签、无UI。";
