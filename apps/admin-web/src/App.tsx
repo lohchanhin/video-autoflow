@@ -114,6 +114,7 @@ import {
   saveProviderSecretToApi
 } from "./lib/api.js";
 import { loadStaffAgents, saveStaffAgents, type StaffAgent } from "./lib/agents.js";
+import { evaluateCaseBudgetGuard } from "./lib/budget-guards.js";
 import {
   buildAssetContextBrief,
   isBackgroundDesignAsset,
@@ -1539,6 +1540,34 @@ export function App() {
     ]);
   }
 
+  function blockIfCaseBudgetExceeded(job: AdminJob, operationLabel: string, estimatedCostRM?: number): boolean {
+    const message = getCaseBudgetBlockMessage(job, operationLabel, estimatedCostRM);
+
+    if (!message) {
+      return false;
+    }
+
+    setGenerationError(message);
+    appendCaseActivity(job.id, "error", `${operationLabel} blocked by budget`, message);
+    return true;
+  }
+
+  function assertCaseBudgetAvailable(job: AdminJob, operationLabel: string, estimatedCostRM?: number): void {
+    const message = getCaseBudgetBlockMessage(job, operationLabel, estimatedCostRM);
+
+    if (!message) {
+      return;
+    }
+
+    appendCaseActivity(job.id, "error", `${operationLabel} blocked by budget`, message);
+    throw new Error(message);
+  }
+
+  function getCaseBudgetBlockMessage(job: AdminJob, operationLabel: string, estimatedCostRM?: number): string | null {
+    const guard = evaluateCaseBudgetGuard(job, { estimatedCostRM, operationLabel });
+    return guard.canRun ? null : guard.message;
+  }
+
   function upsertJob(job: AdminJob) {
     setJobs((currentJobs) => [job, ...currentJobs.filter((currentJob) => currentJob.id !== job.id)]);
   }
@@ -1823,6 +1852,7 @@ export function App() {
         throw new Error(`Outline QC needs review before image generation. ${scriptResult.outlineQc.summary}`);
       }
 
+      assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
       setAutoGenerateStep("Generating scene images");
       workingJob = {
         ...workingJob,
@@ -1868,6 +1898,7 @@ export function App() {
         throw new Error("Image visual QC found scene issues. Review the generated images, regenerate failed scenes, then continue to voiceover and MP4.");
       }
 
+      assertCaseBudgetAvailable(workingJob, "Autopilot voiceover generation");
       setAutoGenerateStep("Generating voiceover");
       const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, workingJob.id);
 
@@ -1906,6 +1937,7 @@ export function App() {
       upsertJobRecords(workingJob.id, workingRecords);
       appendCaseActivity(workingJob.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} generated synced narration audio. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
 
+      assertCaseBudgetAvailable(workingJob, "Autopilot MP4 composition");
       setAutoGenerateStep("Composing MP4");
       workingJob = {
         ...workingJob,
@@ -2442,6 +2474,12 @@ export function App() {
       return;
     }
 
+    const job = jobs.find((candidate) => candidate.id === asset.jobId) ?? null;
+
+    if (job && blockIfCaseBudgetExceeded(job, "Production asset generation")) {
+      return;
+    }
+
     if (apiState !== "online") {
       const message = `API server is ${apiState}. Production asset generation needs ${apiBaseUrl}.`;
       setAssetError(message);
@@ -2449,7 +2487,6 @@ export function App() {
       return;
     }
 
-    const job = jobs.find((candidate) => candidate.id === asset.jobId) ?? null;
     setSelectedProductionAssetId(asset._id);
     setGeneratingProductionAssetIds((currentIds) => [...currentIds, asset._id]);
 
@@ -2557,6 +2594,10 @@ export function App() {
       return;
     }
 
+    if (blockIfCaseBudgetExceeded(job, "Script/story generation")) {
+      return;
+    }
+
     if (apiState !== "online") {
       const message = `API server is ${apiState}. Script generation needs ${apiBaseUrl}.`;
       setGenerationError(message);
@@ -2636,6 +2677,10 @@ export function App() {
 
   async function handleGenerateImages(job: AdminJob) {
     if (generatingImageCaseIds.includes(job.id)) {
+      return;
+    }
+
+    if (blockIfCaseBudgetExceeded(job, "Image generation")) {
       return;
     }
 
@@ -2749,6 +2794,10 @@ export function App() {
     const operationId = `${job.id}_${scene.sceneId}`;
 
     if (generatingSceneImageIds.includes(operationId)) {
+      return;
+    }
+
+    if (blockIfCaseBudgetExceeded(job, `Scene ${scene.sceneId} image regeneration`)) {
       return;
     }
 
@@ -2868,6 +2917,10 @@ export function App() {
       return;
     }
 
+    if (blockIfCaseBudgetExceeded(job, "Voiceover generation")) {
+      return;
+    }
+
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
       const message = "Generate script/story first. Voiceover generation uses the approved storyboard scene voice text; it will not invent narration from a blank case.";
       setGenerationError(message);
@@ -2974,6 +3027,10 @@ export function App() {
 
   async function handleGenerateBgm(job: AdminJob) {
     if (generatingBgmCaseIds.includes(job.id)) {
+      return;
+    }
+
+    if (blockIfCaseBudgetExceeded(job, "Background music generation")) {
       return;
     }
 
@@ -3114,6 +3171,10 @@ export function App() {
       return;
     }
 
+    if (blockIfCaseBudgetExceeded(job, "Seedance video clip generation")) {
+      return;
+    }
+
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
       const message = "Generate script/story first. Seedance needs the approved scene prompt before creating a motion clip.";
       setGenerationError(message);
@@ -3220,6 +3281,10 @@ export function App() {
 
   async function handleGenerateVideo(job: AdminJob) {
     if (generatingCaseIds.includes(job.id)) {
+      return;
+    }
+
+    if (blockIfCaseBudgetExceeded(job, "Final MP4 generation")) {
       return;
     }
 

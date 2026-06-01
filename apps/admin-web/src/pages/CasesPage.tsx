@@ -616,6 +616,7 @@ function ProductionTab(
   const bgmReadyForCompose = Boolean(bgmRecord?.status === "done" && splitArtifactPaths(bgmRecord.artifactPath).some(isAudioPath));
   const finalMp4Ready = Boolean(composeRecord?.status === "done" && splitArtifactPaths(composeRecord.artifactPath).some(isVideoPath));
   const canApproveMp4 = finalMp4Ready && voiceoverReadyForCompose && ["QC_PASSED", "READY_TO_UPLOAD", "COMPOSED"].includes(props.selectedJob.status);
+  const budgetExhausted = props.selectedJob.actualCostRM >= props.selectedJob.costLimitRM;
   const schedule = props.productionSchedules.find((candidate) => candidate.id === props.selectedJob?.scheduleId);
   const sourceSeries = props.selectedJob.seriesId ? props.series.find((series) => series._id === props.selectedJob?.seriesId) ?? null : null;
   const sourceEpisode = props.selectedJob.episodeId ? props.seriesEpisodes.find((episode) => episode._id === props.selectedJob?.episodeId) ?? null : null;
@@ -772,6 +773,13 @@ function ProductionTab(
         <div className="pipeline-gate-note">
           <Music2 size={16} />
           <span>BGM is optional. Click Generate BGM to create ElevenLabs background music before composing, or generate video now without music.</span>
+        </div>
+      ) : null}
+
+      {budgetExhausted ? (
+        <div className="pipeline-gate-note">
+          <AlertTriangle size={16} />
+          <span>Case budget is exhausted: RM {props.selectedJob.actualCostRM.toFixed(4)} / RM {props.selectedJob.costLimitRM.toFixed(2)}. Paid generation actions are locked; adjust the Case budget and save before continuing.</span>
         </div>
       ) : null}
 
@@ -1578,7 +1586,9 @@ function StageEditorPanel(props: {
   const caseSource = props.job
     ? {
         characterId: props.job.characterId,
+        costLimitRM: props.job.costLimitRM,
         prompt: props.job.prompt,
+        sceneCount: props.job.sceneCount,
         topic: props.job.topic
       }
     : null;
@@ -1680,6 +1690,12 @@ function StageEditorPanel(props: {
               </option>
             ))}
           </select>
+        </Field>
+        <Field label="Scene count">
+          <input min={1} max={30} type="number" value={caseDraft?.sceneCount ?? 1} onChange={(event) => caseEditor.setDraftPatch({ sceneCount: Number(event.target.value) })} />
+        </Field>
+        <Field label="Budget limit RM">
+          <input min={0.1} step={0.1} type="number" value={caseDraft?.costLimitRM ?? 0} onChange={(event) => caseEditor.setDraftPatch({ costLimitRM: Number(event.target.value) })} />
         </Field>
         <Field label="Main prompt / production brief">
           <textarea rows={4} value={caseDraft?.prompt ?? ""} onChange={(event) => caseEditor.setDraftPatch({ prompt: event.target.value })} />
