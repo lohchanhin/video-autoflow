@@ -1,4 +1,4 @@
-import type { ContentTemplateType, GeneratedImageAsset, GeneratedImageQualityCheck, GeneratedInterpretedIdea, GeneratedOutlineQualityCheck, GeneratedVisualBible, JobStatus } from "@ai-content-factory/shared-types";
+import type { ContentTemplateType, GeneratedImageAsset, GeneratedImageQualityCheck, GeneratedInterpretedIdea, GeneratedOutlineQualityCheck, GeneratedVisualBible, JobStatus, ProductionBrief } from "@ai-content-factory/shared-types";
 import {
   defaultStaffAgents,
   getAgentLabel,
@@ -13,6 +13,7 @@ import type { CharacterProfile } from "./admin-data.js";
 
 export interface AdminJob {
   backgroundAssetId: string | null;
+  characterAssetIds: string[];
   characterAssetId: string | null;
   characterId: string | null;
   id: string;
@@ -22,6 +23,9 @@ export interface AdminJob {
   episodeId: string | null;
   topic: string;
   prompt: string;
+  productionBrief: ProductionBrief | null;
+  sceneAssetIds: string[];
+  storyWorldId: string | null;
   genre: string;
   templateType: ContentTemplateType;
   language: "zh-CN" | "en-US";
@@ -41,6 +45,7 @@ export interface AdminJob {
 
 export interface NewJobInput {
   backgroundAssetId?: string | null;
+  characterAssetIds?: string[] | undefined;
   characterAssetId?: string | null;
   characterId?: string | null;
   id?: string;
@@ -50,6 +55,9 @@ export interface NewJobInput {
   episodeId?: string | null;
   topic: string;
   prompt: string;
+  productionBrief?: ProductionBrief | null | undefined;
+  sceneAssetIds?: string[] | undefined;
+  storyWorldId?: string | null | undefined;
   genre?: string | undefined;
   templateType: AdminJob["templateType"];
   language: AdminJob["language"];
@@ -155,6 +163,7 @@ export function loadJobs(): AdminJob[] {
   return migratedJobs.map((job) => ({
     ...job,
     backgroundAssetId: job.backgroundAssetId ?? null,
+    characterAssetIds: Array.isArray(job.characterAssetIds) ? job.characterAssetIds : (job.characterAssetId ? [job.characterAssetId] : []),
     characterAssetId: job.characterAssetId ?? null,
     characterId: job.characterId ?? null,
     episodeId: job.episodeId ?? null,
@@ -162,10 +171,13 @@ export function loadJobs(): AdminJob[] {
     interpretedIdea: job.interpretedIdea ?? null,
     outlineQc: job.outlineQc ?? null,
     prompt: job.prompt ?? "",
+    productionBrief: job.productionBrief ?? null,
     reviewStatus: job.reviewStatus ?? (job.status === "READY_TO_UPLOAD" || job.status === "QC_PASSED" ? "needs_review" : "draft"),
     scheduleId: job.scheduleId ?? null,
+    sceneAssetIds: Array.isArray(job.sceneAssetIds) ? job.sceneAssetIds : (job.backgroundAssetId ? [job.backgroundAssetId] : []),
     seriesId: job.seriesId ?? null,
     source: job.source ?? "manual",
+    storyWorldId: job.storyWorldId ?? null,
     visualBible: job.visualBible ?? null
   }));
 }
@@ -180,6 +192,7 @@ export function createJob(input: NewJobInput): AdminJob {
   return {
     id: input.id ?? createId("job"),
     backgroundAssetId: input.backgroundAssetId ?? null,
+    characterAssetIds: input.characterAssetIds ?? (input.characterAssetId ? [input.characterAssetId] : []),
     characterAssetId: input.characterAssetId ?? null,
     characterId: input.characterId ?? null,
     source: input.source ?? "manual",
@@ -188,6 +201,9 @@ export function createJob(input: NewJobInput): AdminJob {
     episodeId: input.episodeId ?? null,
     topic: input.topic,
     prompt: input.prompt,
+    productionBrief: input.productionBrief ?? null,
+    sceneAssetIds: input.sceneAssetIds ?? (input.backgroundAssetId ? [input.backgroundAssetId] : []),
+    storyWorldId: input.storyWorldId ?? null,
     genre: input.genre?.trim() || getTemplateGenreLabel(input.templateType),
     templateType: input.templateType,
     language: input.language,

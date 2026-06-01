@@ -130,7 +130,7 @@ describe("POST /generation/script", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.interpretedIdea.expandedPremise).toContain("旧录影机");
     expect(response.interpretedIdea.expandedPremise).not.toBe(topic);
-    expect(response.outlineQc.status).toBe("pass");
+    expect(response.outlineQc.status, JSON.stringify(response.outlineQc, null, 2)).toBe("pass");
     expect(response.requiresReview).toBe(false);
     const visibleOutput = [
       response.script.title,
@@ -188,8 +188,80 @@ describe("POST /generation/script", () => {
     expect(response.script.hook.toLowerCase()).not.toContain("curse");
     expect(response.script.hook).not.toContain("传闻");
     expect(response.interpretedIdea.genre).toContain("comedy");
-    expect(response.outlineQc.status).toBe("pass");
+    expect(response.outlineQc.status, JSON.stringify(response.outlineQc, null, 2)).toBe("pass");
     expect(response.visualBible.character.name).toBe("Kai");
+  });
+
+  it("uses structured production brief characters and scenes as script constraints", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-production-brief-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({
+      output_text: JSON.stringify(buildGoodStructuredBriefDraft()),
+      usage: {
+        input_tokens: 160,
+        output_tokens: 260
+      }
+    }), { status: 200 }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const scriptStoryService = createScriptStoryService({
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-test",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await scriptStoryService.generateScriptStory({
+      costLimitRM: 7.5,
+      durationSeconds: 60,
+      jobId: "job_production_brief_test",
+      language: "zh-CN",
+      productionBrief: {
+        goal: "生成一集围绕诚实选择的短剧",
+        lessonOrTheme: "诚实",
+        selectedCharacters: [
+          {
+            assetId: "asset_rabbit",
+            label: "兔子米米",
+            role: "主角",
+            visualIdentity: "白色小兔，粉色蝴蝶结，善良但会紧张"
+          }
+        ],
+        selectedScenes: [
+          {
+            assetId: "asset_rainbow_forest",
+            label: "彩虹森林",
+            location: "彩虹森林小教室",
+            visualRules: "柔和童话森林，彩虹拱门，小木桌，蘑菇路牌"
+          }
+        ],
+        storyWorldContext: {
+          description: "彩虹森林里，动物同学每天用小事件学习生活选择。",
+          name: "彩虹森林"
+        },
+        visualContinuityRules: ["必须使用兔子米米", "必须发生在彩虹森林"]
+      },
+      prompt: "使用已选角色和场景，不要换主角或地点。",
+      sceneCount: 3,
+      templateType: "fairy_tale",
+      topic: "不是我的错"
+    });
+
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as { input?: string };
+    expect(requestBody.input).toContain("Structured productionBrief is authoritative");
+    expect(requestBody.input).toContain("兔子米米");
+    expect(requestBody.input).toContain("彩虹森林");
+    expect(response.outlineQc.status, JSON.stringify(response.outlineQc, null, 2)).toBe("pass");
+    expect(response.script.title).toContain("兔子米米");
+    expect(response.storyboard.map((scene) => scene.visual).join("\n")).toContain("彩虹森林");
   });
 });
 
@@ -351,6 +423,89 @@ function buildGoodComedyDraft(topic: string) {
       },
       negativePrompt: "no text, no panels",
       style: "single cinematic comedy still"
+    }
+  };
+}
+
+function buildGoodStructuredBriefDraft() {
+  return {
+    backgroundMusic: {
+      enabled: true,
+      instrumentation: "木琴、轻柔弦乐",
+      mood: "温暖、轻快",
+      prompt: "适合彩虹森林诚实主题的温暖儿童短剧配乐，无人声。",
+      style: "温暖童话短剧",
+      tempo: "medium"
+    },
+    interpretedIdea: {
+      centralObject: "掉落的彩色画框",
+      conflict: "兔子米米撞倒画框后想躲起来，但诚实主题推动她主动承认。",
+      endingHook: "猫头鹰老师问观众，如果是你会怎么做。",
+      escalation: "彩虹森林同学开始找原因，米米越来越不安。",
+      expandedPremise: "在彩虹森林，兔子米米不小心撞倒画框，她必须在害怕被责怪和诚实承认之间做选择。",
+      genre: "温和教育短剧",
+      logline: "兔子米米在彩虹森林学会诚实承认错误。",
+      protagonist: "兔子米米",
+      rawTopic: "不是我的错",
+      ruleOrConstraint: "不能换主角，不能离开彩虹森林。",
+      setting: "彩虹森林小教室",
+      twist: "老师没有责怪米米，而是肯定她的诚实。"
+    },
+    script: {
+      hook: "兔子米米在彩虹森林撞倒了最漂亮的画框，她第一句话差点说：不是我的错。",
+      title: "兔子米米：不是我的错",
+      voiceover: "彩虹森林的小教室里，兔子米米追着蝴蝶跑过小木桌。砰的一声，彩色画框掉在软草地上。米米吓得耳朵都竖起来，悄悄坐回座位。朋友问是谁碰倒的，她低下头，心里越来越难受。猫头鹰老师回来后没有生气，只问谁愿意说实话。米米站起来说，对不起，是我不小心。老师微笑着说，诚实承认错误，比假装没发生更勇敢。"
+    },
+    storyboard: [
+      {
+        camera: "wide shot",
+        durationSeconds: 10,
+        imagePrompt: "兔子米米在彩虹森林小教室追蝴蝶，彩虹拱门和小木桌清楚可见，单一电影画面，无文字。",
+        sceneId: 1,
+        sfx: ["轻快脚步", "蝴蝶拍翅"],
+        visual: "兔子米米在彩虹森林小教室追蝴蝶，跑过小木桌。",
+        voiceText: "彩虹森林的小教室里，兔子米米追着蝴蝶跑过小木桌。"
+      },
+      {
+        camera: "medium shot",
+        durationSeconds: 12,
+        imagePrompt: "兔子米米看着彩虹森林小教室里掉落的彩色画框，表情紧张，单一电影画面，无文字。",
+        sceneId: 2,
+        sfx: ["轻微碰撞", "短暂停顿"],
+        visual: "彩色画框掉在彩虹森林小教室地上，兔子米米紧张地看着。",
+        voiceText: "砰的一声，彩色画框掉在软草地上。米米吓得耳朵都竖起来。"
+      },
+      {
+        camera: "close up",
+        durationSeconds: 14,
+        imagePrompt: "兔子米米在彩虹森林小教室向猫头鹰老师承认错误，老师温柔微笑，单一电影画面，无文字。",
+        sceneId: 3,
+        sfx: ["温暖提示音"],
+        visual: "兔子米米在彩虹森林小教室站起来，向猫头鹰老师诚实承认。",
+        voiceText: "米米站起来说，对不起，是我不小心。诚实承认错误，比假装没发生更勇敢。"
+      }
+    ],
+    visualBible: {
+      character: {
+        ageRange: "fictional childlike rabbit character",
+        bodyType: "small round mascot body",
+        expressionRange: "nervous, relieved, brave",
+        fixedProps: ["pink bow"],
+        hair: "white fluffy fur",
+        name: "兔子米米",
+        role: "主角",
+        signatureDetails: "白色小兔、粉色蝴蝶结、蓝色背带裙",
+        wardrobe: "蓝色背带裙和粉色蝴蝶结"
+      },
+      environment: {
+        keyObjects: ["彩虹拱门", "小木桌", "彩色画框"],
+        lighting: "soft daylight",
+        location: "彩虹森林小教室",
+        palette: "pastel rainbow colors",
+        recurringDetails: "彩虹森林拱门和蘑菇路牌"
+      },
+      negativePrompt: "no text, no captions, no UI, no panels",
+      style: "single vertical storybook cinematic still"
     }
   };
 }

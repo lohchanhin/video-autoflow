@@ -93,9 +93,15 @@ describe("series API", () => {
 
   it("converts approved episode ideas into a case seed", async () => {
     const series = createSeries({
-      referenceAssetIds: ["asset_character", "asset_scene"]
+      referenceAssetIds: ["asset_character", "asset_scene"],
+      storyWorldId: "world_001"
     });
-    const episode = createEpisode({ status: "approved" });
+    const episode = createEpisode({
+      lessonOrTheme: "è¯šå®ž",
+      selectedCharacterAssetIds: ["asset_character"],
+      selectedSceneAssetIds: ["asset_scene"],
+      status: "approved"
+    });
     const convertedEpisode = {
       ...episode,
       caseId: "job_abc123",
@@ -116,6 +122,15 @@ describe("series API", () => {
       caseSeed: {
         episodeId: episode._id,
         id: "job_abc123",
+        characterAssetIds: ["asset_character"],
+        sceneAssetIds: ["asset_scene"],
+        storyWorldId: "world_001",
+        productionBrief: expect.objectContaining({
+          lessonOrTheme: "è¯šå®ž",
+          selectedCharacters: [expect.objectContaining({ assetId: "asset_character" })],
+          selectedScenes: [expect.objectContaining({ assetId: "asset_scene" })],
+          storyWorldContext: expect.objectContaining({ storyWorldId: "world_001" })
+        }),
         referenceAssetIds: ["asset_character", "asset_scene"],
         seriesId: series._id,
         templateType: "urban_legend",
@@ -162,6 +177,7 @@ function createSeries(overrides: Partial<ContentSeries> = {}): ContentSeries {
     safetyRules: overrides.safetyRules ?? "原创、不夸大收益、不伪造真实案例。",
     sceneCount: overrides.sceneCount ?? 5,
     status: overrides.status ?? "draft",
+    storyWorldId: overrides.storyWorldId ?? null,
     tone: overrides.tone ?? "专业、清楚、有案例感",
     updatedAt: overrides.updatedAt ?? now,
     values: overrides.values ?? "实用、可信、可落地",
@@ -177,10 +193,15 @@ function createEpisode(overrides: Partial<SeriesEpisodeIdea> = {}): SeriesEpisod
     ageRange: overrides.ageRange ?? "创业者",
     caseId: overrides.caseId ?? null,
     createdAt: overrides.createdAt ?? now,
+    episodeNo: overrides.episodeNo ?? 1,
+    interactiveEnding: overrides.interactiveEnding ?? "å¦‚æžœæ˜¯ä½ ï¼Œä½ ä¼šåœ¨å“ªä¸ªçŽ¯èŠ‚å¢žåŠ äººå·¥å®¡æ ¸ï¼Ÿ",
+    lessonOrTheme: overrides.lessonOrTheme ?? "è‡ªåŠ¨åŒ–ä¹Ÿéœ€è¦å®¡æ ¸èŠ‚ç‚¹",
     moralLesson: overrides.moralLesson ?? "理解 AI 自动化的真实边界",
     promptSeed: overrides.promptSeed ?? "小团队误用自动化导致内容出错，最后建立人工审核节点。",
     riskNotes: overrides.riskNotes ?? "低风险",
     seriesId: overrides.seriesId ?? "series_001",
+    selectedCharacterAssetIds: overrides.selectedCharacterAssetIds ?? [],
+    selectedSceneAssetIds: overrides.selectedSceneAssetIds ?? [],
     sourceStory: overrides.sourceStory ?? "原创商业场景",
     status: overrides.status ?? "draft",
     synopsis: overrides.synopsis ?? "团队从盲目自动化改成关键节点审核，效率和质量都提升。",
@@ -194,10 +215,15 @@ function createEpisodeFromInput(input: SeriesEpisodeIdeaCreateInput, id: string)
     _id: id,
     ageRange: input.ageRange ?? "",
     caseId: input.caseId ?? null,
+    episodeNo: input.episodeNo ?? 1,
+    interactiveEnding: input.interactiveEnding ?? "",
+    lessonOrTheme: input.lessonOrTheme ?? "",
     moralLesson: input.moralLesson,
     promptSeed: input.promptSeed,
     riskNotes: input.riskNotes ?? "",
     seriesId: input.seriesId ?? "series_001",
+    selectedCharacterAssetIds: input.selectedCharacterAssetIds ?? [],
+    selectedSceneAssetIds: input.selectedSceneAssetIds ?? [],
     sourceStory: input.sourceStory ?? "",
     status: input.status ?? "draft",
     synopsis: input.synopsis,

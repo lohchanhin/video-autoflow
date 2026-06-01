@@ -30,6 +30,8 @@ import type {
   ProviderSecretStatusResponse,
   SeriesEpisodeIdea,
   SeriesEpisodeIdeaResponse,
+  StoryWorld,
+  StoryWorldResponse,
   ToolProviderOverride,
   TrendScanRequest,
   TrendScanResponse
@@ -277,6 +279,7 @@ export async function generateScriptStory(job: AdminJob, tool?: ToolProviderOver
     jobId: job.id,
     language: job.language,
     prompt: job.prompt,
+    productionBrief: job.productionBrief ?? undefined,
     sceneCount: job.sceneCount,
     templateType: job.templateType,
     topic: job.topic,
@@ -286,7 +289,7 @@ export async function generateScriptStory(job: AdminJob, tool?: ToolProviderOver
 
 export async function generateScriptStoryFromInput(input: GenerateScriptStoryRequest, tool?: ToolProviderOverride | undefined): Promise<GenerateScriptStoryResponse> {
   return fetchJson<GenerateScriptStoryResponse>(
-    "/generation/script",
+    "/cases/draft-outline",
     {
       body: JSON.stringify({ ...input, ...tool }),
       headers: {
@@ -296,6 +299,51 @@ export async function generateScriptStoryFromInput(input: GenerateScriptStoryReq
     },
     "Script generation failed"
   );
+}
+
+export async function listStoryWorlds(): Promise<{ storyWorlds: StoryWorld[]; timestamp: string }> {
+  return fetchJson(`/story-worlds`, undefined, "Story worlds load failed");
+}
+
+export async function createStoryWorld(input: Omit<StoryWorld, "_id" | "createdAt" | "updatedAt"> & { id?: string | undefined }): Promise<StoryWorldResponse> {
+  return fetchJson<StoryWorldResponse>(
+    "/story-worlds",
+    {
+      body: JSON.stringify(input),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    },
+    "Story world create failed"
+  );
+}
+
+export async function patchStoryWorld(id: string, patch: Partial<Omit<StoryWorld, "_id" | "createdAt" | "updatedAt">>): Promise<StoryWorldResponse> {
+  return fetchJson<StoryWorldResponse>(
+    `/story-worlds/${encodeURIComponent(id)}`,
+    {
+      body: JSON.stringify(patch),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "PATCH"
+    },
+    "Story world update failed"
+  );
+}
+
+export async function deleteStoryWorld(id: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/story-worlds/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
+
+  if (!response) {
+    throw new Error(`Story world delete failed: API server is offline at ${apiBaseUrl}.`);
+  }
+
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    throw new Error(errorBody?.error?.message ?? `Story world delete failed with HTTP ${response.status}.`);
+  }
 }
 
 export async function generateQcReport(job: AdminJob, artifacts: {

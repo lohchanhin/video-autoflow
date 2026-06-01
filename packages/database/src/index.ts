@@ -12,7 +12,8 @@ import type {
   ProductionAssetStatus,
   ProductionAssetType,
   SeriesEpisodeIdea,
-  SeriesEpisodeIdeaStatus
+  SeriesEpisodeIdeaStatus,
+  StoryWorld
 } from "@ai-content-factory/shared-types";
 
 export interface MongoDatabaseConfig {
@@ -184,6 +185,7 @@ export function createCostLogsRepository(connection: MongoDatabaseConnection): C
 
 export type ContentSeriesDocument = ContentSeries & Document;
 export type SeriesEpisodeIdeaDocument = SeriesEpisodeIdea & Document;
+export type StoryWorldDocument = StoryWorld & Document;
 
 export interface ContentSeriesCreateInput {
   audience?: string | undefined;
@@ -198,6 +200,7 @@ export interface ContentSeriesCreateInput {
   safetyRules?: string | undefined;
   sceneCount?: number | undefined;
   status?: ContentSeriesStatus | undefined;
+  storyWorldId?: string | null | undefined;
   tone?: string | undefined;
   values?: string | undefined;
   visualStyle?: string | undefined;
@@ -215,6 +218,7 @@ export interface ContentSeriesPatchInput {
   safetyRules?: string | undefined;
   sceneCount?: number | undefined;
   status?: ContentSeriesStatus | undefined;
+  storyWorldId?: string | null | undefined;
   tone?: string | undefined;
   values?: string | undefined;
   visualStyle?: string | undefined;
@@ -223,10 +227,15 @@ export interface ContentSeriesPatchInput {
 export interface SeriesEpisodeIdeaCreateInput {
   ageRange?: string | undefined;
   caseId?: string | null | undefined;
+  episodeNo?: number | null | undefined;
   id?: string | undefined;
+  interactiveEnding?: string | undefined;
+  lessonOrTheme?: string | undefined;
   moralLesson: string;
   promptSeed: string;
   riskNotes?: string | undefined;
+  selectedCharacterAssetIds?: string[] | undefined;
+  selectedSceneAssetIds?: string[] | undefined;
   seriesId?: string | undefined;
   sourceStory?: string | undefined;
   status?: SeriesEpisodeIdeaStatus | undefined;
@@ -237,9 +246,14 @@ export interface SeriesEpisodeIdeaCreateInput {
 export interface SeriesEpisodeIdeaPatchInput {
   ageRange?: string | undefined;
   caseId?: string | null | undefined;
+  episodeNo?: number | null | undefined;
+  interactiveEnding?: string | undefined;
+  lessonOrTheme?: string | undefined;
   moralLesson?: string | undefined;
   promptSeed?: string | undefined;
   riskNotes?: string | undefined;
+  selectedCharacterAssetIds?: string[] | undefined;
+  selectedSceneAssetIds?: string[] | undefined;
   sourceStory?: string | undefined;
   status?: SeriesEpisodeIdeaStatus | undefined;
   synopsis?: string | undefined;
@@ -257,6 +271,40 @@ export interface ContentSeriesRepository {
   listSeries(): Promise<ContentSeries[]>;
   patchEpisodeIdea(seriesId: string, episodeId: string, patch: SeriesEpisodeIdeaPatchInput): Promise<SeriesEpisodeIdea | null>;
   patchSeries(id: string, patch: ContentSeriesPatchInput): Promise<ContentSeries | null>;
+}
+
+export interface StoryWorldCreateInput {
+  defaultSceneAssetIds?: string[] | undefined;
+  description?: string | undefined;
+  id?: string | undefined;
+  name: string;
+  recurringCharacterAssetIds?: string[] | undefined;
+  relationshipMap?: string | undefined;
+  safetyRules?: string | undefined;
+  seriesIds?: string[] | undefined;
+  status?: StoryWorld["status"] | undefined;
+  visualStyle?: string | undefined;
+}
+
+export interface StoryWorldPatchInput {
+  defaultSceneAssetIds?: string[] | undefined;
+  description?: string | undefined;
+  name?: string | undefined;
+  recurringCharacterAssetIds?: string[] | undefined;
+  relationshipMap?: string | undefined;
+  safetyRules?: string | undefined;
+  seriesIds?: string[] | undefined;
+  status?: StoryWorld["status"] | undefined;
+  visualStyle?: string | undefined;
+}
+
+export interface StoryWorldsRepository {
+  create(input: StoryWorldCreateInput): Promise<StoryWorld>;
+  delete(id: string): Promise<boolean>;
+  ensureIndexes(): Promise<void>;
+  findById(id: string): Promise<StoryWorld | null>;
+  list(): Promise<StoryWorld[]>;
+  patch(id: string, patch: StoryWorldPatchInput): Promise<StoryWorld | null>;
 }
 
 export function createContentSeriesRepository(connection: MongoDatabaseConnection): ContentSeriesRepository {
@@ -357,6 +405,58 @@ export function createContentSeriesRepository(connection: MongoDatabaseConnectio
         { returnDocument: "after" }
       );
       return result ? stripContentSeriesDocument(result) : null;
+    }
+  };
+}
+
+export function createStoryWorldsRepository(connection: MongoDatabaseConnection): StoryWorldsRepository {
+  const collection = connection.collection<StoryWorldDocument>("story_worlds");
+
+  return {
+    async create(input: StoryWorldCreateInput): Promise<StoryWorld> {
+      await this.ensureIndexes();
+
+      const storyWorld = normalizeStoryWorld(input);
+      await collection.insertOne(storyWorld as StoryWorldDocument);
+      return storyWorld;
+    },
+
+    async delete(id: string): Promise<boolean> {
+      const result = await collection.deleteOne({ _id: id } as Filter<StoryWorldDocument>);
+      return result.deletedCount === 1;
+    },
+
+    async ensureIndexes(): Promise<void> {
+      await Promise.all([
+        collection.createIndex({ status: 1, updatedAt: -1 }),
+        collection.createIndex({ name: 1 }),
+        collection.createIndex({ seriesIds: 1 })
+      ]);
+    },
+
+    async findById(id: string): Promise<StoryWorld | null> {
+      const storyWorld = await collection.findOne({ _id: id } as Filter<StoryWorldDocument>);
+      return storyWorld ? stripStoryWorldDocument(storyWorld) : null;
+    },
+
+    async list(): Promise<StoryWorld[]> {
+      const storyWorlds = await collection.find({}).sort({ updatedAt: -1 }).toArray();
+      return storyWorlds.map(stripStoryWorldDocument);
+    },
+
+    async patch(id: string, patch: StoryWorldPatchInput): Promise<StoryWorld | null> {
+      const update = normalizeStoryWorldPatch(patch);
+
+      if (Object.keys(update).length === 0) {
+        return this.findById(id);
+      }
+
+      const result = await collection.findOneAndUpdate(
+        { _id: id } as Filter<StoryWorldDocument>,
+        { $set: { ...update, updatedAt: new Date().toISOString() } as Document },
+        { returnDocument: "after" }
+      );
+      return result ? stripStoryWorldDocument(result) : null;
     }
   };
 }
@@ -775,6 +875,7 @@ function normalizeContentSeries(input: ContentSeriesCreateInput, now = new Date(
     ),
     sceneCount: Math.max(3, Math.min(12, Math.round(numberOrDefault(input.sceneCount, 5)))),
     status: normalizeContentSeriesStatus(input.status ?? "draft"),
+    storyWorldId: normalizeNullableText(input.storyWorldId),
     tone: normalizeText(input.tone, ""),
     updatedAt: now,
     values: normalizeText(input.values, ""),
@@ -796,6 +897,7 @@ function normalizeContentSeriesPatch(patch: ContentSeriesPatchInput): ContentSer
   if (patch.safetyRules !== undefined) normalized.safetyRules = normalizeText(patch.safetyRules, "");
   if (patch.sceneCount !== undefined) normalized.sceneCount = Math.max(3, Math.min(12, Math.round(numberOrDefault(patch.sceneCount, 5))));
   if (patch.status !== undefined) normalized.status = normalizeContentSeriesStatus(patch.status);
+  if (patch.storyWorldId !== undefined) normalized.storyWorldId = normalizeNullableText(patch.storyWorldId);
   if (patch.tone !== undefined) normalized.tone = normalizeText(patch.tone, "");
   if (patch.values !== undefined) normalized.values = normalizeText(patch.values, "");
   if (patch.visualStyle !== undefined) normalized.visualStyle = normalizeText(patch.visualStyle, "");
@@ -809,9 +911,14 @@ function normalizeSeriesEpisodeIdea(input: SeriesEpisodeIdeaCreateInput, now = n
     ageRange: normalizeText(input.ageRange, ""),
     caseId: input.caseId === undefined || input.caseId === null ? null : normalizeText(input.caseId, ""),
     createdAt: now,
+    episodeNo: input.episodeNo === undefined || input.episodeNo === null ? null : Math.max(1, Math.round(numberOrDefault(input.episodeNo, 1))),
+    interactiveEnding: normalizeText(input.interactiveEnding, ""),
+    lessonOrTheme: normalizeText(input.lessonOrTheme, input.moralLesson),
     moralLesson: normalizeText(input.moralLesson, "核心看点待补充"),
     promptSeed: normalizeText(input.promptSeed, input.synopsis),
     riskNotes: normalizeText(input.riskNotes, "按系列安全规则复核。"),
+    selectedCharacterAssetIds: normalizeStringList(input.selectedCharacterAssetIds, 20),
+    selectedSceneAssetIds: normalizeStringList(input.selectedSceneAssetIds, 20),
     seriesId: normalizeText(input.seriesId, ""),
     sourceStory: normalizeText(input.sourceStory, "原创灵感"),
     status: normalizeSeriesEpisodeIdeaStatus(input.status ?? "draft"),
@@ -826,9 +933,14 @@ function normalizeSeriesEpisodeIdeaPatch(patch: SeriesEpisodeIdeaPatchInput): Se
 
   if (patch.ageRange !== undefined) normalized.ageRange = normalizeText(patch.ageRange, "");
   if (patch.caseId !== undefined) normalized.caseId = patch.caseId === null ? null : normalizeText(patch.caseId, "");
+  if (patch.episodeNo !== undefined) normalized.episodeNo = patch.episodeNo === null ? null : Math.max(1, Math.round(numberOrDefault(patch.episodeNo, 1)));
+  if (patch.interactiveEnding !== undefined) normalized.interactiveEnding = normalizeText(patch.interactiveEnding, "");
+  if (patch.lessonOrTheme !== undefined) normalized.lessonOrTheme = normalizeText(patch.lessonOrTheme, "");
   if (patch.moralLesson !== undefined) normalized.moralLesson = normalizeText(patch.moralLesson, "");
   if (patch.promptSeed !== undefined) normalized.promptSeed = normalizeText(patch.promptSeed, "");
   if (patch.riskNotes !== undefined) normalized.riskNotes = normalizeText(patch.riskNotes, "");
+  if (patch.selectedCharacterAssetIds !== undefined) normalized.selectedCharacterAssetIds = normalizeStringList(patch.selectedCharacterAssetIds, 20);
+  if (patch.selectedSceneAssetIds !== undefined) normalized.selectedSceneAssetIds = normalizeStringList(patch.selectedSceneAssetIds, 20);
   if (patch.sourceStory !== undefined) normalized.sourceStory = normalizeText(patch.sourceStory, "");
   if (patch.status !== undefined) normalized.status = normalizeSeriesEpisodeIdeaStatus(patch.status);
   if (patch.synopsis !== undefined) normalized.synopsis = normalizeText(patch.synopsis, "");
@@ -851,6 +963,7 @@ function stripContentSeriesDocument(series: ContentSeriesDocument): ContentSerie
     safetyRules: series.safetyRules,
     sceneCount: series.sceneCount,
     status: normalizeContentSeriesStatus(series.status),
+    storyWorldId: series.storyWorldId ?? null,
     tone: series.tone,
     values: series.values,
     visualStyle: series.visualStyle
@@ -866,10 +979,15 @@ function stripSeriesEpisodeIdeaDocument(episode: SeriesEpisodeIdeaDocument): Ser
   const normalized = normalizeSeriesEpisodeIdea({
     ageRange: episode.ageRange,
     caseId: episode.caseId ?? null,
+    episodeNo: episode.episodeNo ?? null,
     id: String(episode._id),
+    interactiveEnding: episode.interactiveEnding,
+    lessonOrTheme: episode.lessonOrTheme,
     moralLesson: episode.moralLesson,
     promptSeed: episode.promptSeed,
     riskNotes: episode.riskNotes,
+    selectedCharacterAssetIds: normalizeStringList(episode.selectedCharacterAssetIds, 20),
+    selectedSceneAssetIds: normalizeStringList(episode.selectedSceneAssetIds, 20),
     seriesId: episode.seriesId,
     sourceStory: episode.sourceStory,
     status: normalizeSeriesEpisodeIdeaStatus(episode.status),
@@ -883,8 +1001,69 @@ function stripSeriesEpisodeIdeaDocument(episode: SeriesEpisodeIdeaDocument): Ser
   };
 }
 
+function normalizeStoryWorld(input: StoryWorldCreateInput, now = new Date().toISOString()): StoryWorld {
+  return {
+    _id: input.id ?? `world_${randomUUID()}`,
+    createdAt: now,
+    defaultSceneAssetIds: normalizeStringList(input.defaultSceneAssetIds, 50),
+    description: normalizeText(input.description, ""),
+    name: normalizeText(input.name, "未命名世界观"),
+    recurringCharacterAssetIds: normalizeStringList(input.recurringCharacterAssetIds, 50),
+    relationshipMap: normalizeText(input.relationshipMap, ""),
+    safetyRules: normalizeText(input.safetyRules, ""),
+    seriesIds: normalizeStringList(input.seriesIds, 50),
+    status: normalizeStoryWorldStatus(input.status ?? "draft"),
+    updatedAt: now,
+    visualStyle: normalizeText(input.visualStyle, "")
+  };
+}
+
+function normalizeStoryWorldPatch(patch: StoryWorldPatchInput): StoryWorldPatchInput {
+  const normalized: StoryWorldPatchInput = {};
+
+  if (patch.defaultSceneAssetIds !== undefined) normalized.defaultSceneAssetIds = normalizeStringList(patch.defaultSceneAssetIds, 50);
+  if (patch.description !== undefined) normalized.description = normalizeText(patch.description, "");
+  if (patch.name !== undefined) normalized.name = normalizeText(patch.name, "未命名世界观");
+  if (patch.recurringCharacterAssetIds !== undefined) normalized.recurringCharacterAssetIds = normalizeStringList(patch.recurringCharacterAssetIds, 50);
+  if (patch.relationshipMap !== undefined) normalized.relationshipMap = normalizeText(patch.relationshipMap, "");
+  if (patch.safetyRules !== undefined) normalized.safetyRules = normalizeText(patch.safetyRules, "");
+  if (patch.seriesIds !== undefined) normalized.seriesIds = normalizeStringList(patch.seriesIds, 50);
+  if (patch.status !== undefined) normalized.status = normalizeStoryWorldStatus(patch.status);
+  if (patch.visualStyle !== undefined) normalized.visualStyle = normalizeText(patch.visualStyle, "");
+
+  return normalized;
+}
+
+function stripStoryWorldDocument(storyWorld: StoryWorldDocument): StoryWorld {
+  const normalized = normalizeStoryWorld({
+    defaultSceneAssetIds: normalizeStringList(storyWorld.defaultSceneAssetIds, 50),
+    description: storyWorld.description,
+    id: String(storyWorld._id),
+    name: storyWorld.name,
+    recurringCharacterAssetIds: normalizeStringList(storyWorld.recurringCharacterAssetIds, 50),
+    relationshipMap: storyWorld.relationshipMap,
+    safetyRules: storyWorld.safetyRules,
+    seriesIds: normalizeStringList(storyWorld.seriesIds, 50),
+    status: normalizeStoryWorldStatus(storyWorld.status),
+    visualStyle: storyWorld.visualStyle
+  }, storyWorld.createdAt);
+
+  return {
+    ...normalized,
+    updatedAt: storyWorld.updatedAt ?? normalized.updatedAt
+  };
+}
+
 function normalizeContentSeriesStatus(value: string): ContentSeriesStatus {
   if (value === "active" || value === "paused" || value === "archived") {
+    return value;
+  }
+
+  return "draft";
+}
+
+function normalizeStoryWorldStatus(value: string): StoryWorld["status"] {
+  if (value === "active" || value === "archived") {
     return value;
   }
 
@@ -905,6 +1084,10 @@ function normalizeSeriesLanguage(value: unknown): ContentSeries["language"] {
 
 function normalizeText(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeNullableText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeStringList(value: unknown, limit: number): string[] {

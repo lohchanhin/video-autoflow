@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Sparkles, Square, UserRound, X } from "lucide-react";
-import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
+import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea, StoryWorld } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
@@ -18,9 +18,18 @@ interface CasesPageProps {
   costLimitRM: number;
   characters: CharacterProfile[];
   draftBackgroundAssetId: string | null;
+  draftCharacterAssetIds: string[];
   draftCharacterId: string | null;
   draftCharacterAssetId: string | null;
+  draftSceneAssetIds: string[];
   draftReferenceAssets: ProductionAsset[];
+  draftSeriesId: string;
+  draftEpisodeId: string;
+  draftStoryWorldId: string;
+  draftLessonOrTheme: string;
+  draftGoal: string;
+  draftConflict: string;
+  draftTone: string;
   jobs: AdminJob[];
   language: AdminJob["language"];
   prompt: string;
@@ -37,6 +46,7 @@ interface CasesPageProps {
   selectedRecords: JobProcessRecord[];
   series: ContentSeries[];
   seriesEpisodes: SeriesEpisodeIdea[];
+  storyWorlds: StoryWorld[];
   publishingTargets: PublishingTarget[];
   productionSchedules: ProductionSchedule[];
   storedVideos: StoredVideo[];
@@ -82,8 +92,17 @@ interface CasesPageProps {
   setTemplateType: (value: AdminJob["templateType"]) => void;
   setTopic: (value: string) => void;
   setDraftBackgroundAssetId: (id: string | null) => void;
+  setDraftCharacterAssetIds: (ids: string[]) => void;
   setDraftCharacterAssetId: (id: string | null) => void;
   setDraftCharacterId: (id: string | null) => void;
+  setDraftSceneAssetIds: (ids: string[]) => void;
+  setDraftSeriesId: (id: string) => void;
+  setDraftEpisodeId: (id: string) => void;
+  setDraftStoryWorldId: (id: string) => void;
+  setDraftLessonOrTheme: (value: string) => void;
+  setDraftGoal: (value: string) => void;
+  setDraftConflict: (value: string) => void;
+  setDraftTone: (value: string) => void;
   updateCaseDetails: (id: string, patch: Partial<Pick<AdminJob, "backgroundAssetId" | "characterAssetId" | "characterId" | "costLimitRM" | "prompt" | "sceneCount" | "topic">>) => void;
   updateJob: (id: string, updater: (job: AdminJob) => AdminJob) => void;
   updateProcessRecord: (id: string, updater: (record: JobProcessRecord) => JobProcessRecord) => void;
@@ -215,8 +234,16 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
   const backgroundAssets = props.draftReferenceAssets
     .filter((asset) => isSelectableDraftAsset(asset) && (asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame"))
     .sort((left, right) => left.label.localeCompare(right.label));
-  const selectedCharacterAsset = characterAssets.find((asset) => asset._id === props.draftCharacterAssetId) ?? null;
-  const selectedBackgroundAsset = backgroundAssets.find((asset) => asset._id === props.draftBackgroundAssetId) ?? null;
+  const effectiveEpisodes = props.draftSeriesId
+    ? props.seriesEpisodes.filter((episode) => episode.seriesId === props.draftSeriesId)
+    : props.seriesEpisodes;
+  const selectedSeries = props.draftSeriesId ? props.series.find((series) => series._id === props.draftSeriesId) ?? null : null;
+  const selectedEpisode = props.draftEpisodeId ? props.seriesEpisodes.find((episode) => episode._id === props.draftEpisodeId) ?? null : null;
+  const selectedStoryWorld = props.draftStoryWorldId
+    ? props.storyWorlds.find((storyWorld) => storyWorld._id === props.draftStoryWorldId) ?? null
+    : selectedSeries?.storyWorldId ? props.storyWorlds.find((storyWorld) => storyWorld._id === selectedSeries.storyWorldId) ?? null : null;
+  const selectedCharacterIds = props.draftCharacterAssetIds.length > 0 ? props.draftCharacterAssetIds : [props.draftCharacterAssetId].filter((id): id is string => Boolean(id));
+  const selectedSceneIds = props.draftSceneAssetIds.length > 0 ? props.draftSceneAssetIds : [props.draftBackgroundAssetId].filter((id): id is string => Boolean(id));
 
   return (
     <section className="case-create-workspace">
@@ -230,6 +257,46 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
       >
         <SectionHeader eyebrow="Create case" title="输入一句话，AI 自动产出大纲" />
         <div className="simple-case-form">
+          <section className="brief-section">
+            <div className="brief-section-title">
+              <strong>1. 选择来源 / 可留空</strong>
+              <span>单支影片、系列题库、世界观都走同一个结构化 Brief，不写死题材。</span>
+            </div>
+            <div className="case-brief-grid">
+              <Field label="系列 / Series">
+                <select value={props.draftSeriesId} onChange={(event) => {
+                  props.setDraftSeriesId(event.target.value);
+                  props.setDraftEpisodeId("");
+                }}>
+                  <option value="">单支影片，不绑定系列</option>
+                  {props.series.map((series) => <option key={series._id} value={series._id}>{series.name}</option>)}
+                </select>
+              </Field>
+              <Field label="单集题库 / Episode">
+                <select value={props.draftEpisodeId} onChange={(event) => props.setDraftEpisodeId(event.target.value)}>
+                  <option value="">不使用题库，手动输入本集方向</option>
+                  {effectiveEpisodes.map((episode) => (
+                    <option key={episode._id} value={episode._id}>
+                      {episode.episodeNo ? `第 ${episode.episodeNo} 集：` : ""}{episode.title}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="背景故事 / Story World">
+                <select value={props.draftStoryWorldId} onChange={(event) => props.setDraftStoryWorldId(event.target.value)}>
+                  <option value="">不指定，或继承系列绑定</option>
+                  {props.storyWorlds.map((storyWorld) => <option key={storyWorld._id} value={storyWorld._id}>{storyWorld.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            {selectedSeries || selectedEpisode || selectedStoryWorld ? (
+              <div className="brief-context-strip">
+                {selectedSeries ? <span>系列：{selectedSeries.name}</span> : null}
+                {selectedEpisode ? <span>单集：{selectedEpisode.lessonOrTheme || selectedEpisode.moralLesson}</span> : null}
+                {selectedStoryWorld ? <span>世界观：{selectedStoryWorld.name}</span> : null}
+              </div>
+            ) : null}
+          </section>
           <Field label="你想做什么影片？">
             <textarea
               autoFocus
@@ -239,26 +306,56 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
               onChange={(event) => props.setTopic(event.target.value)}
             />
           </Field>
-          <div className="draft-reference-grid">
-            <DraftReferenceSelect
-              assets={characterAssets}
-              emptyText="不指定角色，AI 自动设计"
-              icon={<UserRound size={17} />}
-              label="角色参考图（可选）"
-              selectedAsset={selectedCharacterAsset}
-              value={props.draftCharacterAssetId ?? ""}
-              onChange={(id) => props.setDraftCharacterAssetId(id || null)}
-            />
-            <DraftReferenceSelect
-              assets={backgroundAssets}
-              emptyText="不指定背景，AI 自动设计"
-              icon={<ImageIcon size={17} />}
-              label="背景 / 场景参考图（可选）"
-              selectedAsset={selectedBackgroundAsset}
-              value={props.draftBackgroundAssetId ?? ""}
-              onChange={(id) => props.setDraftBackgroundAssetId(id || null)}
-            />
-          </div>
+          <section className="brief-section">
+            <div className="brief-section-title">
+              <strong>2. 选择角色与场景资产 / 可多选</strong>
+              <span>脚本、分镜、图片 prompt 会读取这些资产的角色特质和场景定义。</span>
+            </div>
+            <div className="case-brief-grid two">
+              <AssetMultiSelect
+                assets={characterAssets}
+                emptyText="未选择角色，AI 会自动设计"
+                icon={<UserRound size={17} />}
+                label="出场角色"
+                selectedIds={selectedCharacterIds}
+                onChange={(ids) => {
+                  props.setDraftCharacterAssetIds(ids);
+                  props.setDraftCharacterAssetId(ids[0] ?? null);
+                }}
+              />
+              <AssetMultiSelect
+                assets={backgroundAssets}
+                emptyText="未选择场景，AI 会自动设计"
+                icon={<ImageIcon size={17} />}
+                label="场景设定 / 背景"
+                selectedIds={selectedSceneIds}
+                onChange={(ids) => {
+                  props.setDraftSceneAssetIds(ids);
+                  props.setDraftBackgroundAssetId(ids[0] ?? null);
+                }}
+              />
+            </div>
+          </section>
+          <section className="brief-section">
+            <div className="brief-section-title">
+              <strong>3. 本集目标 / 可选</strong>
+              <span>例如教育主题、冲突、目标、语气。留空时按系列和输入自动补齐。</span>
+            </div>
+            <div className="case-brief-grid four">
+              <Field label="主题 / Lesson">
+                <input value={props.draftLessonOrTheme} placeholder="例如：诚实、分享、守信用" onChange={(event) => props.setDraftLessonOrTheme(event.target.value)} />
+              </Field>
+              <Field label="目标 / Goal">
+                <input value={props.draftGoal} placeholder="例如：主角学会承认错误" onChange={(event) => props.setDraftGoal(event.target.value)} />
+              </Field>
+              <Field label="冲突 / Conflict">
+                <input value={props.draftConflict} placeholder="例如：闯祸后想隐瞒" onChange={(event) => props.setDraftConflict(event.target.value)} />
+              </Field>
+              <Field label="语气 / Tone">
+                <input value={props.draftTone} placeholder="例如：温柔、轻松、适合全龄" onChange={(event) => props.setDraftTone(event.target.value)} />
+              </Field>
+            </div>
+          </section>
           {characterAssets.length === 0 && backgroundAssets.length === 0 ? (
             <div className="draft-reference-help">
               还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设定表；这里不选择也能继续生成。
@@ -298,6 +395,7 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
   );
 }
 
+/*
 function DraftReferenceSelect(props: {
   assets: ProductionAsset[];
   emptyText: string;
@@ -332,6 +430,54 @@ function DraftReferenceSelect(props: {
       ) : (
         <div className="draft-reference-empty">可留空，让 AI 根据一句话自动生成视觉设定。</div>
       )}
+    </div>
+  );
+}
+
+*/
+function AssetMultiSelect(props: {
+  assets: ProductionAsset[];
+  emptyText: string;
+  icon: ReactNode;
+  label: string;
+  onChange: (ids: string[]) => void;
+  selectedIds: string[];
+}) {
+  const selectedAssets = props.selectedIds
+    .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
+    .filter((asset): asset is ProductionAsset => Boolean(asset));
+
+  function toggleAsset(id: string) {
+    props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
+  }
+
+  return (
+    <div className="draft-reference-card asset-multi-select">
+      <div className="asset-multi-header">
+        <span>{props.icon}{props.label}</span>
+        <small>{selectedAssets.length > 0 ? `${selectedAssets.length} 已选` : props.emptyText}</small>
+      </div>
+      {props.assets.length === 0 ? (
+        <div className="draft-reference-empty">{props.emptyText}</div>
+      ) : (
+        <div className="asset-multi-options">
+          {props.assets.map((asset) => (
+            <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
+              <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
+              {asset.url ? <img alt={asset.label} src={asset.url} /> : <ImageIcon size={18} />}
+              <span>
+                <strong>{asset.label}</strong>
+                <small>{asset.folderName || asset.type}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      {selectedAssets.length > 0 ? (
+        <div className="brief-context-strip">
+          {selectedAssets.map((asset) => <span key={asset._id}>{asset.label}</span>)}
+        </div>
+      ) : null}
     </div>
   );
 }

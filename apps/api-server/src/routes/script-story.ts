@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { config } from "@ai-content-factory/config";
-import { contentTemplateTypes, type GenerateScriptStoryRequest } from "@ai-content-factory/shared-types";
+import { contentTemplateTypes, type GenerateScriptStoryRequest, type ProductionBrief } from "@ai-content-factory/shared-types";
 import type { StorageAdapter } from "@ai-content-factory/storage";
 import type { CostRecorder } from "../modules/costs/cost-recorder.js";
 import { createScriptStoryService, type ScriptStoryService } from "../modules/generation/script-story-service.js";
@@ -53,6 +53,15 @@ export function createScriptStoryRouter(options: CreateScriptStoryRouterOptions)
     }
   });
 
+  router.post("/cases/draft-outline", async (req: Request, res: Response, next) => {
+    try {
+      const response = await service.generateScriptStory(parseRequest(req.body));
+      res.status(201).json(response);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   return router;
 }
 
@@ -88,11 +97,20 @@ function parseRequest(body: unknown): GenerateScriptStoryRequest {
     jobId: optionalStringFromBody(body.jobId),
     language: body.language === "en-US" ? "en-US" : "zh-CN",
     prompt: stringFromBody(body.prompt, "prompt"),
+    productionBrief: parseProductionBrief(body.productionBrief),
     sceneCount: numberFromBody(body.sceneCount, 5),
     templateType: parseTemplateType(body.templateType),
     topic: stringFromBody(body.topic, "topic"),
     ...toolOverrideFromBody(body)
   };
+}
+
+function parseProductionBrief(value: unknown): ProductionBrief | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return value as ProductionBrief;
 }
 
 function toolOverrideFromBody(body: Record<string, unknown>) {

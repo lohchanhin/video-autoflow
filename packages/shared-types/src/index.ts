@@ -221,6 +221,7 @@ export interface ContentSeries {
   safetyRules: string;
   sceneCount: number;
   status: ContentSeriesStatus;
+  storyWorldId: string | null;
   tone: string;
   updatedAt: string;
   values: string;
@@ -232,15 +233,44 @@ export interface SeriesEpisodeIdea {
   ageRange: string;
   caseId: string | null;
   createdAt: string;
+  episodeNo: number | null;
+  interactiveEnding: string;
+  lessonOrTheme: string;
   moralLesson: string;
   promptSeed: string;
   riskNotes: string;
+  selectedCharacterAssetIds: string[];
+  selectedSceneAssetIds: string[];
   seriesId: string;
   sourceStory: string;
   status: SeriesEpisodeIdeaStatus;
   synopsis: string;
   title: string;
   updatedAt: string;
+}
+
+export interface StoryWorld {
+  _id: string;
+  createdAt: string;
+  defaultSceneAssetIds: string[];
+  description: string;
+  name: string;
+  recurringCharacterAssetIds: string[];
+  relationshipMap: string;
+  safetyRules: string;
+  seriesIds: string[];
+  status: "draft" | "active" | "archived";
+  updatedAt: string;
+  visualStyle: string;
+}
+
+export interface ListStoryWorldsResponse {
+  storyWorlds: StoryWorld[];
+  timestamp: string;
+}
+
+export interface StoryWorldResponse {
+  storyWorld: StoryWorld;
 }
 
 export interface ListContentSeriesResponse {
@@ -279,6 +309,9 @@ export interface SeriesEpisodeIdeaResponse {
 
 export interface ConvertSeriesEpisodeToCaseResponse {
   caseSeed: {
+    backgroundAssetId: string | null;
+    characterAssetId: string | null;
+    characterAssetIds: string[];
     costLimitRM: number;
     durationSeconds: number;
     episodeId: string;
@@ -286,9 +319,12 @@ export interface ConvertSeriesEpisodeToCaseResponse {
     id: string;
     language: "zh-CN" | "en-US";
     prompt: string;
+    productionBrief: ProductionBrief;
     referenceAssetIds: string[];
     sceneCount: number;
+    sceneAssetIds: string[];
     seriesId: string;
+    storyWorldId: string | null;
     templateType: ContentTemplateType;
     topic: string;
   };
@@ -323,9 +359,68 @@ export interface GenerateScriptStoryRequest extends ToolProviderOverride {
   jobId?: string | undefined;
   language: "zh-CN" | "en-US";
   prompt: string;
+  productionBrief?: ProductionBrief | undefined;
   sceneCount: number;
   templateType: ContentTemplateType;
   topic: string;
+}
+
+export interface SelectedCharacterContext {
+  assetId?: string | undefined;
+  label: string;
+  notes?: string | undefined;
+  role?: string | undefined;
+  url?: string | undefined;
+  visualIdentity: string;
+}
+
+export interface SelectedSceneContext {
+  assetId?: string | undefined;
+  label: string;
+  location?: string | undefined;
+  notes?: string | undefined;
+  url?: string | undefined;
+  visualRules: string;
+}
+
+export interface ProductionBrief {
+  conflict?: string | undefined;
+  episodeContext?: {
+    episodeId?: string | undefined;
+    episodeNo?: number | null | undefined;
+    interactiveEnding?: string | undefined;
+    lessonOrTheme?: string | undefined;
+    promptSeed?: string | undefined;
+    synopsis?: string | undefined;
+    title?: string | undefined;
+  } | undefined;
+  goal?: string | undefined;
+  lessonOrTheme?: string | undefined;
+  requiredBeats?: string[] | undefined;
+  selectedCharacters?: SelectedCharacterContext[] | undefined;
+  selectedScenes?: SelectedSceneContext[] | undefined;
+  seriesContext?: {
+    audience?: string | undefined;
+    contentType?: string | undefined;
+    description?: string | undefined;
+    musicStyle?: string | undefined;
+    name?: string | undefined;
+    safetyRules?: string | undefined;
+    seriesId?: string | undefined;
+    tone?: string | undefined;
+    values?: string | undefined;
+    visualStyle?: string | undefined;
+  } | undefined;
+  storyWorldContext?: {
+    description?: string | undefined;
+    name?: string | undefined;
+    relationshipMap?: string | undefined;
+    safetyRules?: string | undefined;
+    storyWorldId?: string | undefined;
+    visualStyle?: string | undefined;
+  } | undefined;
+  tone?: string | undefined;
+  visualContinuityRules?: string[] | undefined;
 }
 
 export interface GenerationReferenceAsset {

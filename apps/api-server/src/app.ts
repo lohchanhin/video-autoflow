@@ -17,6 +17,7 @@ import { createProductionAssetsRouter } from "./routes/production-assets.js";
 import { createQcRouter } from "./routes/qc.js";
 import { createScriptStoryRouter } from "./routes/script-story.js";
 import { createSeriesRouter } from "./routes/series.js";
+import { createStoryWorldsRouter } from "./routes/story-worlds.js";
 import type { ImageGenerationService } from "./modules/generation/image-service.js";
 import type { QcReportService } from "./modules/generation/qc-service.js";
 import type { SeriesEpisodeIdeaService } from "./modules/series/episode-idea-service.js";
@@ -26,7 +27,7 @@ import { createTrendsRouter } from "./routes/trends.js";
 import { createTtsRouter } from "./routes/tts.js";
 import { createVideoClipsRouter } from "./routes/video-clips.js";
 import type { VideoClipGenerationService } from "./modules/generation/video-clip-service.js";
-import type { ContentSeriesRepository, CostLogsRepository, ProductionAssetsRepository } from "@ai-content-factory/database";
+import type { ContentSeriesRepository, CostLogsRepository, ProductionAssetsRepository, StoryWorldsRepository } from "@ai-content-factory/database";
 import { createCostRecorder } from "./modules/costs/cost-recorder.js";
 import { ApiError } from "./errors.js";
 
@@ -84,6 +85,7 @@ export interface CreateAppOptions {
   writeProviderSecret?: ProviderSecretWriter | undefined;
   scriptStoryService?: ScriptStoryService | undefined;
   seriesEpisodeIdeaService?: SeriesEpisodeIdeaService | undefined;
+  storyWorldsRepository?: StoryWorldsRepository | undefined;
   storage?: StorageAdapter | undefined;
   trendScanService?: TrendScanService | undefined;
   ttsGenerationService?: TtsGenerationService | undefined;
@@ -153,6 +155,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   );
   app.use(createQcRouter({ qcReportService: options.qcReportService, storage }));
   app.use(createSeriesRouter({ connectDatabase: options.connectDatabase, contentSeriesRepository: options.contentSeriesRepository, costRecorder, episodeIdeaService: options.seriesEpisodeIdeaService }));
+  app.use(createStoryWorldsRouter({ connectDatabase: options.connectDatabase, storyWorldsRepository: options.storyWorldsRepository }));
   app.use(createTrendsRouter({ trendScanService: options.trendScanService }));
   app.use("/uploads", express.static(storage.rootDir, { fallthrough: false }));
   app.use(

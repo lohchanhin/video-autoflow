@@ -52,9 +52,14 @@ interface OpenAIResponseBody {
 interface ParsedIdeas {
   ideas: Array<{
     ageRange?: string;
+    episodeNo?: number;
+    interactiveEnding?: string;
+    lessonOrTheme?: string;
     moralLesson?: string;
     promptSeed?: string;
     riskNotes?: string;
+    selectedCharacterAssetIds?: string[];
+    selectedSceneAssetIds?: string[];
     sourceStory?: string;
     synopsis?: string;
     title?: string;
@@ -140,8 +145,8 @@ function buildEpisodeIdeaPrompt(series: ContentSeries, count: number): string {
     `场景数：${series.sceneCount}`,
     `安全规则：${series.safetyRules}`,
     "",
-    `请生成 ${count} 条单集选题。每条必须包含：标题、核心看点/价值、来源/灵感、剧情梗概、promptSeed、目标受众/年龄层、风险提示。`,
-    "字段语义说明：moralLesson 表示该集的核心看点、观点、价值或知识点，不一定是道德说教；sourceStory 表示来源/灵感；ageRange 表示目标受众或年龄层。"
+    `请生成 ${count} 条单集选题。每条必须包含：集数、标题、核心看点/价值、来源/灵感、剧情梗概、promptSeed、目标受众/年龄层、风险提示、互动结尾。`,
+    "字段语义说明：lessonOrTheme / moralLesson 表示该集的核心看点、观点、价值或知识点，不一定是道德说教；sourceStory 表示来源/灵感；ageRange 表示目标受众或年龄层；selectedCharacterAssetIds 和 selectedSceneAssetIds 只有在你明确知道系列绑定资产 ID 时才填写，否则返回空数组。"
   ].join("\n");
 }
 
@@ -163,9 +168,14 @@ function normalizeIdeas(parsed: ParsedIdeas, count: number): SeriesEpisodeIdeaCr
   return parsed.ideas
     .map((idea): SeriesEpisodeIdeaCreateInput => ({
       ageRange: normalizeText(idea.ageRange, ""),
+      episodeNo: typeof idea.episodeNo === "number" ? idea.episodeNo : undefined,
+      interactiveEnding: normalizeText(idea.interactiveEnding, ""),
+      lessonOrTheme: normalizeText(idea.lessonOrTheme, idea.moralLesson ?? ""),
       moralLesson: normalizeText(idea.moralLesson, "核心看点待补充"),
       promptSeed: normalizeText(idea.promptSeed, idea.synopsis ?? idea.title ?? ""),
       riskNotes: normalizeText(idea.riskNotes, "按系列安全规则复核。"),
+      selectedCharacterAssetIds: Array.isArray(idea.selectedCharacterAssetIds) ? idea.selectedCharacterAssetIds : [],
+      selectedSceneAssetIds: Array.isArray(idea.selectedSceneAssetIds) ? idea.selectedSceneAssetIds : [],
       sourceStory: normalizeText(idea.sourceStory, "原创灵感"),
       status: "draft",
       synopsis: normalizeText(idea.synopsis, ""),
@@ -211,14 +221,19 @@ const episodeIdeasJsonSchema = {
         additionalProperties: false,
         properties: {
           ageRange: { type: "string" },
+          episodeNo: { type: "number" },
+          interactiveEnding: { type: "string" },
+          lessonOrTheme: { type: "string" },
           moralLesson: { type: "string" },
           promptSeed: { type: "string" },
           riskNotes: { type: "string" },
+          selectedCharacterAssetIds: { items: { type: "string" }, type: "array" },
+          selectedSceneAssetIds: { items: { type: "string" }, type: "array" },
           sourceStory: { type: "string" },
           synopsis: { type: "string" },
           title: { type: "string" }
         },
-        required: ["title", "moralLesson", "sourceStory", "synopsis", "promptSeed", "ageRange", "riskNotes"],
+        required: ["episodeNo", "title", "lessonOrTheme", "moralLesson", "sourceStory", "synopsis", "promptSeed", "ageRange", "riskNotes", "interactiveEnding", "selectedCharacterAssetIds", "selectedSceneAssetIds"],
         type: "object"
       },
       type: "array"

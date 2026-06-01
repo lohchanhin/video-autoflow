@@ -18,7 +18,7 @@ import {
   Workflow,
   XCircle
 } from "lucide-react";
-import type { ContentSeries, DatabaseStatusResponse, GenerateBgmResponse, GenerateImagesResponse, GenerateQcReportResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoClipResponse, GenerateVideoResponse, GenerationReferenceAsset, HealthResponse, JobStatus, ProductionAsset, ProductionAssetStatus, ProductionAssetType, SeriesEpisodeIdea, TrendIdeaSeed } from "@ai-content-factory/shared-types";
+import type { ContentSeries, DatabaseStatusResponse, GenerateBgmResponse, GenerateImagesResponse, GenerateQcReportResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoClipResponse, GenerateVideoResponse, GenerationReferenceAsset, HealthResponse, JobStatus, ProductionAsset, ProductionAssetStatus, ProductionAssetType, ProductionBrief, SeriesEpisodeIdea, StoryWorld, TrendIdeaSeed } from "@ai-content-factory/shared-types";
 import { AgentsPage } from "./pages/AgentsPage.js";
 import { AssetsPage } from "./pages/AssetsPage.js";
 import { AutomationPage } from "./pages/AutomationPage.js";
@@ -99,12 +99,14 @@ import {
   convertSeriesEpisodeToCase as requestConvertSeriesEpisodeToCase,
   createContentSeries as requestCreateContentSeries,
   createProductionAsset as requestCreateProductionAsset,
+  createStoryWorld as requestCreateStoryWorld,
   deleteContentSeries as requestDeleteContentSeries,
   deleteProductionAsset as requestDeleteProductionAsset,
   generateSeriesEpisodeIdeas as requestGenerateSeriesEpisodeIdeas,
   generateProductionAsset as requestProductionAssetGeneration,
   getDatabaseStatus,
   getProviderSecretStatuses,
+  listStoryWorlds as requestStoryWorlds,
   listContentSeries as requestContentSeries,
   listSeriesEpisodes as requestSeriesEpisodes,
   listProductionAssets as requestProductionAssets,
@@ -1031,6 +1033,15 @@ export function App() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [selectedCharacterAssetId, setSelectedCharacterAssetId] = useState<string | null>(null);
   const [selectedBackgroundAssetId, setSelectedBackgroundAssetId] = useState<string | null>(null);
+  const [selectedCharacterAssetIds, setSelectedCharacterAssetIds] = useState<string[]>([]);
+  const [selectedSceneAssetIds, setSelectedSceneAssetIds] = useState<string[]>([]);
+  const [selectedCaseSeriesId, setSelectedCaseSeriesId] = useState<string>("");
+  const [selectedCaseEpisodeId, setSelectedCaseEpisodeId] = useState<string>("");
+  const [selectedCaseStoryWorldId, setSelectedCaseStoryWorldId] = useState<string>("");
+  const [caseLessonOrTheme, setCaseLessonOrTheme] = useState("");
+  const [caseGoal, setCaseGoal] = useState("");
+  const [caseConflict, setCaseConflict] = useState("");
+  const [caseTone, setCaseTone] = useState("");
   const [sceneReviews, setSceneReviews] = useState<SceneReviewItem[]>(() => loadSceneReviews(loadJobs()));
   const [caseReferenceAssets, setCaseReferenceAssets] = useState<CaseReferenceAsset[]>(() => loadCaseReferenceAssets(loadJobs()));
   const [productionAssets, setProductionAssets] = useState<ProductionAsset[]>([]);
@@ -1061,6 +1072,7 @@ export function App() {
   const [trendScanError, setTrendScanError] = useState<string | null>(null);
   const [contentSeries, setContentSeries] = useState<ContentSeries[]>([]);
   const [seriesEpisodes, setSeriesEpisodes] = useState<SeriesEpisodeIdea[]>([]);
+  const [storyWorlds, setStoryWorlds] = useState<StoryWorld[]>([]);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const [isLoadingSeries, setIsLoadingSeries] = useState(false);
@@ -1184,6 +1196,10 @@ export function App() {
 
   useEffect(() => {
     void refreshSeries();
+  }, []);
+
+  useEffect(() => {
+    void refreshStoryWorlds();
   }, []);
 
   useEffect(() => {
@@ -1638,17 +1654,95 @@ export function App() {
   }
 
   function getSelectedDraftAssets(): { assets: ProductionAsset[]; background: ProductionAsset | null; character: ProductionAsset | null } {
-    const character = selectedCharacterAssetId
-      ? productionAssets.find((asset) => asset._id === selectedCharacterAssetId && isReadyReferenceAsset(asset) && isCharacterDesignAsset(asset)) ?? null
-      : null;
-    const background = selectedBackgroundAssetId
-      ? productionAssets.find((asset) => asset._id === selectedBackgroundAssetId && isReadyReferenceAsset(asset) && isBackgroundDesignAsset(asset)) ?? null
-      : null;
+    const characterIds = selectedCharacterAssetIds.length > 0 ? selectedCharacterAssetIds : [selectedCharacterAssetId].filter((id): id is string => Boolean(id));
+    const sceneIds = selectedSceneAssetIds.length > 0 ? selectedSceneAssetIds : [selectedBackgroundAssetId].filter((id): id is string => Boolean(id));
+    const characters = characterIds
+      .map((id) => productionAssets.find((asset) => asset._id === id && isReadyReferenceAsset(asset) && isCharacterDesignAsset(asset)) ?? null)
+      .filter((asset): asset is ProductionAsset => Boolean(asset));
+    const backgrounds = sceneIds
+      .map((id) => productionAssets.find((asset) => asset._id === id && isReadyReferenceAsset(asset) && isBackgroundDesignAsset(asset)) ?? null)
+      .filter((asset): asset is ProductionAsset => Boolean(asset));
+    const character = characters[0] ?? null;
+    const background = backgrounds[0] ?? null;
 
     return {
-      assets: [character, background].filter((asset): asset is ProductionAsset => Boolean(asset)),
+      assets: [...characters, ...backgrounds].filter((asset, index, assets) => assets.findIndex((candidate) => candidate._id === asset._id) === index),
       background,
       character
+    };
+  }
+
+  function buildProductionBriefFromDraft(referenceAssets = getSelectedDraftAssets()): ProductionBrief {
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const inheritedStoryWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || "";
+    const selectedStoryWorld = inheritedStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === inheritedStoryWorldId) ?? null : null;
+    const characterAssets = referenceAssets.assets.filter(isCharacterDesignAsset);
+    const sceneAssets = referenceAssets.assets.filter(isBackgroundDesignAsset);
+
+    return {
+      conflict: caseConflict.trim() || undefined,
+      episodeContext: selectedEpisode ? {
+        episodeId: selectedEpisode._id,
+        episodeNo: selectedEpisode.episodeNo,
+        interactiveEnding: selectedEpisode.interactiveEnding,
+        lessonOrTheme: selectedEpisode.lessonOrTheme || selectedEpisode.moralLesson,
+        promptSeed: selectedEpisode.promptSeed,
+        synopsis: selectedEpisode.synopsis,
+        title: selectedEpisode.title
+      } : undefined,
+      goal: caseGoal.trim() || undefined,
+      lessonOrTheme: caseLessonOrTheme.trim() || selectedEpisode?.lessonOrTheme || selectedEpisode?.moralLesson || undefined,
+      requiredBeats: [
+        selectedEpisode?.synopsis,
+        selectedEpisode?.promptSeed,
+        selectedEpisode?.interactiveEnding,
+        caseGoal.trim(),
+        caseConflict.trim()
+      ].filter((value): value is string => Boolean(value && value.trim())),
+      selectedCharacters: characterAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        notes: buildReferenceAssetPromptContext(asset),
+        role: asset.type,
+        url: asset.url,
+        visualIdentity: asset.prompt || asset.notes || asset.label
+      })),
+      selectedScenes: sceneAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        location: asset.folderName,
+        notes: buildReferenceAssetPromptContext(asset),
+        url: asset.url,
+        visualRules: asset.prompt || asset.notes || asset.label
+      })),
+      seriesContext: selectedSeries ? {
+        audience: selectedSeries.audience,
+        contentType: selectedSeries.contentType,
+        description: selectedSeries.description,
+        musicStyle: selectedSeries.musicStyle,
+        name: selectedSeries.name,
+        safetyRules: selectedSeries.safetyRules,
+        seriesId: selectedSeries._id,
+        tone: selectedSeries.tone,
+        values: selectedSeries.values,
+        visualStyle: selectedSeries.visualStyle
+      } : undefined,
+      storyWorldContext: selectedStoryWorld ? {
+        description: selectedStoryWorld.description,
+        name: selectedStoryWorld.name,
+        relationshipMap: selectedStoryWorld.relationshipMap,
+        safetyRules: selectedStoryWorld.safetyRules,
+        storyWorldId: selectedStoryWorld._id,
+        visualStyle: selectedStoryWorld.visualStyle
+      } : undefined,
+      tone: caseTone.trim() || selectedSeries?.tone || undefined,
+      visualContinuityRules: [
+        selectedSeries?.visualStyle,
+        selectedStoryWorld?.visualStyle,
+        ...sceneAssets.map((asset) => `${asset.label}: preserve environment bible layout, props, lighting, and reusable camera zones.`),
+        ...characterAssets.map((asset) => `${asset.label}: preserve character identity, silhouette, wardrobe, and fixed props.`)
+      ].filter((value): value is string => Boolean(value && value.trim()))
     };
   }
 
@@ -1665,8 +1759,17 @@ export function App() {
       topic: normalizedTopic || "short-form story idea"
     });
     const assetContext = buildAssetContextBrief(referenceAssets.character, referenceAssets.background);
+    const productionBrief = buildProductionBriefFromDraft(referenceAssets);
+    const structuredContext = [
+      productionBrief.seriesContext ? `系列上下文：${productionBrief.seriesContext.name} / ${productionBrief.seriesContext.description} / ${productionBrief.seriesContext.values}` : "",
+      productionBrief.episodeContext ? `单集上下文：${productionBrief.episodeContext.title} / ${productionBrief.episodeContext.lessonOrTheme} / ${productionBrief.episodeContext.synopsis}` : "",
+      productionBrief.storyWorldContext ? `世界观：${productionBrief.storyWorldContext.name} / ${productionBrief.storyWorldContext.description} / ${productionBrief.storyWorldContext.relationshipMap}` : "",
+      productionBrief.lessonOrTheme ? `本集主题：${productionBrief.lessonOrTheme}` : "",
+      productionBrief.goal ? `本集目标：${productionBrief.goal}` : "",
+      productionBrief.conflict ? `本集冲突：${productionBrief.conflict}` : ""
+    ].filter(Boolean).join("\n");
 
-    return [baseBrief, assetContext].filter(Boolean).join("\n\n");
+    return [baseBrief, structuredContext, assetContext].filter(Boolean).join("\n\n");
   }
 
   function handleCreateCase() {
@@ -1675,6 +1778,10 @@ export function App() {
     const routedTemplateType = inferTemplateTypeFromGenre(normalizedGenre || normalizedTopic);
     const selectedAssets = getSelectedDraftAssets();
     const normalizedPrompt = getEffectivePrompt(normalizedTopic, prompt, normalizedGenre, selectedAssets);
+    const productionBrief = buildProductionBriefFromDraft(selectedAssets);
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
 
     if (!normalizedTopic) {
       return;
@@ -1682,9 +1789,15 @@ export function App() {
 
     const job = createJob({
       backgroundAssetId: selectedAssets.background?._id ?? null,
+      characterAssetIds: selectedAssets.assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
       characterAssetId: selectedAssets.character?._id ?? null,
       characterId: selectedCharacterId,
+      episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
+      productionBrief,
+      sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
+      seriesId: selectedSeries?._id ?? null,
+      storyWorldId,
       topic: normalizedTopic,
       prompt: normalizedPrompt,
       templateType: routedTemplateType,
@@ -1704,6 +1817,8 @@ export function App() {
     setPrompt("");
     setSelectedCharacterAssetId(null);
     setSelectedBackgroundAssetId(null);
+    setSelectedCharacterAssetIds([]);
+    setSelectedSceneAssetIds([]);
     switchView("cases");
   }
 
@@ -1713,6 +1828,10 @@ export function App() {
     const routedTemplateType = inferTemplateTypeFromGenre(normalizedGenre || normalizedTopic);
     const selectedAssets = getSelectedDraftAssets();
     const normalizedPrompt = getEffectivePrompt(normalizedTopic, prompt, normalizedGenre, selectedAssets);
+    const productionBrief = buildProductionBriefFromDraft(selectedAssets);
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
 
     if (!normalizedTopic || isGeneratingDraftPreview) {
       return;
@@ -1722,13 +1841,19 @@ export function App() {
     const draftInput: NewJobInput = {
       id: draftJobId,
       backgroundAssetId: selectedAssets.background?._id ?? null,
+      characterAssetIds: selectedAssets.assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
       characterAssetId: selectedAssets.character?._id ?? null,
       characterId: selectedCharacterId,
       costLimitRM,
+      episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
       language,
       prompt: normalizedPrompt,
+      productionBrief,
+      sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       sceneCount,
+      seriesId: selectedSeries?._id ?? null,
+      storyWorldId,
       templateType: routedTemplateType,
       topic: normalizedTopic
     };
@@ -1751,6 +1876,7 @@ export function App() {
           jobId: draftJobId,
           language: draftInput.language,
           prompt: draftInput.prompt,
+          productionBrief: draftInput.productionBrief ?? undefined,
           sceneCount: draftInput.sceneCount,
           templateType: draftInput.templateType,
           topic: draftInput.topic
@@ -1806,6 +1932,8 @@ export function App() {
     setPrompt("");
     setSelectedCharacterAssetId(null);
     setSelectedBackgroundAssetId(null);
+    setSelectedCharacterAssetIds([]);
+    setSelectedSceneAssetIds([]);
     setCaseDraftPreview(null);
     setGenerationError(null);
     switchView("cases");
@@ -1834,6 +1962,7 @@ export function App() {
           jobId: pipelineInput.id,
           language: pipelineInput.language,
           prompt: pipelineInput.prompt,
+          productionBrief: pipelineInput.productionBrief ?? undefined,
           sceneCount: pipelineInput.sceneCount,
           templateType: pipelineInput.templateType,
           topic: pipelineInput.topic
@@ -2052,6 +2181,10 @@ export function App() {
     const routedTemplateType = inferTemplateTypeFromGenre(normalizedGenre || normalizedTopic);
     const selectedAssets = getSelectedDraftAssets();
     const normalizedPrompt = getEffectivePrompt(normalizedTopic, prompt, normalizedGenre, selectedAssets);
+    const productionBrief = buildProductionBriefFromDraft(selectedAssets);
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
 
     if (!normalizedTopic) {
       setGenerationError("请输入主题或想法，再开始自动写大纲并生成 MP4。");
@@ -2068,13 +2201,19 @@ export function App() {
     const draftInput: NewJobInput = {
       id: jobId,
       backgroundAssetId: selectedAssets.background?._id ?? null,
+      characterAssetIds: selectedAssets.assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
       characterAssetId: selectedAssets.character?._id ?? null,
       characterId: selectedCharacterId,
       costLimitRM,
+      episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
       language,
       prompt: normalizedPrompt,
+      productionBrief,
+      sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       sceneCount,
+      seriesId: selectedSeries?._id ?? null,
+      storyWorldId,
       templateType: routedTemplateType,
       topic: normalizedTopic
     };
@@ -2095,6 +2234,7 @@ export function App() {
           jobId,
           language: draftInput.language,
           prompt: draftInput.prompt,
+          productionBrief: draftInput.productionBrief ?? undefined,
           sceneCount: draftInput.sceneCount,
           templateType: draftInput.templateType,
           topic: draftInput.topic
@@ -2399,6 +2539,16 @@ export function App() {
     }
   }
 
+  async function refreshStoryWorlds() {
+    try {
+      const response = await requestStoryWorlds();
+      setStoryWorlds(response.storyWorlds);
+      setSeriesError(null);
+    } catch (error) {
+      setSeriesError(error instanceof Error ? error.message : "Story worlds load failed.");
+    }
+  }
+
   async function refreshSeriesEpisodes(seriesId: string) {
     try {
       const response = await requestSeriesEpisodes(seriesId);
@@ -2436,6 +2586,7 @@ export function App() {
         safetyRules: "原创、不抄袭、不使用版权角色、不伪造真实人物；具体禁忌按这个系列的定位补充。",
         sceneCount: 5,
         status: "draft",
+        storyWorldId: null,
         tone: "",
         values: "",
         visualStyle: ""
@@ -2446,6 +2597,23 @@ export function App() {
       setSeriesError(null);
     } catch (error) {
       setSeriesError(error instanceof Error ? error.message : "Series create failed.");
+    }
+  }
+
+  async function handleCreateStoryWorld(input: Omit<StoryWorld, "_id" | "createdAt" | "updatedAt">) {
+    if (apiState !== "online") {
+      setSeriesError(`API server is ${apiState}. Story World library needs ${apiBaseUrl}.`);
+      return null;
+    }
+
+    try {
+      const response = await requestCreateStoryWorld(input);
+      setStoryWorlds((currentStoryWorlds) => [response.storyWorld, ...currentStoryWorlds.filter((storyWorld) => storyWorld._id !== response.storyWorld._id)]);
+      setSeriesError(null);
+      return response.storyWorld;
+    } catch (error) {
+      setSeriesError(error instanceof Error ? error.message : "Story World create failed.");
+      return null;
     }
   }
 
@@ -2512,14 +2680,17 @@ export function App() {
 
     try {
       const response = await requestConvertSeriesEpisodeToCase(series._id, episode._id, caseId);
-      const referenceAssets = series.referenceAssetIds
+      const seedReferenceIds = [...response.caseSeed.referenceAssetIds, ...response.caseSeed.characterAssetIds, ...response.caseSeed.sceneAssetIds]
+        .filter((id, index, ids) => ids.indexOf(id) === index);
+      const referenceAssets = seedReferenceIds
         .map((id) => productionAssets.find((asset) => asset._id === id) ?? null)
         .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
       const characterAsset = referenceAssets.find(isCharacterDesignAsset) ?? null;
       const backgroundAsset = referenceAssets.find(isBackgroundDesignAsset) ?? null;
       const job = createJob({
-        backgroundAssetId: backgroundAsset?._id ?? null,
-        characterAssetId: characterAsset?._id ?? null,
+        backgroundAssetId: response.caseSeed.backgroundAssetId ?? backgroundAsset?._id ?? null,
+        characterAssetIds: response.caseSeed.characterAssetIds,
+        characterAssetId: response.caseSeed.characterAssetId ?? characterAsset?._id ?? null,
         costLimitRM: response.caseSeed.costLimitRM,
         durationSeconds: response.caseSeed.durationSeconds,
         episodeId: response.caseSeed.episodeId,
@@ -2527,8 +2698,11 @@ export function App() {
         id: response.caseSeed.id,
         language: response.caseSeed.language,
         prompt: response.caseSeed.prompt,
+        productionBrief: response.caseSeed.productionBrief,
+        sceneAssetIds: response.caseSeed.sceneAssetIds,
         sceneCount: response.caseSeed.sceneCount,
         seriesId: response.caseSeed.seriesId,
+        storyWorldId: response.caseSeed.storyWorldId,
         templateType: response.caseSeed.templateType,
         topic: response.caseSeed.topic
       });
@@ -2586,7 +2760,12 @@ export function App() {
   }
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
-    const selectedAssetIds = new Set([job.characterAssetId, job.backgroundAssetId].filter((id): id is string => Boolean(id)));
+    const selectedAssetIds = new Set([
+      job.characterAssetId,
+      job.backgroundAssetId,
+      ...(job.characterAssetIds ?? []),
+      ...(job.sceneAssetIds ?? [])
+    ].filter((id): id is string => Boolean(id)));
     const assets = [...extraAssets, ...productionAssets]
       .filter((asset) => asset.jobId === job.id || selectedAssetIds.has(asset._id))
       .filter(isReadyReferenceAsset);
@@ -4218,6 +4397,7 @@ export function App() {
             assets={productionAssets}
             convertEpisodeToCase={(series, episode) => void handleConvertSeriesEpisodeToCase(series, episode)}
             createSeries={() => void handleCreateSeries()}
+            createStoryWorld={(input) => handleCreateStoryWorld(input)}
             deleteSeries={(id) => void handleDeleteSeries(id)}
             episodes={seriesEpisodes}
             error={seriesError}
@@ -4234,6 +4414,7 @@ export function App() {
             selectSeries={selectSeries}
             selectedSeriesId={selectedSeriesId}
             series={contentSeries}
+            storyWorlds={storyWorlds}
             updateEpisode={(seriesId, episodeId, patch) => handleUpdateSeriesEpisode(seriesId, episodeId, patch)}
             updateSeries={(id, patch) => handleUpdateSeries(id, patch)}
           />
@@ -4259,9 +4440,18 @@ export function App() {
             costLimitRM={costLimitRM}
             characters={characterProfiles}
             draftBackgroundAssetId={selectedBackgroundAssetId}
+            draftCharacterAssetIds={selectedCharacterAssetIds}
             draftCharacterId={selectedCharacterId}
             draftCharacterAssetId={selectedCharacterAssetId}
+            draftSceneAssetIds={selectedSceneAssetIds}
             draftReferenceAssets={productionAssets}
+            draftSeriesId={selectedCaseSeriesId}
+            draftEpisodeId={selectedCaseEpisodeId}
+            draftStoryWorldId={selectedCaseStoryWorldId}
+            draftLessonOrTheme={caseLessonOrTheme}
+            draftGoal={caseGoal}
+            draftConflict={caseConflict}
+            draftTone={caseTone}
             clearDraftPreview={() => setCaseDraftPreview(null)}
             confirmDraftCase={handleConfirmDraftCase}
             createCase={handleConfirmDraftCase}
@@ -4343,15 +4533,69 @@ export function App() {
             }}
             setDraftCharacterAssetId={(id) => {
               setSelectedCharacterAssetId(id);
+              setSelectedCharacterAssetIds(id ? [id] : []);
               setCaseDraftPreview(null);
             }}
             setDraftBackgroundAssetId={(id) => {
               setSelectedBackgroundAssetId(id);
+              setSelectedSceneAssetIds(id ? [id] : []);
+              setCaseDraftPreview(null);
+            }}
+            setDraftCharacterAssetIds={(ids) => {
+              setSelectedCharacterAssetIds(ids);
+              setSelectedCharacterAssetId(ids[0] ?? null);
+              setCaseDraftPreview(null);
+            }}
+            setDraftSceneAssetIds={(ids) => {
+              setSelectedSceneAssetIds(ids);
+              setSelectedBackgroundAssetId(ids[0] ?? null);
+              setCaseDraftPreview(null);
+            }}
+            setDraftSeriesId={(id) => {
+              setSelectedCaseSeriesId(id);
+              const nextSeries = contentSeries.find((series) => series._id === id) ?? null;
+              setSelectedCaseStoryWorldId(nextSeries?.storyWorldId ?? "");
+              setCaseDraftPreview(null);
+            }}
+            setDraftEpisodeId={(id) => {
+              const nextEpisode = seriesEpisodes.find((episode) => episode._id === id) ?? null;
+              setSelectedCaseEpisodeId(id);
+              if (nextEpisode) {
+                setTopic(nextEpisode.title);
+                setCaseLessonOrTheme(nextEpisode.lessonOrTheme || nextEpisode.moralLesson);
+                setCaseGoal(nextEpisode.promptSeed);
+                setCaseConflict(nextEpisode.synopsis);
+                setSelectedCharacterAssetIds(nextEpisode.selectedCharacterAssetIds);
+                setSelectedSceneAssetIds(nextEpisode.selectedSceneAssetIds);
+                setSelectedCharacterAssetId(nextEpisode.selectedCharacterAssetIds[0] ?? null);
+                setSelectedBackgroundAssetId(nextEpisode.selectedSceneAssetIds[0] ?? null);
+              }
+              setCaseDraftPreview(null);
+            }}
+            setDraftStoryWorldId={(id) => {
+              setSelectedCaseStoryWorldId(id);
+              setCaseDraftPreview(null);
+            }}
+            setDraftLessonOrTheme={(value) => {
+              setCaseLessonOrTheme(value);
+              setCaseDraftPreview(null);
+            }}
+            setDraftGoal={(value) => {
+              setCaseGoal(value);
+              setCaseDraftPreview(null);
+            }}
+            setDraftConflict={(value) => {
+              setCaseConflict(value);
+              setCaseDraftPreview(null);
+            }}
+            setDraftTone={(value) => {
+              setCaseTone(value);
               setCaseDraftPreview(null);
             }}
             storedVideos={storedVideos}
             series={contentSeries}
             seriesEpisodes={seriesEpisodes}
+            storyWorlds={storyWorlds}
             templateType={templateType}
             toolProviderSettings={toolProviderSettings}
             topic={topic}

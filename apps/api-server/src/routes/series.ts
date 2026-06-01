@@ -281,13 +281,27 @@ async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
 }
 
 function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesson: string; promptSeed: string; sourceStory: string; synopsis: string; title: string }, caseId: string) {
+  const episodeWithOptionalFields = episode as {
+    episodeNo?: number | null;
+    interactiveEnding?: string;
+    lessonOrTheme?: string;
+    selectedCharacterAssetIds?: string[];
+    selectedSceneAssetIds?: string[];
+  };
+  const characterAssetIds = episodeWithOptionalFields.selectedCharacterAssetIds?.length
+    ? episodeWithOptionalFields.selectedCharacterAssetIds
+    : series.referenceAssetIds;
+  const sceneAssetIds = episodeWithOptionalFields.selectedSceneAssetIds?.length
+    ? episodeWithOptionalFields.selectedSceneAssetIds
+    : series.referenceAssetIds;
   const prompt = [
     `系列：${series.name}`,
     `单集题目：${episode.title}`,
-    `核心看点/价值：${episode.moralLesson}`,
+    `核心看点/价值：${episodeWithOptionalFields.lessonOrTheme || episode.moralLesson}`,
     `来源/灵感：${episode.sourceStory}`,
     `剧情梗概：${episode.synopsis}`,
     `制作种子：${episode.promptSeed}`,
+    episodeWithOptionalFields.interactiveEnding ? `互动结尾：${episodeWithOptionalFields.interactiveEnding}` : "",
     "",
     `系列定位：${series.description}`,
     `系列目标/价值：${series.values}`,
@@ -300,6 +314,9 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
   ].join("\n");
 
   return {
+    backgroundAssetId: sceneAssetIds[0] ?? null,
+    characterAssetId: characterAssetIds[0] ?? null,
+    characterAssetIds,
     costLimitRM: 7.5,
     durationSeconds: series.durationSeconds,
     episodeId: episode._id,
@@ -307,9 +324,52 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
     id: caseId,
     language: series.language,
     prompt,
+    productionBrief: {
+      episodeContext: {
+        episodeId: episode._id,
+        episodeNo: episodeWithOptionalFields.episodeNo ?? null,
+        interactiveEnding: episodeWithOptionalFields.interactiveEnding ?? "",
+        lessonOrTheme: episodeWithOptionalFields.lessonOrTheme || episode.moralLesson,
+        promptSeed: episode.promptSeed,
+        synopsis: episode.synopsis,
+        title: episode.title
+      },
+      lessonOrTheme: episodeWithOptionalFields.lessonOrTheme || episode.moralLesson,
+      requiredBeats: [episode.synopsis, episode.promptSeed, episodeWithOptionalFields.interactiveEnding ?? ""].filter(Boolean),
+      selectedCharacters: characterAssetIds.map((assetId) => ({
+        assetId,
+        label: assetId,
+        visualIdentity: "Use the approved character design asset from the asset library."
+      })),
+      selectedScenes: sceneAssetIds.map((assetId) => ({
+        assetId,
+        label: assetId,
+        visualRules: "Use the approved scene design asset from the asset library."
+      })),
+      seriesContext: {
+        audience: series.audience,
+        contentType: series.contentType,
+        description: series.description,
+        musicStyle: series.musicStyle,
+        name: series.name,
+        safetyRules: series.safetyRules,
+        seriesId: series._id,
+        tone: series.tone,
+        values: series.values,
+        visualStyle: series.visualStyle
+      },
+      storyWorldContext: series.storyWorldId ? { storyWorldId: series.storyWorldId } : undefined,
+      tone: series.tone,
+      visualContinuityRules: [
+        series.visualStyle,
+        "Reuse selected recurring characters and scene assets when provided. Do not swap the story world, cast, or main setting unless the episode explicitly asks for it."
+      ].filter(Boolean)
+    },
     referenceAssetIds: series.referenceAssetIds,
     sceneCount: series.sceneCount,
+    sceneAssetIds,
     seriesId: series._id,
+    storyWorldId: series.storyWorldId,
     templateType: inferTemplateTypeFromSeries(series),
     topic: episode.title
   };
@@ -339,6 +399,7 @@ function parseSeriesCreate(body: unknown): ContentSeriesCreateInput {
     safetyRules: optionalString(body.safetyRules),
     sceneCount: numberFromUnknown(body.sceneCount, 5),
     status: parseSeriesStatus(body.status),
+    storyWorldId: body.storyWorldId === null ? null : optionalString(body.storyWorldId),
     tone: optionalString(body.tone),
     values: optionalString(body.values),
     visualStyle: optionalString(body.visualStyle)
@@ -364,6 +425,7 @@ function parseSeriesPatch(body: unknown): ContentSeriesPatchInput {
   if (body.safetyRules !== undefined) patch.safetyRules = stringFromUnknown(body.safetyRules, "");
   if (body.sceneCount !== undefined) patch.sceneCount = numberFromUnknown(body.sceneCount, 5);
   if (status) patch.status = status;
+  if (body.storyWorldId !== undefined) patch.storyWorldId = body.storyWorldId === null ? null : stringFromUnknown(body.storyWorldId, "");
   if (body.tone !== undefined) patch.tone = stringFromUnknown(body.tone, "");
   if (body.values !== undefined) patch.values = stringFromUnknown(body.values, "");
   if (body.visualStyle !== undefined) patch.visualStyle = stringFromUnknown(body.visualStyle, "");
@@ -381,9 +443,14 @@ function parseEpisodePatch(body: unknown): SeriesEpisodeIdeaPatchInput {
 
   if (body.ageRange !== undefined) patch.ageRange = stringFromUnknown(body.ageRange, "");
   if (body.caseId !== undefined) patch.caseId = body.caseId === null ? null : stringFromUnknown(body.caseId, "");
+  if (body.episodeNo !== undefined) patch.episodeNo = body.episodeNo === null ? null : numberFromUnknown(body.episodeNo, 1);
+  if (body.interactiveEnding !== undefined) patch.interactiveEnding = stringFromUnknown(body.interactiveEnding, "");
+  if (body.lessonOrTheme !== undefined) patch.lessonOrTheme = stringFromUnknown(body.lessonOrTheme, "");
   if (body.moralLesson !== undefined) patch.moralLesson = stringFromUnknown(body.moralLesson, "");
   if (body.promptSeed !== undefined) patch.promptSeed = stringFromUnknown(body.promptSeed, "");
   if (body.riskNotes !== undefined) patch.riskNotes = stringFromUnknown(body.riskNotes, "");
+  if (body.selectedCharacterAssetIds !== undefined) patch.selectedCharacterAssetIds = stringArrayFromUnknown(body.selectedCharacterAssetIds);
+  if (body.selectedSceneAssetIds !== undefined) patch.selectedSceneAssetIds = stringArrayFromUnknown(body.selectedSceneAssetIds);
   if (body.sourceStory !== undefined) patch.sourceStory = stringFromUnknown(body.sourceStory, "");
   if (status) patch.status = status;
   if (body.synopsis !== undefined) patch.synopsis = stringFromUnknown(body.synopsis, "");

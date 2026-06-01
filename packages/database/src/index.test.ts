@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MongoClient } from "mongodb";
-import { connectMongoDatabase, createContentSeriesRepository, createProductionAssetsRepository, getDatabaseNameFromMongoUri, type MongoDatabaseConnection } from "./index.js";
+import { connectMongoDatabase, createContentSeriesRepository, createProductionAssetsRepository, createStoryWorldsRepository, getDatabaseNameFromMongoUri, type MongoDatabaseConnection } from "./index.js";
 
 describe("getDatabaseNameFromMongoUri", () => {
   it("reads the database name from a MongoDB URI", () => {
@@ -194,6 +194,36 @@ describe("contentSeriesRepository", () => {
     expect(series.description).toBe("");
     expect(series.tone).toBe("");
     expect(series.visualStyle).toBe("");
+  });
+});
+
+describe("storyWorldsRepository", () => {
+  it("creates, patches, lists, and deletes reusable story worlds", async () => {
+    const storyWorldsCollection = createFakeProductionAssetsCollection();
+    const repository = createStoryWorldsRepository({
+      collection: () => storyWorldsCollection
+    } as unknown as MongoDatabaseConnection);
+
+    const created = await repository.create({
+      defaultSceneAssetIds: ["asset_rainbow_forest"],
+      description: "ä¸€ä¸ªå¯é‡ç”¨çš„å½©è™¹æ£®æž—ä¸–ç•Œè§‚ã€‚",
+      name: "å½©è™¹æ£®æž—",
+      recurringCharacterAssetIds: ["asset_rabbit"],
+      seriesIds: ["series_story"],
+      status: "active",
+      visualStyle: "æŸ”å’Œç«¥è¯é£Žæ ¼"
+    });
+    const patched = await repository.patch(created._id, {
+      relationshipMap: "å…”å­ç±³ç±³å’Œæ£®æž—åŒå­¦ä¸€èµ·ä¸Šè¯¾ã€‚"
+    });
+    const listed = await repository.list();
+    const deleted = await repository.delete(created._id);
+
+    expect(created.defaultSceneAssetIds).toEqual(["asset_rainbow_forest"]);
+    expect(created.recurringCharacterAssetIds).toEqual(["asset_rabbit"]);
+    expect(patched?.relationshipMap).toContain("ç±³ç±³");
+    expect(listed).toHaveLength(1);
+    expect(deleted).toBe(true);
   });
 });
 
