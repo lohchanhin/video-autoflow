@@ -1415,11 +1415,11 @@ export function App() {
     };
   }
 
-  function createCaseFromSchedule(schedule: ProductionSchedule, sequence: number): AdminJob {
+  function createCaseInputFromSchedule(schedule: ProductionSchedule, sequence: number): NewJobInput {
     const firstTarget = publishingTargets.find((target) => schedule.targetIds.includes(target.id)) ?? publishingTargets.find((target) => target.enabled);
     const brief = createDefaultPromptForTarget(firstTarget, `${new Date().toLocaleDateString()} #${sequence}`);
 
-    return createJob({
+    return {
       costLimitRM: 7.5,
       language: firstTarget?.language ?? "zh-CN",
       prompt: brief.prompt,
@@ -1428,10 +1428,10 @@ export function App() {
       source: "scheduled",
       templateType: firstTarget?.templateType ?? "rules_horror",
       topic: brief.topic
-    });
+    };
   }
 
-  function runProductionSchedule(scheduleId: string, mode: "manual" | "due" = "manual") {
+  async function runProductionSchedule(scheduleId: string, mode: "manual" | "due" = "manual") {
     const schedule = productionSchedules.find((candidate) => candidate.id === scheduleId);
     const startedAt = new Date().toISOString();
 
@@ -1468,7 +1468,63 @@ export function App() {
       return;
     }
 
-    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createCaseFromSchedule(schedule, guard.todaysCaseCount + index + 1));
+    if (schedule.executionMode === "autopilot_to_mp4") {
+      const run = createScheduleRun({
+        createdCaseIds: [],
+        plannedCaseCount,
+        scheduleId,
+        startedAt,
+        status: "running"
+      });
+      const createdCaseIds: string[] = [];
+      let runError: string | null = null;
+
+      setScheduleRuns((currentRuns) => [run, ...currentRuns]);
+
+      for (let index = 0; index < plannedCaseCount; index += 1) {
+        const draftInput = createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1);
+
+        try {
+          const generatedJob = await runAutopilotPipelineFromInput(draftInput, activeTargetIds, [], {
+            openCase: index === 0,
+            sourceLabel: mode === "manual" ? "Run now" : "Due schedule"
+          });
+          createdCaseIds.push(generatedJob.id);
+        } catch (error) {
+          runError = error instanceof Error ? error.message : "Scheduled autopilot generation failed.";
+          break;
+        }
+      }
+
+      const finishedAt = new Date().toISOString();
+      setScheduleRuns((currentRuns) =>
+        currentRuns.map((currentRun) =>
+          currentRun.id === run.id
+            ? {
+                ...currentRun,
+                createdCaseIds,
+                error: runError,
+                finishedAt,
+                status: runError ? "failed" : "completed"
+              }
+            : currentRun
+        )
+      );
+      setProductionSchedules((currentSchedules) =>
+        currentSchedules.map((currentSchedule) =>
+          currentSchedule.id === scheduleId
+            ? {
+                ...currentSchedule,
+                lastRunAt: finishedAt,
+                nextRunAt: calculateNextRunAt(currentSchedule)
+              }
+            : currentSchedule
+        )
+      );
+      return;
+    }
+
+    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createJob(createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1)));
     const newRecords = createdJobs.flatMap((job) => createProcessRecordsForJob(job, staffAgents, aiToolEndpoints));
     const newPublishTargets = createdJobs.flatMap((job) => createCasePublishTargets(job.id, activeTargetIds));
     const newActivities = createdJobs.map((job) =>
@@ -1523,7 +1579,7 @@ export function App() {
           continue;
         }
 
-        runProductionSchedule(schedule.id, "due");
+        void runProductionSchedule(schedule.id, "due");
       }
     }
   }
@@ -1753,6 +1809,237 @@ export function App() {
     setCaseDraftPreview(null);
     setGenerationError(null);
     switchView("cases");
+  }
+
+  async function runAutopilotPipelineFromInput(
+    draftInput: NewJobInput,
+    activeTargetIds: string[],
+    selectedAssets: ProductionAsset[],
+    options: { openCase?: boolean | undefined; sourceLabel: string }
+  ): Promise<AdminJob> {
+    const pipelineInput = {
+      ...draftInput,
+      id: draftInput.id ?? createId("job")
+    };
+    let workingJob: AdminJob | null = null;
+    let workingRecords: JobProcessRecord[] = [];
+
+    try {
+      setAutoGenerateStep(`${options.sourceLabel}: Writing script and storyboard`);
+      const scriptResult = await requestDraftScriptStoryGeneration(
+        {
+          costLimitRM: pipelineInput.costLimitRM,
+          durationSeconds: pipelineInput.durationSeconds ?? 45,
+          genre: pipelineInput.genre,
+          jobId: pipelineInput.id,
+          language: pipelineInput.language,
+          prompt: pipelineInput.prompt,
+          sceneCount: pipelineInput.sceneCount,
+          templateType: pipelineInput.templateType,
+          topic: pipelineInput.topic
+        },
+        getToolOverride("llm")
+      );
+      const scriptNow = new Date().toISOString();
+
+      workingJob = {
+        ...createJob(pipelineInput),
+        actualCostRM: scriptResult.costRM,
+        interpretedIdea: scriptResult.interpretedIdea,
+        outlineQc: scriptResult.outlineQc,
+        reviewStatus: scriptResult.requiresReview ? "needs_review" : "draft",
+        status: scriptResult.status,
+        updatedAt: scriptNow,
+        visualBible: scriptResult.visualBible
+      };
+      workingRecords = applyScriptStoryResultToRecords(createProcessRecordsForJob(workingJob, staffAgents, aiToolEndpoints), workingJob.id, scriptResult, scriptNow);
+      upsertJob(workingJob);
+      upsertJobRecords(workingJob.id, workingRecords);
+      void handleBootstrapProductionAssets(workingJob);
+      const attachedAssets = await attachSelectedAssetsToCase(workingJob, selectedAssets);
+      setCasePublishTargets((currentTargets) => [...createCasePublishTargets(workingJob!.id, activeTargetIds), ...currentTargets.filter((target) => target.jobId !== workingJob!.id)]);
+      addCaseActivities([
+        createCaseActivity({
+          detail: `${options.sourceLabel} created this production case and started autopilot.`,
+          jobId: workingJob.id,
+          title: "Case created",
+          type: "case_created"
+        }),
+        createCaseActivity({
+          detail: `${scriptResult.provider} ${scriptResult.model} generated script, storyboard, and image prompts.`,
+          jobId: workingJob.id,
+          title: "Script/story generated",
+          type: "script_generated"
+        })
+      ]);
+      setSelectedJobId(workingJob.id);
+      if (options.openCase) {
+        switchView("cases");
+      }
+
+      if (scriptResult.requiresReview) {
+        throw new Error(`Outline QC needs review before image generation. ${scriptResult.outlineQc.summary}`);
+      }
+
+      assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
+      setAutoGenerateStep(`${options.sourceLabel}: Generating scene images`);
+      workingJob = {
+        ...workingJob,
+        status: "IMAGE_GENERATING",
+        updatedAt: new Date().toISOString()
+      };
+      upsertJob(workingJob);
+      workingRecords = workingRecords.map((record) =>
+        record.stageId === "image"
+          ? {
+              ...record,
+              output: "Autopilot is generating reviewable scene images...",
+              status: "working",
+              updatedAt: new Date().toISOString()
+            }
+          : record
+      );
+      upsertJobRecords(workingJob.id, workingRecords);
+      const imageResult = await requestImageGeneration(
+        workingJob,
+        workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) ?? null : null,
+        getGenerationReferencesForJob(workingJob, attachedAssets),
+        getToolOverride("image")
+      );
+      const imageNow = new Date().toISOString();
+      workingJob = {
+        ...workingJob,
+        actualCostRM: Number((workingJob.actualCostRM + imageResult.costRM).toFixed(4)),
+        reviewStatus: imageResult.requiresReview ? "needs_review" : workingJob.reviewStatus,
+        status: keepLaterStatus(workingJob.status, imageResult.status),
+        updatedAt: imageNow
+      };
+      workingRecords = applyImageGenerationResultToRecords(workingRecords, workingJob.id, imageResult, imageNow);
+      setSceneReviews((currentReviews) => [
+        ...createSceneReviewItems(workingJob!.id, imageResult.images, currentReviews),
+        ...currentReviews.filter((review) => review.jobId !== workingJob!.id)
+      ]);
+      upsertJob(workingJob);
+      upsertJobRecords(workingJob.id, workingRecords);
+      appendCaseActivity(workingJob.id, "stage_updated", "Images generated", `${imageResult.provider} ${imageResult.model} generated ${imageResult.images.length} scene image(s). Cost RM ${imageResult.costRM.toFixed(4)}.`);
+
+      if (imageResult.requiresReview) {
+        throw new Error("Image visual QC found scene issues. Review the generated images, regenerate failed scenes, then continue to voiceover and MP4.");
+      }
+
+      assertCaseBudgetAvailable(workingJob, "Autopilot voiceover generation");
+      setAutoGenerateStep(`${options.sourceLabel}: Generating voiceover`);
+      const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, workingJob.id);
+
+      if (!voiceoverText) {
+        throw new Error("Autopilot could not find storyboard voice text for TTS.");
+      }
+
+      workingJob = {
+        ...workingJob,
+        status: "TTS_GENERATING",
+        updatedAt: new Date().toISOString()
+      };
+      upsertJob(workingJob);
+      workingRecords = workingRecords.map((record) =>
+        record.stageId === "tts"
+          ? {
+              ...record,
+              output: "Autopilot is generating synced OpenAI TTS voiceover audio...",
+              status: "working",
+              updatedAt: new Date().toISOString()
+            }
+          : record
+      );
+      upsertJobRecords(workingJob.id, workingRecords);
+      const ttsResult = await requestTtsGeneration(workingJob, voiceoverText, getToolOverride("tts"));
+      const ttsNow = new Date().toISOString();
+      workingJob = {
+        ...workingJob,
+        actualCostRM: Number((workingJob.actualCostRM + ttsResult.costRM).toFixed(4)),
+        reviewStatus: "draft",
+        status: ttsResult.status,
+        updatedAt: ttsNow
+      };
+      workingRecords = applyTtsGenerationResultToRecords(workingRecords, workingJob.id, ttsResult, ttsNow);
+      upsertJob(workingJob);
+      upsertJobRecords(workingJob.id, workingRecords);
+      appendCaseActivity(workingJob.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} generated synced narration audio. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+
+      assertCaseBudgetAvailable(workingJob, "Autopilot MP4 composition");
+      setAutoGenerateStep(`${options.sourceLabel}: Composing MP4`);
+      workingJob = {
+        ...workingJob,
+        status: "COMPOSING",
+        updatedAt: new Date().toISOString()
+      };
+      upsertJob(workingJob);
+      workingRecords = workingRecords.map((record) =>
+        record.stageId === "compose"
+          ? {
+              ...record,
+              output: "Autopilot is composing MP4 from images, subtitles, and synced voiceover audio...",
+              status: "working",
+              updatedAt: new Date().toISOString()
+            }
+          : record
+      );
+      upsertJobRecords(workingJob.id, workingRecords);
+      const videoResult = await requestVideoGeneration(workingJob, getToolOverride("compose"));
+      const videoNow = new Date().toISOString();
+      const hasUploadTargets = activeTargetIds.length > 0;
+      workingJob = {
+        ...workingJob,
+        actualCostRM: Number((workingJob.actualCostRM + videoResult.costRM).toFixed(4)),
+        durationSeconds: videoResult.durationSeconds,
+        reviewStatus: "needs_review",
+        status: hasUploadTargets ? "READY_TO_UPLOAD" : "QC_PASSED",
+        updatedAt: videoNow
+      };
+      workingRecords = applyGenerationResultToRecords(workingRecords, workingJob.id, videoResult, videoNow, hasUploadTargets);
+      upsertJob(workingJob);
+      upsertJobRecords(workingJob.id, workingRecords);
+      setStoredVideos((currentVideos) => [createStoredVideoFromGeneration(workingJob!, videoResult), ...currentVideos.filter((currentVideo) => currentVideo.jobId !== workingJob!.id)]);
+      appendCaseActivity(
+        workingJob.id,
+        "video_generated",
+        "Autopilot MP4 generated",
+        hasUploadTargets
+          ? `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. Waiting for human review before private upload.`
+          : `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+      );
+
+      return workingJob;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Autopilot generation failed.";
+      setGenerationError(message);
+
+      if (workingJob) {
+        const failedJob = {
+          ...workingJob,
+          status: "FAILED" as const,
+          updatedAt: new Date().toISOString()
+        };
+        upsertJob(failedJob);
+        upsertJobRecords(
+          failedJob.id,
+          workingRecords.map((record) =>
+            record.status === "working"
+              ? {
+                  ...record,
+                  notes: message,
+                  output: message,
+                  status: "failed",
+                  updatedAt: failedJob.updatedAt
+                }
+              : record
+          )
+        );
+        appendCaseActivity(failedJob.id, "error", "Autopilot failed", message);
+      }
+
+      throw error;
+    }
   }
 
   async function handleAutoGenerateCase() {
@@ -3881,7 +4168,7 @@ export function App() {
             providerKeys={providerKeys}
             publishingTargets={publishingTargets}
             reportDirtyState={reportDirtyDraft}
-            runSchedule={(scheduleId) => runProductionSchedule(scheduleId, "manual")}
+            runSchedule={(scheduleId) => void runProductionSchedule(scheduleId, "manual")}
             runs={scheduleRuns}
             schedules={productionSchedules}
             settings={toolProviderSettings}

@@ -34,6 +34,7 @@ describe("automation and publishing models", () => {
 
     expect(schedules[0]?.timezone).toBe("Asia/Kuala_Lumpur");
     expect(schedules[0]?.approvalGate).toBe("mp4_review");
+    expect(schedules[0]?.executionMode).toBe("queue_only");
     expect(schedules[0]?.targetIds).toEqual([]);
   });
 
@@ -50,12 +51,12 @@ describe("automation and publishing models", () => {
       createdCaseIds: ["job_1", "job_2"],
       plannedCaseCount: 2,
       scheduleId: "schedule_daily_horror_shorts",
-      status: "queued"
+      status: "running"
     });
 
     expect(run.createdCaseIds).toEqual(["job_1", "job_2"]);
     expect(run.error).toBeNull();
-    expect(run.status).toBe("queued");
+    expect(run.status).toBe("running");
   });
 
   it("keeps publishing target privacy locked to private", () => {

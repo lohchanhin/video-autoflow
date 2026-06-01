@@ -63,8 +63,12 @@ export function evaluateScheduleRunGuard(input: ScheduleGuardInput): ScheduleGua
     warnings.push(`${disabledTargetCount} 个发布目标已停用，本次会忽略。`);
   }
 
-  for (const issue of getRequiredWorkflowIssues(input)) {
-    blockers.push(issue);
+  if (input.schedule.executionMode === "autopilot_to_mp4") {
+    for (const issue of getRequiredWorkflowIssues(input)) {
+      blockers.push(issue);
+    }
+  } else {
+    warnings.push("当前执行模式是仅建立 Case；不会自动调用 AI 生成到 MP4。");
   }
 
   const canRun = blockers.length === 0;

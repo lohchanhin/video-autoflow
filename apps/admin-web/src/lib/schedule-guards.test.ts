@@ -16,7 +16,7 @@ describe("schedule run guards", () => {
     vi.stubGlobal("localStorage", createMemoryStorage());
   });
 
-  it("allows MP4-only scheduled production when no YouTube target is selected", () => {
+  it("allows queued scheduled production when no YouTube target is selected", () => {
     const schedule = { ...loadProductionSchedules()[0]!, enabled: true, targetIds: [] };
     const guard = evaluateScheduleRunGuard({
       endpoints: loadAiToolEndpoints(),
@@ -30,6 +30,7 @@ describe("schedule run guards", () => {
     expect(guard.canRun).toBe(true);
     expect(guard.plannedCaseCount).toBeGreaterThan(0);
     expect(guard.warnings[0]).toContain("MP4/QC");
+    expect(guard.warnings.some((warning) => warning.includes("仅建立 Case"))).toBe(true);
   });
 
   it("blocks when selected publishing targets are all disabled", () => {
@@ -49,7 +50,7 @@ describe("schedule run guards", () => {
   });
 
   it("blocks automatic runs when a required tool is manual-only", () => {
-    const schedule = { ...loadProductionSchedules()[0]!, enabled: true, targetIds: [] };
+    const schedule = { ...loadProductionSchedules()[0]!, enabled: true, executionMode: "autopilot_to_mp4" as const, targetIds: [] };
     const settings = loadToolProviderSettings().map((setting) =>
       setting.toolType === "llm" ? { ...setting, allowAutopilot: false } : setting
     );
@@ -67,7 +68,7 @@ describe("schedule run guards", () => {
   });
 
   it("blocks automatic runs when a required provider key is missing", () => {
-    const schedule = { ...loadProductionSchedules()[0]!, enabled: true, targetIds: [] };
+    const schedule = { ...loadProductionSchedules()[0]!, enabled: true, executionMode: "autopilot_to_mp4" as const, targetIds: [] };
     const guard = evaluateScheduleRunGuard({
       endpoints: loadAiToolEndpoints(),
       jobs: [],

@@ -167,6 +167,7 @@ function ScheduleCard(props: {
 
       <div className="automation-stat-grid">
         <AutomationStat label="状态" value={draft.enabled ? "已启用" : "已暂停"} />
+        <AutomationStat label="执行模式" value={draft.executionMode === "autopilot_to_mp4" ? "自动到 MP4/QC" : "仅建立 Case"} />
         <AutomationStat label="下次开工" value={formatDateTime(draft.nextRunAt)} />
         <AutomationStat label="上次执行" value={props.schedule.lastRunAt ? formatDateTime(props.schedule.lastRunAt) : "从未执行"} />
         <AutomationStat label="今日已建" value={`${todayCases.length}/${draft.maxVideosPerDay}`} />
@@ -212,6 +213,12 @@ function ScheduleCard(props: {
         </Field>
         <Field label="开工时间">
           <input type="time" value={draft.startTime} onChange={(event) => patchDraft({ startTime: event.target.value })} />
+        </Field>
+        <Field label="执行模式">
+          <select value={draft.executionMode} onChange={(event) => patchDraft({ executionMode: event.target.value === "autopilot_to_mp4" ? "autopilot_to_mp4" : "queue_only" })}>
+            <option value="queue_only">仅建立 Case，人工进入生产</option>
+            <option value="autopilot_to_mp4">自动生成到 MP4/QC</option>
+          </select>
         </Field>
         <Field label="每次创建 Case">
           <input
@@ -293,13 +300,15 @@ function AutomationStat(props: { label: string; value: string }) {
 
 function getScheduleRunLabel(status: ScheduleRun["status"]): string {
   if (status === "queued") return "已排队";
+  if (status === "running") return "执行中";
   if (status === "completed") return "已完成";
   if (status === "blocked") return "已阻塞";
   return "失败";
 }
 
-function getScheduleRunTone(status: ScheduleRun["status"]): "danger" | "neutral" | "success" | "warning" {
+function getScheduleRunTone(status: ScheduleRun["status"]): "active" | "danger" | "neutral" | "success" | "warning" {
   if (status === "completed") return "success";
+  if (status === "running") return "active";
   if (status === "queued") return "neutral";
   if (status === "blocked") return "warning";
   return "danger";

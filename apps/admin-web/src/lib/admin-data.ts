@@ -52,6 +52,7 @@ export interface ProductionSchedule {
   id: string;
   name: string;
   enabled: boolean;
+  executionMode: "queue_only" | "autopilot_to_mp4";
   timezone: string;
   daysOfWeek: number[];
   startTime: string;
@@ -67,7 +68,7 @@ export interface ProductionSchedule {
 export interface ScheduleRun {
   id: string;
   scheduleId: string;
-  status: "queued" | "completed" | "blocked" | "failed";
+  status: "queued" | "running" | "completed" | "blocked" | "failed";
   plannedCaseCount: number;
   createdCaseIds: string[];
   startedAt: string;
@@ -588,6 +589,7 @@ const defaultProductionSchedules: ProductionSchedule[] = [
     id: "schedule_daily_shorts",
     name: "Daily Shorts Batch",
     enabled: true,
+    executionMode: "queue_only",
     timezone: "Asia/Kuala_Lumpur",
     daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
     startTime: "09:00",
@@ -1827,6 +1829,7 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
     budgetLimitRM: clampNumber(Number(schedule.budgetLimitRM), 1, 100000, 80),
     daysOfWeek: normalizeDaysOfWeek(schedule.daysOfWeek),
     enabled: schedule.enabled ?? true,
+    executionMode: schedule.executionMode === "autopilot_to_mp4" ? "autopilot_to_mp4" as const : "queue_only" as const,
     id: schedule.id || createId("schedule"),
     lastRunAt: schedule.lastRunAt ?? null,
     maxCasesPerRun: clampNumber(Number(schedule.maxCasesPerRun), 1, 50, 5),
@@ -1860,7 +1863,7 @@ function normalizeScheduleRun(run: ScheduleRun): ScheduleRun {
 }
 
 function normalizeScheduleRunStatus(status: ScheduleRun["status"] | undefined): ScheduleRun["status"] {
-  if (status === "queued" || status === "completed" || status === "blocked" || status === "failed") {
+  if (status === "queued" || status === "running" || status === "completed" || status === "blocked" || status === "failed") {
     return status;
   }
 
