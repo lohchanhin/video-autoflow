@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Sparkles, Square, UserRound, X } from "lucide-react";
+import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Search, Sparkles, Square, UserRound, X } from "lucide-react";
 import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea, StoryWorld } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
@@ -441,9 +441,19 @@ function AssetMultiSelect(props: {
   onChange: (ids: string[]) => void;
   selectedIds: string[];
 }) {
+  const [query, setQuery] = useState("");
   const selectedAssets = props.selectedIds
     .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
     .filter((asset): asset is ProductionAsset => Boolean(asset));
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredAssets = props.assets.filter((asset) => {
+    if (!normalizedQuery) return true;
+
+    return [asset.label, asset.folderName, asset.type, asset.prompt, asset.notes, asset.tags.join(" ")]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
 
   function toggleAsset(id: string) {
     props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
@@ -455,11 +465,22 @@ function AssetMultiSelect(props: {
         <span>{props.icon}{props.label}</span>
         <small>{selectedAssets.length > 0 ? `${selectedAssets.length} 已选` : props.emptyText}</small>
       </div>
+      <label className="asset-multi-search">
+        <Search size={15} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资产名称、文件夹、标签" />
+      </label>
+      {selectedAssets.length > 0 ? (
+        <div className="brief-context-strip">
+          {selectedAssets.map((asset) => <span key={asset._id}>{asset.label}</span>)}
+        </div>
+      ) : null}
       {props.assets.length === 0 ? (
         <div className="draft-reference-empty">{props.emptyText}</div>
+      ) : filteredAssets.length === 0 ? (
+        <div className="draft-reference-empty">没有符合搜索的资产。</div>
       ) : (
         <div className="asset-multi-options">
-          {props.assets.map((asset) => (
+          {filteredAssets.map((asset) => (
             <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
               <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
               {asset.url ? <img alt={asset.label} src={asset.url} /> : <ImageIcon size={18} />}
@@ -471,11 +492,6 @@ function AssetMultiSelect(props: {
           ))}
         </div>
       )}
-      {selectedAssets.length > 0 ? (
-        <div className="brief-context-strip">
-          {selectedAssets.map((asset) => <span key={asset._id}>{asset.label}</span>)}
-        </div>
-      ) : null}
     </div>
   );
 }

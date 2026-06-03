@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProductionAsset } from "@ai-content-factory/shared-types";
 import {
   buildAssetContextBrief,
+  buildAssetContextBriefFromAssets,
   buildReferenceAssetPromptContext,
   findReadyReferenceAssetsByIds,
   isBackgroundDesignAsset,
@@ -94,6 +95,44 @@ describe("case reference asset routing", () => {
     );
 
     expect(selected.map((asset) => asset._id)).toEqual(["asset_paladin", "asset_rabbit", "asset_forest"]);
+  });
+
+  it("builds a multi-reference case brief from every selected character and scene asset", () => {
+    const rabbit = createAsset({
+      _id: "asset_rabbit",
+      label: "Mimi rabbit",
+      prompt: "USER DESIGN BRIEF: white rabbit girl, pink dress, blue vest, warm smile, fixed pastel palette.",
+      type: "character_design"
+    });
+    const tiger = createAsset({
+      _id: "asset_tiger",
+      label: "Huhu tiger",
+      prompt: "USER DESIGN BRIEF: small orange tiger boy, blue cap, friendly classroom troublemaker.",
+      type: "character_design"
+    });
+    const forest = createAsset({
+      _id: "asset_forest",
+      label: "Rainbow forest",
+      prompt: "USER DESIGN BRIEF: rainbow forest clearing, candy-color trees, fixed mushroom props and curved path.",
+      type: "scene_design"
+    });
+    const rejected = createAsset({
+      _id: "asset_rejected",
+      label: "Rejected reference",
+      status: "rejected",
+      type: "scene_design"
+    });
+
+    const brief = buildAssetContextBriefFromAssets([rabbit, tiger, forest, rejected]);
+
+    expect(brief).toContain("Mimi rabbit");
+    expect(brief).toContain("white rabbit girl");
+    expect(brief).toContain("Huhu tiger");
+    expect(brief).toContain("small orange tiger boy");
+    expect(brief).toContain("Rainbow forest");
+    expect(brief).toContain("rainbow forest clearing");
+    expect(brief).not.toContain("Rejected reference");
+    expect(brief).not.toContain("USER DESIGN BRIEF");
   });
 
   it("builds Seedance-safe context for scene design assets", () => {

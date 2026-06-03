@@ -120,6 +120,7 @@ import { loadStaffAgents, saveStaffAgents, type StaffAgent } from "./lib/agents.
 import { evaluateCaseBudgetGuard } from "./lib/budget-guards.js";
 import {
   buildAssetContextBrief,
+  buildAssetContextBriefFromAssets,
   buildReferenceAssetPromptContext,
   findReadyReferenceAssetsByIds,
   isBackgroundDesignAsset,
@@ -1844,7 +1845,7 @@ export function App() {
       templateType: routedTemplateType,
       topic: normalizedTopic || "short-form story idea"
     });
-    const assetContext = buildAssetContextBrief(referenceAssets.character, referenceAssets.background);
+    const assetContext = buildAssetContextBriefFromAssets(referenceAssets.assets) || buildAssetContextBrief(referenceAssets.character, referenceAssets.background);
     const productionBrief = buildProductionBriefFromDraft(referenceAssets);
     const structuredContext = [
       productionBrief.seriesContext ? `系列上下文：${productionBrief.seriesContext.name} / ${productionBrief.seriesContext.description} / ${productionBrief.seriesContext.values}` : "",

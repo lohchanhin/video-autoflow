@@ -54,6 +54,48 @@ export function buildAssetContextBrief(characterAsset: ProductionAsset | null, b
   ].join("\n");
 }
 
+export function buildAssetContextBriefFromAssets(assets: ProductionAsset[]): string {
+  const readyAssets = assets
+    .filter(isReadyReferenceAsset)
+    .filter((asset, index, selectedAssets) => selectedAssets.findIndex((candidate) => candidate._id === asset._id) === index);
+
+  if (readyAssets.length === 0) {
+    return "";
+  }
+
+  const characterLines = readyAssets
+    .filter(isCharacterDesignAsset)
+    .map((asset) => [
+      `- Character: ${asset.label}`,
+      `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`,
+      asset.url ? "  Use as a fixed cast identity, wardrobe, silhouette, palette, and recurring prop reference." : ""
+    ].filter(Boolean).join("\n"));
+  const sceneLines = readyAssets
+    .filter(isBackgroundDesignAsset)
+    .map((asset) => [
+      `- Scene / style: ${asset.label}`,
+      `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`,
+      asset.url ? "  Use as a fixed location, spatial layout, lighting, palette, and camera-zone reference." : ""
+    ].filter(Boolean).join("\n"));
+  const otherLines = readyAssets
+    .filter((asset) => !isCharacterDesignAsset(asset) && !isBackgroundDesignAsset(asset))
+    .map((asset) => [
+      `- Reference: ${asset.label}`,
+      `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`
+    ].join("\n"));
+
+  return [
+    "Selected production references for this case. These are authoritative continuity inputs for the outline, storyboard, image prompts, and video references.",
+    "Use every selected cast/location/style asset when it fits the scene. Do not copy asset-generation instructions, labels, UI words, or prompt-engineering text into viewer-facing script text.",
+    characterLines.length ? "Selected character assets:" : "",
+    ...characterLines,
+    sceneLines.length ? "Selected scene / environment / style assets:" : "",
+    ...sceneLines,
+    otherLines.length ? "Other selected references:" : "",
+    ...otherLines
+  ].filter(Boolean).join("\n");
+}
+
 export function productionAssetToGenerationReference(asset: ProductionAsset): GenerationReferenceAsset | null {
   if (!isReadyReferenceAsset(asset)) {
     return null;
