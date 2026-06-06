@@ -175,6 +175,7 @@ export interface ToolProviderSettings {
   model: string;
   outputUnitPriceRM: number;
   params: Record<string, boolean | number | string>;
+  pricingSource: string;
   provider: string;
   retryLimit: number;
   toolType: ToolProviderType;

@@ -208,9 +208,28 @@ function normalizeText(value: unknown, fallback: string): string {
 }
 
 function estimateOpenAICostRM(model: string, inputTokens: number, outputTokens: number, usdToMyrRate: number): number {
-  const pricing = model === "gpt-4.1-mini" ? { inputPerMillionUSD: 0.4, outputPerMillionUSD: 1.6 } : { inputPerMillionUSD: 0, outputPerMillionUSD: 0 };
+  const pricing = getOpenAITextPricingUSD(model);
   const usd = (inputTokens / 1_000_000) * pricing.inputPerMillionUSD + (outputTokens / 1_000_000) * pricing.outputPerMillionUSD;
   return Number((usd * usdToMyrRate).toFixed(4));
+}
+
+function getOpenAITextPricingUSD(model: string): { inputPerMillionUSD: number; outputPerMillionUSD: number } {
+  const table: Record<string, { inputPerMillionUSD: number; outputPerMillionUSD: number }> = {
+    "gpt-4.1": { inputPerMillionUSD: 2, outputPerMillionUSD: 8 },
+    "gpt-4.1-mini": { inputPerMillionUSD: 0.4, outputPerMillionUSD: 1.6 },
+    "gpt-4o-mini": { inputPerMillionUSD: 0.15, outputPerMillionUSD: 0.6 },
+    "gpt-5": { inputPerMillionUSD: 1.25, outputPerMillionUSD: 10 },
+    "gpt-5-mini": { inputPerMillionUSD: 0.25, outputPerMillionUSD: 2 },
+    "gpt-5-nano": { inputPerMillionUSD: 0.05, outputPerMillionUSD: 0.4 },
+    "gpt-5.4": { inputPerMillionUSD: 2.5, outputPerMillionUSD: 15 },
+    "gpt-5.4-mini": { inputPerMillionUSD: 0.75, outputPerMillionUSD: 4.5 },
+    "gpt-5.4-nano": { inputPerMillionUSD: 0.2, outputPerMillionUSD: 1.25 },
+    "gpt-5.4-pro": { inputPerMillionUSD: 30, outputPerMillionUSD: 180 },
+    "gpt-5.5": { inputPerMillionUSD: 5, outputPerMillionUSD: 30 },
+    "gpt-5.5-pro": { inputPerMillionUSD: 30, outputPerMillionUSD: 180 }
+  };
+
+  return table[model] ?? { inputPerMillionUSD: 0, outputPerMillionUSD: 0 };
 }
 
 const episodeIdeasJsonSchema = {

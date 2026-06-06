@@ -146,6 +146,7 @@ function createToolSetting(overrides: Partial<ToolProviderSettings>): ToolProvid
     model: "test-model",
     outputUnitPriceRM: 0,
     params: {},
+    pricingSource: "test",
     provider: "test",
     retryLimit: 2,
     toolType: "llm",

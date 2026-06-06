@@ -175,13 +175,13 @@ export const config = {
       aspectRatio: stringEnv("SEEDANCE_ASPECT_RATIO", "9:16"),
       pollIntervalMs: numberEnv("SEEDANCE_POLL_INTERVAL_MS", 5000),
       timeoutMs: numberEnv("SEEDANCE_TIMEOUT_MS", 240000),
-      costRMPerSecond: numberEnv("SEEDANCE_COST_RM_PER_SECOND", 0),
-      costRMPerMillionTokens: numberEnv("SEEDANCE_COST_RM_PER_M_TOKENS", 0)
+      costRMPerSecond: numberEnv("SEEDANCE_COST_RM_PER_SECOND", 0.28),
+      costRMPerMillionTokens: numberEnv("SEEDANCE_COST_RM_PER_M_TOKENS", 27.65)
     },
     elevenlabs: {
       apiKey: process.env.ELEVENLABS_API_KEY,
       baseUrl: stringEnv("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io/v1"),
-      musicCostRMPerMinute: numberEnv("ELEVENLABS_MUSIC_COST_RM_PER_MINUTE", 0),
+      musicCostRMPerMinute: numberEnv("ELEVENLABS_MUSIC_COST_RM_PER_MINUTE", 0.4345),
       musicModel: stringEnv("ELEVENLABS_MUSIC_MODEL", "music_v1"),
       musicOutputFormat: stringEnv("ELEVENLABS_MUSIC_OUTPUT_FORMAT", "mp3_44100_128")
     },

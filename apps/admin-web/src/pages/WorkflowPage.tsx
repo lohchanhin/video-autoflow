@@ -3,6 +3,7 @@ import { RefreshCw, Settings2 } from "lucide-react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
 import {
+  applyToolModelPricing,
   applyToolProviderPreset,
   customToolModelValue,
   customToolProviderValue,
@@ -574,7 +575,7 @@ function ToolProviderEditor(props: {
           </select>
         </Field>
         <Field label="模型">
-          <select value={modelSelectValue} onChange={(event) => patch({ model: event.target.value === customToolModelValue ? "" : event.target.value })}>
+          <select value={modelSelectValue} onChange={(event) => editor.setDraft(applyToolModelPricing(setting, event.target.value === customToolModelValue ? "" : event.target.value))}>
             {modelOptions.map((model) => (
               <option key={model} value={model}>
                 {model}
@@ -636,15 +637,19 @@ function ToolProviderEditor(props: {
 
       <div className="three-column-fields">
         <Field label="输入单价 RM">
-          <input type="number" min={0} step="0.0001" value={setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.000001" value={setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value), pricingSource: "manual" })} />
         </Field>
         <Field label="输出单价 RM">
-          <input type="number" min={0} step="0.0001" value={setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.000001" value={setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value), pricingSource: "manual" })} />
         </Field>
         <Field label="保底成本 RM">
-          <input type="number" min={0} step="0.0001" value={setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.000001" value={setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value), pricingSource: "manual" })} />
         </Field>
       </div>
+
+      <Field label="价格来源">
+        <input value={setting.pricingSource} onChange={(event) => patch({ pricingSource: event.target.value })} placeholder="manual / official pricing URL / internal cost note" />
+      </Field>
 
       <label className="toggle-line endpoint-enabled-line">
         <input type="checkbox" checked={setting.allowAutopilot} onChange={(event) => patch({ allowAutopilot: event.target.checked })} />
