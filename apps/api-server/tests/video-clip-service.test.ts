@@ -88,8 +88,8 @@ describe("createVideoClipGenerationService", () => {
     });
     expect(JSON.stringify(calls[0]?.body)).toContain("--duration 5");
     expect(JSON.stringify(calls[0]?.body)).toContain("first_frame");
-    expect(JSON.stringify(calls[0]?.body)).toContain("reference_image");
-    expect(JSON.stringify(calls[0]?.body)).toContain("https://cdn.example.test/character.png");
+    expect(JSON.stringify(calls[0]?.body)).not.toContain("reference_image");
+    expect(JSON.stringify(calls[0]?.body)).not.toContain("https://cdn.example.test/character.png");
     expect(calls[1]?.url).toBe("https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks/cgt-test-001");
     expect(response).toMatchObject({
       costRM: 2.765,
@@ -99,7 +99,77 @@ describe("createVideoClipGenerationService", () => {
       status: "VIDEO_DONE"
     });
     expect(response.clip.mode).toBe("image-to-video");
-    expect(response.clip.referenceImageUrls).toContain("https://cdn.example.test/character.png");
+    expect(response.clip.referenceImageUrls).toEqual([]);
+    expect(response.fallbackReason).toContain("does not allow first/last frame media to be mixed");
     expect(response.clip.asset.publicUrl).toBe("http://localhost:4000/uploads/jobs/job_byteplus_video/clips/scene_01_seedance.mp4");
+  });
+
+  it("uses BytePlus reference media only when no first or last frame is supplied", async () => {
+    vi.stubEnv("BYTEPLUS_ARK_API_KEY", "ark-test-key");
+    vi.stubEnv("SEEDANCE_API_STYLE", "byteplus-ark");
+    vi.stubEnv("SEEDANCE_BASE_URL", "https://ark.ap-southeast.bytepluses.com/api/v3");
+    vi.stubEnv("SEEDANCE_MODEL", "dreamina-seedance-2-0-260128");
+    vi.stubEnv("SEEDANCE_POLL_INTERVAL_MS", "100");
+    vi.stubEnv("SEEDANCE_TIMEOUT_MS", "1000");
+    vi.resetModules();
+
+    const { createVideoClipGenerationService } = await import("../src/modules/generation/video-clip-service.js");
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-byteplus-reference-video-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const calls: Array<{ body?: unknown; method?: string | undefined; url: string }> = [];
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      calls.push({
+        body: typeof init?.body === "string" ? JSON.parse(init.body) as unknown : undefined,
+        method: init?.method,
+        url
+      });
+
+      if (url.endsWith("/contents/generations/tasks")) {
+        return new Response(JSON.stringify({ id: "cgt-test-002", status: "submitted" }), { status: 200 });
+      }
+
+      if (url.endsWith("/contents/generations/tasks/cgt-test-002")) {
+        return new Response(
+          JSON.stringify({
+            content: {
+              video_url: "https://cdn.example.test/generated-reference.mp4"
+            },
+            id: "cgt-test-002",
+            status: "succeeded",
+            usage: {
+              total_tokens: 50_000
+            }
+          }),
+          { status: 200 }
+        );
+      }
+
+      if (url === "https://cdn.example.test/generated-reference.mp4") {
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const service = createVideoClipGenerationService({ fetchFn, storage });
+    const response = await service.generateVideoClip({
+      costLimitRM: 7.5,
+      durationSeconds: 5,
+      jobId: "job_byteplus_reference_video",
+      prompt: "A consistent main character walks into a neon kitchen, slow camera push in.",
+      referenceImageUrls: ["https://cdn.example.test/character.png", "https://cdn.example.test/set-design.png"],
+      sceneId: 1,
+      topic: "comedy kitchen"
+    });
+
+    expect(JSON.stringify(calls[0]?.body)).toContain("reference_image");
+    expect(JSON.stringify(calls[0]?.body)).toContain("https://cdn.example.test/character.png");
+    expect(JSON.stringify(calls[0]?.body)).not.toContain("first_frame");
+    expect(response.clip.mode).toBe("reference-to-video");
+    expect(response.clip.referenceImageUrls).toEqual(["https://cdn.example.test/character.png", "https://cdn.example.test/set-design.png"]);
   });
 });

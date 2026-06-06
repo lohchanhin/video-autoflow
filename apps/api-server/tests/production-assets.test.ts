@@ -168,7 +168,7 @@ describe("production asset API", () => {
 
     expect(capturedInputs[0]).toMatchObject({
       imageUrl: "https://cdn.example.test/scene-01.png",
-      referenceImageUrls: ["https://cdn.example.test/character.png"],
+      referenceImageUrls: [],
       sceneId: 1
     });
   });

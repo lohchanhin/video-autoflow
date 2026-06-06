@@ -76,11 +76,13 @@ async function hydrateSeedanceInputWithMongoAssets(options: CreateVideoClipsRout
   const selectedSceneId = input.sceneId ?? firstSceneIdFromAssets(assets) ?? 1;
   const firstFrame = findAssetByRole(assets, "first_frame", selectedSceneId);
   const lastFrame = findAssetByRole(assets, "last_frame", selectedSceneId);
-  const referenceImageUrls = assets
+  const hydratedReferenceImageUrls = assets
     .filter((asset) => asset.role === "reference_image" && (asset.sceneId === null || asset.sceneId === selectedSceneId) && asset.url.trim())
     .map((asset) => asset.url.trim())
     .filter((url, index, urls) => url !== firstFrame?.url && url !== lastFrame?.url && urls.indexOf(url) === index)
     .slice(0, 8);
+  const hasFrameMedia = Boolean(firstFrame?.url || lastFrame?.url || input.imageUrl || input.lastFrameImageUrl);
+  const referenceImageUrls = hasFrameMedia ? [] : hydratedReferenceImageUrls;
 
   return {
     ...input,
