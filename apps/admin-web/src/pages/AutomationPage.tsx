@@ -2,7 +2,7 @@ import { Play, Power, PowerOff } from "lucide-react";
 import { useEffect } from "react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
-import { isSameLocalDay, type AiToolEndpoint, type ProductionSchedule, type ProviderKeyRecord, type PublishingTarget, type ScheduleRun, type ToolProviderSettings } from "../lib/admin-data.js";
+import { isSameLocalDay, type AiToolEndpoint, type BudgetSettings, type ProductionSchedule, type ProviderKeyRecord, type PublishingTarget, type ScheduleRun, type ToolProviderSettings } from "../lib/admin-data.js";
 import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 import { evaluateScheduleRunGuard } from "../lib/schedule-guards.js";
@@ -10,6 +10,7 @@ import { formatDateTime } from "../lib/view-helpers.js";
 
 interface AutomationPageProps {
   endpoints: AiToolEndpoint[];
+  budgetSettings: BudgetSettings;
   jobs: AdminJob[];
   producerAgent: StaffAgent | null;
   providerKeys: ProviderKeyRecord[];
@@ -55,6 +56,7 @@ export function AutomationPage(props: AutomationPageProps) {
           {props.schedules.map((schedule) => (
             <ScheduleCard
               endpoints={props.endpoints}
+              budgetSettings={props.budgetSettings}
               jobs={props.jobs}
               key={schedule.id}
               producerAgent={props.producerAgent}
@@ -94,6 +96,7 @@ export function AutomationPage(props: AutomationPageProps) {
 
 function ScheduleCard(props: {
   endpoints: AiToolEndpoint[];
+  budgetSettings: BudgetSettings;
   jobs: AdminJob[];
   producerAgent: StaffAgent | null;
   providerKeys: ProviderKeyRecord[];
@@ -117,7 +120,9 @@ function ScheduleCard(props: {
     providerKeys: props.providerKeys,
     publishingTargets: props.publishingTargets,
     schedule: props.schedule,
-    settings: props.settings
+    settings: props.settings,
+    defaultCaseCostRM: props.budgetSettings.defaultCaseBudgetRM,
+    stopWhenBudgetExceeded: props.budgetSettings.stopWhenBudgetExceeded
   });
   const runNowTitle = scheduleEditor.isDirty
     ? "保存排程修改后才能 Run now"

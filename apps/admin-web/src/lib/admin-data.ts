@@ -87,6 +87,16 @@ export interface StorageSettings {
   minioBucket: string;
 }
 
+export interface BudgetSettings {
+  defaultCaseBudgetRM: number;
+  dailyBudgetRM: number;
+  monthlyBudgetRM: number;
+  maxCasesPerRun: number;
+  maxVideosPerDay: number;
+  stopWhenBudgetExceeded: boolean;
+  updatedAt: string;
+}
+
 export interface StoredVideo {
   id: string;
   jobId: string;
@@ -380,6 +390,7 @@ export interface TrendReport extends TrendScanResponse {
 }
 
 const accountsKey = "ai-content-factory:youtube-accounts";
+const budgetSettingsKey = "ai-content-factory:budget-settings";
 const storageSettingsKey = "ai-content-factory:storage-settings";
 const videosKey = "ai-content-factory:stored-videos";
 const aiToolEndpointsKey = "ai-content-factory:ai-tool-endpoints";
@@ -756,6 +767,16 @@ const defaultYouTubeAccounts: YouTubeAccount[] = [];
 const defaultPublishingTargets: PublishingTarget[] = [];
 const defaultCharacterProfiles: CharacterProfile[] = [];
 
+const defaultBudgetSettings: BudgetSettings = {
+  dailyBudgetRM: 80,
+  defaultCaseBudgetRM: 7.5,
+  maxCasesPerRun: 5,
+  maxVideosPerDay: 10,
+  monthlyBudgetRM: 2500,
+  stopWhenBudgetExceeded: true,
+  updatedAt: new Date(0).toISOString()
+};
+
 const defaultProductionSchedules: ProductionSchedule[] = [
   {
     id: "schedule_daily_shorts",
@@ -765,9 +786,9 @@ const defaultProductionSchedules: ProductionSchedule[] = [
     timezone: "Asia/Kuala_Lumpur",
     daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
     startTime: "09:00",
-    maxCasesPerRun: 5,
-    maxVideosPerDay: 10,
-    budgetLimitRM: 80,
+    maxCasesPerRun: defaultBudgetSettings.maxCasesPerRun,
+    maxVideosPerDay: defaultBudgetSettings.maxVideosPerDay,
+    budgetLimitRM: defaultBudgetSettings.dailyBudgetRM,
     approvalGate: "mp4_review",
     targetIds: [],
     nextRunAt: calculateNextRunAt({
@@ -1423,6 +1444,21 @@ export function saveScheduleRuns(runs: ScheduleRun[]): void {
   writeJson(scheduleRunsKey, runs.map(normalizeScheduleRun));
 }
 
+export function loadBudgetSettings(): BudgetSettings {
+  const settings = readJson<BudgetSettings>(budgetSettingsKey, defaultBudgetSettings);
+  const normalized = normalizeBudgetSettings(settings);
+
+  if (JSON.stringify(settings) !== JSON.stringify(normalized)) {
+    writeJson(budgetSettingsKey, normalized);
+  }
+
+  return normalized;
+}
+
+export function saveBudgetSettings(settings: BudgetSettings): void {
+  writeJson(budgetSettingsKey, normalizeBudgetSettings(settings));
+}
+
 export function createScheduleRun(input: {
   scheduleId: string;
   status: ScheduleRun["status"];
@@ -2061,14 +2097,14 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
   const targetIds = allowedTargetIds ? schedule.targetIds.filter((targetId) => allowedTargetIds.has(targetId)) : schedule.targetIds;
   const normalized = {
     approvalGate: "mp4_review" as const,
-    budgetLimitRM: clampNumber(Number(schedule.budgetLimitRM), 1, 100000, 80),
+    budgetLimitRM: clampNumber(Number(schedule.budgetLimitRM), 1, 100000, defaultBudgetSettings.dailyBudgetRM),
     daysOfWeek: normalizeDaysOfWeek(schedule.daysOfWeek),
     enabled: schedule.enabled ?? true,
     executionMode: schedule.executionMode === "autopilot_to_mp4" ? "autopilot_to_mp4" as const : "queue_only" as const,
     id: schedule.id || createId("schedule"),
     lastRunAt: schedule.lastRunAt ?? null,
-    maxCasesPerRun: clampNumber(Number(schedule.maxCasesPerRun), 1, 50, 5),
-    maxVideosPerDay: clampNumber(Number(schedule.maxVideosPerDay), 1, 100, 10),
+    maxCasesPerRun: clampNumber(Number(schedule.maxCasesPerRun), 1, 50, defaultBudgetSettings.maxCasesPerRun),
+    maxVideosPerDay: clampNumber(Number(schedule.maxVideosPerDay), 1, 100, defaultBudgetSettings.maxVideosPerDay),
     name: schedule.name || "Daily Production Batch",
     nextRunAt: schedule.nextRunAt,
     startTime: normalizeStartTime(schedule.startTime),
@@ -2079,6 +2115,18 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
   return {
     ...normalized,
     nextRunAt: normalized.nextRunAt && new Date(normalized.nextRunAt).toString() !== "Invalid Date" ? normalized.nextRunAt : calculateNextRunAt(normalized)
+  };
+}
+
+function normalizeBudgetSettings(settings: Partial<BudgetSettings>): BudgetSettings {
+  return {
+    dailyBudgetRM: clampNumber(Number(settings.dailyBudgetRM), 1, 1_000_000, defaultBudgetSettings.dailyBudgetRM),
+    defaultCaseBudgetRM: clampNumber(Number(settings.defaultCaseBudgetRM), 0.1, 100_000, defaultBudgetSettings.defaultCaseBudgetRM),
+    maxCasesPerRun: clampNumber(Number(settings.maxCasesPerRun), 1, 50, defaultBudgetSettings.maxCasesPerRun),
+    maxVideosPerDay: clampNumber(Number(settings.maxVideosPerDay), 1, 1000, defaultBudgetSettings.maxVideosPerDay),
+    monthlyBudgetRM: clampNumber(Number(settings.monthlyBudgetRM), 1, 10_000_000, defaultBudgetSettings.monthlyBudgetRM),
+    stopWhenBudgetExceeded: settings.stopWhenBudgetExceeded !== false,
+    updatedAt: typeof settings.updatedAt === "string" && settings.updatedAt.trim() ? settings.updatedAt : new Date(0).toISOString()
   };
 }
 

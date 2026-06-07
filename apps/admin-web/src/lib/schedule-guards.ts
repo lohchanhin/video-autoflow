@@ -14,6 +14,7 @@ export interface ScheduleGuardInput {
   publishingTargets: PublishingTarget[];
   schedule: ProductionSchedule;
   settings: ToolProviderSettings[];
+  stopWhenBudgetExceeded?: boolean | undefined;
 }
 
 export interface ScheduleGuardResult {
@@ -39,7 +40,7 @@ export function evaluateScheduleRunGuard(input: ScheduleGuardInput): ScheduleGua
   const todaysCostExposureRM = roundRM(todaysScheduledJobs.reduce((sum, job) => sum + Math.max(job.actualCostRM, job.costLimitRM), 0));
   const remainingBudgetRM = roundRM(Math.max(0, input.schedule.budgetLimitRM - todaysCostExposureRM));
   const remainingDailySlots = Math.max(0, input.schedule.maxVideosPerDay - todaysScheduledJobs.length);
-  const budgetSlots = Math.max(0, Math.floor(remainingBudgetRM / caseCostRM));
+  const budgetSlots = input.stopWhenBudgetExceeded === false ? input.schedule.maxCasesPerRun : Math.max(0, Math.floor(remainingBudgetRM / caseCostRM));
   const activeTargetIds = input.schedule.targetIds.filter((targetId) => input.publishingTargets.some((target) => target.id === targetId && target.enabled));
   const disabledTargetCount = input.schedule.targetIds.length - activeTargetIds.length;
 

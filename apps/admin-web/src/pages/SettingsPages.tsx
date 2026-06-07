@@ -3,7 +3,7 @@ import { Eye, EyeOff, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import type { CostLog, CostSummaryResponse } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
-import type { ProviderKeyRecord, PublishingTarget, StorageSettings, StoredVideo, YouTubeAccount } from "../lib/admin-data.js";
+import type { BudgetSettings, ProviderKeyRecord, PublishingTarget, StorageSettings, StoredVideo, YouTubeAccount } from "../lib/admin-data.js";
 import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 
@@ -476,15 +476,44 @@ function StoredVideoSettingsRow(props: {
 }
 
 export function CostPage(props: {
+  budgetSettings: BudgetSettings;
   jobs: AdminJob[];
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   storedVideos: StoredVideo[];
   summary: { totalCost: number; activeCases: number };
+  updateBudgetSettings: (settings: BudgetSettings) => void;
 }) {
   const overLimitJobs = props.jobs.filter((job) => job.actualCostRM >= job.costLimitRM);
+  const budgetEditor = useEditableDraft(props.budgetSettings, `${props.budgetSettings.updatedAt}:${JSON.stringify(props.budgetSettings)}`);
+  const budgetDraft = budgetEditor.draft ?? props.budgetSettings;
   const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [ledgerLogs, setLedgerLogs] = useState<CostLog[]>([]);
   const [ledgerSummary, setLedgerSummary] = useState<CostSummaryResponse | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(false);
+
+  useEffect(() => {
+    props.reportDirtyState?.("budget:settings", budgetEditor.isDirty);
+    return () => props.reportDirtyState?.("budget:settings", false);
+  }, [budgetEditor.isDirty, props.reportDirtyState]);
+
+  function patchBudgetDraft(patch: Partial<BudgetSettings>) {
+    budgetEditor.setDraftPatch(patch);
+  }
+
+  function saveBudgetDraft() {
+    const nextSettings: BudgetSettings = {
+      ...budgetDraft,
+      dailyBudgetRM: Math.max(1, Number(budgetDraft.dailyBudgetRM) || 80),
+      defaultCaseBudgetRM: Math.max(0.1, Number(budgetDraft.defaultCaseBudgetRM) || 7.5),
+      maxCasesPerRun: Math.max(1, Math.round(Number(budgetDraft.maxCasesPerRun) || 5)),
+      maxVideosPerDay: Math.max(1, Math.round(Number(budgetDraft.maxVideosPerDay) || 10)),
+      monthlyBudgetRM: Math.max(1, Number(budgetDraft.monthlyBudgetRM) || 2500),
+      updatedAt: new Date().toISOString()
+    };
+
+    props.updateBudgetSettings(nextSettings);
+    budgetEditor.markSaved(nextSettings);
+  }
 
   async function refreshLedger() {
     setLoadingLedger(true);
@@ -509,6 +538,40 @@ export function CostPage(props: {
 
   return (
     <section className="settings-grid">
+      <div className="panel">
+        <SectionHeader eyebrow="全局预算设置" title="预算控制中心" action={<StatusPill tone={budgetEditor.isDirty ? "warning" : "success"}>{budgetEditor.isDirty ? "未保存" : "已保存"}</StatusPill>} />
+        <p className="muted-copy">这里是全系统预算默认来源。保存后会同步新建 Case 默认预算、自动排程预算、每日产量上限，以及主控 Agent 的单 Case 成本护栏。</p>
+        <div className="two-column-fields">
+          <Field label="默认单支 Case 预算 RM">
+            <input min={0.1} step={0.1} type="number" value={budgetDraft.defaultCaseBudgetRM} onChange={(event) => patchBudgetDraft({ defaultCaseBudgetRM: Number(event.target.value) })} />
+          </Field>
+          <Field label="每日预算 RM">
+            <input min={1} step={1} type="number" value={budgetDraft.dailyBudgetRM} onChange={(event) => patchBudgetDraft({ dailyBudgetRM: Number(event.target.value) })} />
+          </Field>
+          <Field label="每月预算 RM">
+            <input min={1} step={10} type="number" value={budgetDraft.monthlyBudgetRM} onChange={(event) => patchBudgetDraft({ monthlyBudgetRM: Number(event.target.value) })} />
+          </Field>
+          <Field label="每次排程最多 Case">
+            <input min={1} max={50} type="number" value={budgetDraft.maxCasesPerRun} onChange={(event) => patchBudgetDraft({ maxCasesPerRun: Number(event.target.value) })} />
+          </Field>
+          <Field label="每日最多影片">
+            <input min={1} max={1000} type="number" value={budgetDraft.maxVideosPerDay} onChange={(event) => patchBudgetDraft({ maxVideosPerDay: Number(event.target.value) })} />
+          </Field>
+          <Field label="超预算策略">
+            <label className="toggle-line">
+              <input checked={budgetDraft.stopWhenBudgetExceeded} type="checkbox" onChange={(event) => patchBudgetDraft({ stopWhenBudgetExceeded: event.target.checked })} />
+              <span>超出预算时停止自动付费生成</span>
+            </label>
+          </Field>
+        </div>
+        <EditableActionBar
+          isDirty={budgetEditor.isDirty}
+          onCancel={budgetEditor.resetDraft}
+          onSave={saveBudgetDraft}
+          saveLabel="保存全局预算"
+        />
+      </div>
+
       <div className="panel">
         <SectionHeader eyebrow="成本控制" title="真实成本记录" action={<StatusPill tone={ledgerSummary?.pricingMissingCount ? "warning" : overLimitJobs.length > 0 ? "danger" : "success"}>{ledgerSummary?.pricingMissingCount ? "有待补价" : overLimitJobs.length > 0 ? "超预算" : "正常"}</StatusPill>} />
         <div className="budget-stack">

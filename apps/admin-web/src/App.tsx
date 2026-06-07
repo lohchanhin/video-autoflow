@@ -41,6 +41,7 @@ import {
   buildToolProviderOverride,
   findToolProviderSettings,
   loadAiToolEndpoints,
+  loadBudgetSettings,
   loadCasePublishTargets,
   loadCaseQcReports,
   loadCharacterProfiles,
@@ -57,6 +58,7 @@ import {
   resetProviderKeys,
   resetToolProviderSettings,
   saveAiToolEndpoints,
+  saveBudgetSettings,
   saveCasePublishTargets,
   saveCaseQcReports,
   saveCharacterProfiles,
@@ -70,6 +72,7 @@ import {
   saveTrendReports,
   saveYouTubeAccounts,
   type AiToolEndpoint,
+  type BudgetSettings,
   type CaseQcReport,
   type CasePublishTarget,
   type CharacterProfile,
@@ -1125,6 +1128,7 @@ export function App() {
   const [storageSettings, setStorageSettings] = useState<StorageSettings>(() => loadStorageSettings());
   const [storedVideos, setStoredVideos] = useState<StoredVideo[]>(() => loadStoredVideos());
   const [trendReports, setTrendReports] = useState<TrendReport[]>(() => loadTrendReports());
+  const [budgetSettings, setBudgetSettings] = useState<BudgetSettings>(() => loadBudgetSettings());
   const [trendQuery, setTrendQuery] = useState("shorts story");
   const [trendRegionCode, setTrendRegionCode] = useState("MY");
   const [trendPublishedWithinDays, setTrendPublishedWithinDays] = useState(7);
@@ -1166,7 +1170,7 @@ export function App() {
   const [templateType, setTemplateType] = useState<AdminJob["templateType"]>("urban_legend");
   const [language, setLanguage] = useState<AdminJob["language"]>("zh-CN");
   const [sceneCount, setSceneCount] = useState(5);
-  const [costLimitRM, setCostLimitRM] = useState(7.5);
+  const [costLimitRM, setCostLimitRM] = useState(() => budgetSettings.defaultCaseBudgetRM);
 
   useEffect(() => {
     saveStaffAgents(staffAgents);
@@ -1191,6 +1195,10 @@ export function App() {
   useEffect(() => {
     saveToolProviderSettings(toolProviderSettings);
   }, [toolProviderSettings]);
+
+  useEffect(() => {
+    saveBudgetSettings(budgetSettings);
+  }, [budgetSettings]);
 
   useEffect(() => {
     saveProviderKeys(providerKeys);
@@ -1320,7 +1328,7 @@ export function App() {
     const timer = window.setInterval(runDueProductionSchedules, 60_000);
 
     return () => window.clearInterval(timer);
-  }, [productionSchedules, publishingTargets, jobs, staffAgents, aiToolEndpoints, providerKeys, toolProviderSettings]);
+  }, [productionSchedules, publishingTargets, jobs, staffAgents, aiToolEndpoints, providerKeys, toolProviderSettings, budgetSettings]);
 
   async function refreshOperationalStatus() {
     await Promise.all([refreshHealth(), refreshDatabaseStatus(), refreshProviderSecretStatuses()]);
@@ -1489,6 +1497,40 @@ export function App() {
     return publishingTargets.filter((target) => target.enabled).map((target) => target.id);
   }
 
+  function updateBudgetSettings(nextSettings: BudgetSettings) {
+    const normalizedSettings = {
+      ...nextSettings,
+      updatedAt: new Date().toISOString()
+    };
+
+    setBudgetSettings(normalizedSettings);
+    setCostLimitRM(normalizedSettings.defaultCaseBudgetRM);
+    setProductionSchedules((currentSchedules) =>
+      currentSchedules.map((schedule) => ({
+        ...schedule,
+        budgetLimitRM: normalizedSettings.dailyBudgetRM,
+        maxCasesPerRun: normalizedSettings.maxCasesPerRun,
+        maxVideosPerDay: normalizedSettings.maxVideosPerDay,
+        nextRunAt: calculateNextRunAt({
+          daysOfWeek: schedule.daysOfWeek,
+          startTime: schedule.startTime
+        })
+      }))
+    );
+    setStaffAgents((currentAgents) =>
+      currentAgents.map((agent, index) =>
+        index === 0
+          ? {
+              ...agent,
+              costGuardRM: normalizedSettings.defaultCaseBudgetRM,
+              updatedAt: normalizedSettings.updatedAt
+            }
+          : agent
+      )
+    );
+    setCaseDraftPreview(null);
+  }
+
   function createDefaultPromptForTarget(target: PublishingTarget | undefined, runLabel: string): { prompt: string; topic: string } {
     const channel = target?.channelName ?? "Shorts Channel";
     const niche = target?.niche ?? target?.templateType ?? "general_shorts";
@@ -1505,7 +1547,7 @@ export function App() {
     const brief = createDefaultPromptForTarget(firstTarget, `${new Date().toLocaleDateString()} #${sequence}`);
 
     return {
-      costLimitRM: 7.5,
+      costLimitRM: budgetSettings.defaultCaseBudgetRM,
       language: firstTarget?.language ?? "zh-CN",
       prompt: brief.prompt,
       sceneCount: 5,
@@ -1532,7 +1574,9 @@ export function App() {
       providerKeys,
       publishingTargets,
       schedule,
-      settings: toolProviderSettings
+      settings: toolProviderSettings,
+      defaultCaseCostRM: budgetSettings.defaultCaseBudgetRM,
+      stopWhenBudgetExceeded: budgetSettings.stopWhenBudgetExceeded
     });
     const { activeTargetIds, plannedCaseCount } = guard;
 
@@ -1711,6 +1755,10 @@ export function App() {
   }
 
   function getCaseBudgetBlockMessage(job: AdminJob, operationLabel: string, estimatedCostRM?: number): string | null {
+    if (!budgetSettings.stopWhenBudgetExceeded) {
+      return null;
+    }
+
     const guard = evaluateCaseBudgetGuard(job, { estimatedCostRM, operationLabel });
     return guard.canRun ? null : guard.message;
   }
@@ -2791,7 +2839,7 @@ export function App() {
         backgroundAssetId: response.caseSeed.backgroundAssetId ?? backgroundAsset?._id ?? null,
         characterAssetIds,
         characterAssetId: response.caseSeed.characterAssetId ?? characterAsset?._id ?? null,
-        costLimitRM: response.caseSeed.costLimitRM,
+        costLimitRM: budgetSettings.defaultCaseBudgetRM,
         durationSeconds: response.caseSeed.durationSeconds,
         episodeId: response.caseSeed.episodeId,
         genre: response.caseSeed.genre,
@@ -4452,6 +4500,7 @@ export function App() {
 
         {activeView === "automation" ? (
           <AutomationPage
+            budgetSettings={budgetSettings}
             endpoints={aiToolEndpoints}
             jobs={jobs}
             producerAgent={staffAgents[0] ?? null}
@@ -4851,7 +4900,16 @@ export function App() {
           />
         ) : null}
 
-        {activeView === "cost" ? <CostPage jobs={jobs} storedVideos={storedVideos} summary={summary} /> : null}
+        {activeView === "cost" ? (
+          <CostPage
+            budgetSettings={budgetSettings}
+            jobs={jobs}
+            reportDirtyState={reportDirtyDraft}
+            storedVideos={storedVideos}
+            summary={summary}
+            updateBudgetSettings={updateBudgetSettings}
+          />
+        ) : null}
       </section>
     </main>
   );
