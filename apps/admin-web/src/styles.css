@@ -2027,6 +2027,38 @@ textarea {
   line-height: 1.45;
 }
 
+.case-budget-alert-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  gap: 12px;
+  align-items: end;
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.case-budget-alert-editor > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.case-budget-alert-editor strong {
+  color: #7c2d12;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.case-budget-alert-editor span,
+.case-budget-alert-editor small {
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.case-budget-alert-editor .editable-action-bar {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
 .case-next-cost-card {
   display: grid;
   gap: 8px;

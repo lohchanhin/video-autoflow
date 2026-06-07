@@ -720,6 +720,27 @@ function ProductionTab(
     setProductionDirtyDrafts((currentDrafts) => updateDirtyDraftMap(currentDrafts, key, isDirty));
     props.reportDirtyState?.(key, isDirty);
   }, [props.reportDirtyState]);
+  const visibleBudgetEditor = useEditableDraft(
+    props.selectedJob ? { costLimitRM: props.selectedJob.costLimitRM } : null,
+    props.selectedJob ? `visible-budget:${props.selectedJob.id}:${props.selectedJob.updatedAt}:${props.selectedJob.costLimitRM}` : null
+  );
+  const visibleBudgetDraft = visibleBudgetEditor.draft;
+
+  useEffect(() => {
+    const dirtyKey = props.selectedJob ? `case-visible-budget:${props.selectedJob.id}` : "case-visible-budget:none";
+    reportProductionDirtyState(dirtyKey, visibleBudgetEditor.isDirty);
+    return () => reportProductionDirtyState(dirtyKey, false);
+  }, [props.selectedJob?.id, reportProductionDirtyState, visibleBudgetEditor.isDirty]);
+
+  function saveVisibleCaseBudget() {
+    if (!props.selectedJob || !visibleBudgetDraft) {
+      return;
+    }
+
+    const nextLimit = Math.max(0.1, Number(visibleBudgetDraft.costLimitRM) || props.selectedJob.costLimitRM);
+    props.updateCaseDetails(props.selectedJob.id, { costLimitRM: nextLimit });
+    visibleBudgetEditor.markSaved({ costLimitRM: nextLimit });
+  }
 
   useEffect(() => {
     if (!props.selectedJob || activeProductionTab !== "cost") {
@@ -942,6 +963,31 @@ function ProductionTab(
         <div className="pipeline-gate-note">
           <AlertTriangle size={16} />
           <span>Case 预算已用完：RM {props.selectedJob.actualCostRM.toFixed(4)} / RM {props.selectedJob.costLimitRM.toFixed(2)}。付费生成已锁定；请调整预算并保存后再继续。</span>
+        </div>
+      ) : null}
+
+      {budgetExhausted && visibleBudgetDraft ? (
+        <div className="case-budget-alert-editor panel">
+          <div>
+            <p className="eyebrow">当前 Case 预算</p>
+            <strong>这支影片已经超出 RM {props.selectedJob.costLimitRM.toFixed(2)}，请调高后保存。</strong>
+            <span>这里只改当前 Case。以后新 Case 的默认预算在左侧「成本」页面调整。</span>
+          </div>
+          <Field label="新的 Case 预算 RM">
+            <input
+              min={0.1}
+              step={0.1}
+              type="number"
+              value={visibleBudgetDraft.costLimitRM}
+              onChange={(event) => visibleBudgetEditor.setDraftPatch({ costLimitRM: Number(event.target.value) })}
+            />
+          </Field>
+          <EditableActionBar
+            isDirty={visibleBudgetEditor.isDirty}
+            onCancel={visibleBudgetEditor.resetDraft}
+            onSave={saveVisibleCaseBudget}
+            saveLabel="保存并解除预算锁"
+          />
         </div>
       ) : null}
 
