@@ -600,6 +600,73 @@ describe("POST /generation/bgm", () => {
     expect(response.body.error.message).toContain("body.music_length_ms: Input should be greater than or equal to 3000");
     expect(response.body.error.message).not.toContain("[object Object]");
   });
+
+  it("explains ElevenLabs API key quota errors separately from account balance", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-bgm-quota-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const bgmGenerationService = createBgmGenerationService({
+      elevenlabs: {
+        apiKey: "test-key",
+        baseUrl: "https://api.elevenlabs.io/v1",
+        costRMPerMinute: 0,
+        model: "music_v1",
+        outputFormat: "mp3_44100_128"
+      },
+      storage
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = input.toString();
+
+        if (url.includes("/user/subscription")) {
+          return new Response(JSON.stringify({ character_count: 680, character_limit: 1000 }), {
+            headers: {
+              "content-type": "application/json"
+            },
+            status: 200
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            detail: {
+              message: "This request exceeds your API key (factory) quota of 1000. You have 320 credits remaining, while 619 credits are required for this request."
+            }
+          }),
+          {
+            headers: {
+              "content-type": "application/json"
+            },
+            status: 401,
+            statusText: "Unauthorized"
+          }
+        );
+      })
+    );
+
+    const response = await request(createApp({ bgmGenerationService, storage }))
+      .post("/generation/bgm")
+      .send({
+        costLimitRM: 7.5,
+        durationSeconds: 45,
+        jobId: "job_bgm_quota_test",
+        language: "en-US",
+        prompt: "Create a comedy short.",
+        sceneCount: 5,
+        templateType: "comedy_sketch",
+        topic: "office coffee misunderstanding"
+      })
+      .expect(502);
+
+    expect(response.body.error.message).toContain("API key「factory」自己的用量上限");
+    expect(response.body.error.message).toContain("不是账户 top-up balance");
+    expect(response.body.error.message).toContain("Monthly credits 调高或设为 Unlimited");
+  });
 });
 
 describe("POST /generation/images", () => {

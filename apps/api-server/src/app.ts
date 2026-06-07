@@ -48,11 +48,11 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   const message = error instanceof Error ? error.message : "Unexpected server error.";
   const statusCode = error instanceof ApiError
     ? error.statusCode
-    : message.includes("required") || message.includes("must be")
-      ? 400
-      : message.includes("OpenAI script generation failed") || message.includes("OpenAI image generation failed") || message.includes("OpenAI TTS generation failed") || message.includes("ElevenLabs music generation failed") || message.includes("Seedance 2.0") || message.includes("BytePlus ModelArk")
+    : message.includes("OpenAI script generation failed") || message.includes("OpenAI image generation failed") || message.includes("OpenAI TTS generation failed") || message.includes("ElevenLabs music generation failed") || message.includes("Seedance 2.0") || message.includes("BytePlus ModelArk")
         ? 502
-        : 500;
+        : message.includes("required") || message.includes("must be")
+          ? 400
+          : 500;
   const errorCode = error instanceof ApiError
     ? error.code
     : statusCode === 400
