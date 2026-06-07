@@ -963,9 +963,11 @@ function ProductionTab(
           imageReadyForCompose={imageReadyForCompose}
           job={props.selectedJob}
           nextAction={nextAction}
+          reportDirtyState={reportProductionDirtyState}
           records={props.selectedRecords}
           scriptStoryReady={scriptStoryReady}
           toolProviderSettings={props.toolProviderSettings}
+          updateCaseDetails={props.updateCaseDetails}
           voiceoverReadyForCompose={voiceoverReadyForCompose}
         />
       ) : null}
@@ -1198,12 +1200,16 @@ function CaseOverviewPanel(props: {
   imageReadyForCompose: boolean;
   job: AdminJob;
   nextAction: CaseNextAction;
+  reportDirtyState?: (key: string, isDirty: boolean) => void;
   records: JobProcessRecord[];
   scriptStoryReady: boolean;
   toolProviderSettings: ToolProviderSettings[];
+  updateCaseDetails: (id: string, patch: Partial<Pick<AdminJob, "costLimitRM">>) => void;
   voiceoverReadyForCompose: boolean;
 }) {
   const budgetUsedPct = props.job.costLimitRM > 0 ? Math.min(100, Math.round((props.job.actualCostRM / props.job.costLimitRM) * 100)) : 0;
+  const budgetEditor = useEditableDraft({ costLimitRM: props.job.costLimitRM }, `${props.job.id}:${props.job.updatedAt}:${props.job.costLimitRM}`);
+  const budgetDraft = budgetEditor.draft ?? { costLimitRM: props.job.costLimitRM };
   const readyAssets = props.assets.filter((asset) => asset.status === "ready" || asset.status === "approved").length;
   const nextCostEstimate = estimateNextCaseCost({
     job: props.job,
@@ -1222,6 +1228,18 @@ function CaseOverviewPanel(props: {
     props.voiceoverReadyForCompose ? "" : "配音音频还没生成。",
     props.finalMp4Ready ? "" : "最终 MP4 还没合成。"
   ].filter(Boolean);
+
+  useEffect(() => {
+    const dirtyKey = `case-budget:${props.job.id}`;
+    props.reportDirtyState?.(dirtyKey, budgetEditor.isDirty);
+    return () => props.reportDirtyState?.(dirtyKey, false);
+  }, [budgetEditor.isDirty, props.job.id, props.reportDirtyState]);
+
+  function saveCaseBudgetDraft() {
+    const nextLimit = Math.max(0.1, Number(budgetDraft.costLimitRM) || props.job.costLimitRM);
+    props.updateCaseDetails(props.job.id, { costLimitRM: nextLimit });
+    budgetEditor.markSaved({ costLimitRM: nextLimit });
+  }
 
   return (
     <section className="case-overview-grid">
@@ -1247,6 +1265,24 @@ function CaseOverviewPanel(props: {
       <section className="panel case-overview-side">
         <SectionHeader eyebrow="预算" title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`} />
         <div className="budget-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
+        <div className="case-budget-editor">
+          <Field label="当前 Case 预算 RM">
+            <input
+              min={0.1}
+              step={0.1}
+              type="number"
+              value={budgetDraft.costLimitRM}
+              onChange={(event) => budgetEditor.setDraftPatch({ costLimitRM: Number(event.target.value) })}
+            />
+          </Field>
+          <small>这只会调整当前 Case。全局默认预算请到左侧「成本」页面修改。</small>
+          <EditableActionBar
+            isDirty={budgetEditor.isDirty}
+            onCancel={budgetEditor.resetDraft}
+            onSave={saveCaseBudgetDraft}
+            saveLabel="保存 Case 预算"
+          />
+        </div>
         <div className="case-next-cost-card">
           <div>
             <span>下一步预计</span>

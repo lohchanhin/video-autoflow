@@ -2007,6 +2007,26 @@ textarea {
   background: #3b73ed;
 }
 
+.case-budget-editor {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d9e3f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.case-budget-editor .editable-action-bar {
+  margin-top: 0;
+}
+
+.case-budget-editor small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .case-next-cost-card {
   display: grid;
   gap: 8px;
