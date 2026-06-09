@@ -730,6 +730,31 @@ textarea {
   gap: 8px;
 }
 
+.budget-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 14px;
+}
+
+.budget-preset-row button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d6e2f1;
+  border-radius: 999px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
+  background: #ffffff;
+}
+
+.budget-preset-row button.active,
+.budget-preset-row button:hover {
+  border-color: #75a7f8;
+  color: #174ea6;
+  background: #eef5ff;
+}
+
 .case-table-row,
 .settings-row,
 .agent-row,
@@ -4412,6 +4437,10 @@ textarea {
 
 .settings-row {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.cost-case-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
 }
 
 .key-settings-row {

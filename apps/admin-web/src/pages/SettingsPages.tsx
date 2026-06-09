@@ -618,6 +618,7 @@ function StoredVideoSettingsRow(props: {
 export function CostPage(props: {
   budgetSettings: BudgetSettings;
   jobs: AdminJob[];
+  openCase: (id: string) => void;
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   storedVideos: StoredVideo[];
   summary: { totalCost: number; activeCases: number };
@@ -681,6 +682,18 @@ export function CostPage(props: {
       <div className="panel">
         <SectionHeader eyebrow="全局预算设置" title="预算控制中心" action={<StatusPill tone={budgetEditor.isDirty ? "warning" : "success"}>{budgetEditor.isDirty ? "未保存" : "已保存"}</StatusPill>} />
         <p className="muted-copy">这里是全系统预算默认来源。保存后会同步新建 Case 默认预算、自动排程预算、每日产量上限，以及主控 Agent 的单 Case 成本护栏。</p>
+        <div className="budget-preset-row" aria-label="快速预算档位">
+          {[7.5, 25, 50, 100].map((amount) => (
+            <button
+              className={Number(budgetDraft.defaultCaseBudgetRM) === amount ? "active" : ""}
+              key={amount}
+              type="button"
+              onClick={() => patchBudgetDraft({ defaultCaseBudgetRM: amount })}
+            >
+              默认 Case RM {amount.toFixed(amount % 1 === 0 ? 0 : 1)}
+            </button>
+          ))}
+        </div>
         <div className="two-column-fields">
           <Field label="默认单支 Case 预算 RM">
             <input min={0.1} step={0.1} type="number" value={budgetDraft.defaultCaseBudgetRM} onChange={(event) => patchBudgetDraft({ defaultCaseBudgetRM: Number(event.target.value) })} />
@@ -751,7 +764,7 @@ export function CostPage(props: {
         <SectionHeader eyebrow="Case guard" title="每支影片预算" />
         <div className="settings-table">
           {props.jobs.map((job) => (
-            <article className="settings-row" key={job.id}>
+            <article className="settings-row cost-case-row" key={job.id}>
               <div>
                 <strong>{job.topic}</strong>
                 <span>{job.id}</span>
@@ -759,6 +772,9 @@ export function CostPage(props: {
               <span>RM {job.actualCostRM.toFixed(2)}</span>
               <span>上限 RM {job.costLimitRM.toFixed(2)}</span>
               <StatusPill tone={job.actualCostRM >= job.costLimitRM ? "danger" : "success"}>{job.actualCostRM >= job.costLimitRM ? "停止" : "OK"}</StatusPill>
+              <button className="secondary-button compact-button" type="button" onClick={() => props.openCase(job.id)}>
+                打开 Case
+              </button>
             </article>
           ))}
         </div>

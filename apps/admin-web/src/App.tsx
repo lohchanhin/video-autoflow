@@ -4693,6 +4693,7 @@ export function App() {
             productionSchedules={productionSchedules}
             approveCaseForPublishing={approveCaseForPublishing}
             openAssetPlanForJob={openAssetPlanForJob}
+            openCostSettings={() => switchView("cost")}
             uploadPrivateTarget={uploadPrivateTarget}
             setCostLimitRM={(value) => {
               setCostLimitRM(value);
@@ -4940,6 +4941,10 @@ export function App() {
           <CostPage
             budgetSettings={budgetSettings}
             jobs={jobs}
+            openCase={(id) => {
+              setSelectedJobId(id);
+              switchView("cases");
+            }}
             reportDirtyState={reportDirtyDraft}
             storedVideos={storedVideos}
             summary={summary}

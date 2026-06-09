@@ -109,6 +109,7 @@ interface CasesPageProps {
   updateProcessRecord: (id: string, updater: (record: JobProcessRecord) => JobProcessRecord) => void;
   updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
   openAssetPlanForJob: (jobId: string) => void;
+  openCostSettings: () => void;
   uploadPrivateTarget: (job: AdminJob, targetId: string) => void;
 }
 
@@ -1014,6 +1015,7 @@ function ProductionTab(
           records={props.selectedRecords}
           scriptStoryReady={scriptStoryReady}
           toolProviderSettings={props.toolProviderSettings}
+          openCostSettings={props.openCostSettings}
           updateCaseDetails={props.updateCaseDetails}
           voiceoverReadyForCompose={voiceoverReadyForCompose}
         />
@@ -1251,6 +1253,7 @@ function CaseOverviewPanel(props: {
   records: JobProcessRecord[];
   scriptStoryReady: boolean;
   toolProviderSettings: ToolProviderSettings[];
+  openCostSettings: () => void;
   updateCaseDetails: (id: string, patch: Partial<Pick<AdminJob, "costLimitRM">>) => void;
   voiceoverReadyForCompose: boolean;
 }) {
@@ -1310,7 +1313,15 @@ function CaseOverviewPanel(props: {
         )}
       </section>
       <section className="panel case-overview-side">
-        <SectionHeader eyebrow="预算" title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`} />
+        <SectionHeader
+          eyebrow="预算"
+          title={`RM ${props.job.actualCostRM.toFixed(2)} / ${props.job.costLimitRM.toFixed(2)}`}
+          action={
+            <button className="secondary-button compact-button" type="button" onClick={props.openCostSettings}>
+              全局预算
+            </button>
+          }
+        />
         <div className="budget-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
         <div className="case-budget-editor">
           <Field label="当前 Case 预算 RM">
