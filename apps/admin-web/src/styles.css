@@ -1005,6 +1005,78 @@ textarea {
   line-height: 1.55;
 }
 
+.case-advanced-brief {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.case-advanced-brief summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.case-advanced-brief summary::-webkit-details-marker {
+  display: none;
+}
+
+.case-advanced-brief summary::before {
+  content: "▸";
+  flex: 0 0 auto;
+  color: #526173;
+  font-size: 13px;
+  font-weight: 900;
+  transition: transform 0.16s ease;
+}
+
+.case-advanced-brief[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.case-advanced-brief summary > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.case-advanced-brief summary strong,
+.case-advanced-brief summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-advanced-brief summary strong {
+  color: #182230;
+  font-size: 14px;
+}
+
+.case-advanced-brief summary small {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.case-advanced-brief[open] {
+  padding-bottom: 12px;
+}
+
+.case-advanced-brief > .brief-section,
+.case-advanced-brief > .draft-reference-help {
+  margin-right: 12px;
+  margin-left: 12px;
+}
+
 .simple-case-actions {
   display: flex;
   flex-wrap: wrap;

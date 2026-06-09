@@ -262,6 +262,24 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
     : selectedSeries?.storyWorldId ? props.storyWorlds.find((storyWorld) => storyWorld._id === selectedSeries.storyWorldId) ?? null : null;
   const selectedCharacterIds = props.draftCharacterAssetIds.length > 0 ? props.draftCharacterAssetIds : [props.draftCharacterAssetId].filter((id): id is string => Boolean(id));
   const selectedSceneIds = props.draftSceneAssetIds.length > 0 ? props.draftSceneAssetIds : [props.draftBackgroundAssetId].filter((id): id is string => Boolean(id));
+  const advancedBriefSelectedCount = [
+    props.draftSeriesId,
+    props.draftEpisodeId,
+    selectedStoryWorld?._id,
+    props.draftLessonOrTheme,
+    props.draftGoal,
+    props.draftConflict,
+    props.draftTone,
+    ...selectedCharacterIds,
+    ...selectedSceneIds
+  ].filter(Boolean).length;
+  const [advancedBriefOpen, setAdvancedBriefOpen] = useState(advancedBriefSelectedCount > 0);
+
+  useEffect(() => {
+    if (advancedBriefSelectedCount > 0) {
+      setAdvancedBriefOpen(true);
+    }
+  }, [advancedBriefSelectedCount]);
 
   return (
     <section className="case-create-workspace">
@@ -275,46 +293,6 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
       >
         <SectionHeader eyebrow="Create case" title="输入一句话，AI 自动产出大纲" />
         <div className="simple-case-form">
-          <section className="brief-section">
-            <div className="brief-section-title">
-              <strong>1. 选择来源 / 可留空</strong>
-              <span>单支影片、系列题库、世界观都走同一个结构化 Brief，不写死题材。</span>
-            </div>
-            <div className="case-brief-grid">
-              <Field label="系列 / Series">
-                <select value={props.draftSeriesId} onChange={(event) => {
-                  props.setDraftSeriesId(event.target.value);
-                  props.setDraftEpisodeId("");
-                }}>
-                  <option value="">单支影片，不绑定系列</option>
-                  {props.series.map((series) => <option key={series._id} value={series._id}>{series.name}</option>)}
-                </select>
-              </Field>
-              <Field label="单集题库 / Episode">
-                <select value={props.draftEpisodeId} onChange={(event) => props.setDraftEpisodeId(event.target.value)}>
-                  <option value="">不使用题库，手动输入本集方向</option>
-                  {effectiveEpisodes.map((episode) => (
-                    <option key={episode._id} value={episode._id}>
-                      {episode.episodeNo ? `第 ${episode.episodeNo} 集：` : ""}{episode.title}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="背景故事 / Story World">
-                <select value={props.draftStoryWorldId} onChange={(event) => props.setDraftStoryWorldId(event.target.value)}>
-                  <option value="">不指定，或继承系列绑定</option>
-                  {props.storyWorlds.map((storyWorld) => <option key={storyWorld._id} value={storyWorld._id}>{storyWorld.name}</option>)}
-                </select>
-              </Field>
-            </div>
-            {selectedSeries || selectedEpisode || selectedStoryWorld ? (
-              <div className="brief-context-strip">
-                {selectedSeries ? <span>系列：{selectedSeries.name}</span> : null}
-                {selectedEpisode ? <span>单集：{selectedEpisode.lessonOrTheme || selectedEpisode.moralLesson}</span> : null}
-                {selectedStoryWorld ? <span>世界观：{selectedStoryWorld.name}</span> : null}
-              </div>
-            ) : null}
-          </section>
           <Field label="你想做什么影片？">
             <textarea
               autoFocus
@@ -324,59 +302,108 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
               onChange={(event) => props.setTopic(event.target.value)}
             />
           </Field>
-          <section className="brief-section">
-            <div className="brief-section-title">
-              <strong>2. 选择角色与场景资产 / 可多选</strong>
-              <span>脚本、分镜、图片 prompt 会读取这些资产的角色特质和场景定义。</span>
-            </div>
-            <div className="case-brief-grid two">
-              <AssetMultiSelect
-                assets={characterAssets}
-                emptyText="未选择角色，AI 会自动设计"
-                icon={<UserRound size={17} />}
-                label="出场角色"
-                selectedIds={selectedCharacterIds}
-                onChange={(ids) => {
-                  props.setDraftCharacterAssetIds(ids);
-                }}
-              />
-              <AssetMultiSelect
-                assets={backgroundAssets}
-                emptyText="未选择场景，AI 会自动设计"
-                icon={<ImageIcon size={17} />}
-                label="场景设定 / 背景"
-                selectedIds={selectedSceneIds}
-                onChange={(ids) => {
-                  props.setDraftSceneAssetIds(ids);
-                }}
-              />
-            </div>
-          </section>
-          <section className="brief-section">
-            <div className="brief-section-title">
-              <strong>3. 本集目标 / 可选</strong>
-              <span>例如教育主题、冲突、目标、语气。留空时按系列和输入自动补齐。</span>
-            </div>
-            <div className="case-brief-grid four">
-              <Field label="主题 / Lesson">
-                <input value={props.draftLessonOrTheme} placeholder="例如：诚实、分享、守信用" onChange={(event) => props.setDraftLessonOrTheme(event.target.value)} />
-              </Field>
-              <Field label="目标 / Goal">
-                <input value={props.draftGoal} placeholder="例如：主角学会承认错误" onChange={(event) => props.setDraftGoal(event.target.value)} />
-              </Field>
-              <Field label="冲突 / Conflict">
-                <input value={props.draftConflict} placeholder="例如：闯祸后想隐瞒" onChange={(event) => props.setDraftConflict(event.target.value)} />
-              </Field>
-              <Field label="语气 / Tone">
-                <input value={props.draftTone} placeholder="例如：温柔、轻松、适合全龄" onChange={(event) => props.setDraftTone(event.target.value)} />
-              </Field>
-            </div>
-          </section>
-          {characterAssets.length === 0 && backgroundAssets.length === 0 ? (
-            <div className="draft-reference-help">
-              还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设定表；这里不选择也能继续生成。
-            </div>
-          ) : null}
+          <details className="case-advanced-brief" open={advancedBriefOpen} onToggle={(event) => setAdvancedBriefOpen(event.currentTarget.open)}>
+            <summary>
+              <span>
+                <strong>可选高级 Brief</strong>
+                <small>系列、题库、世界观、角色、场景和本集目标；不填也能生成。</small>
+              </span>
+              <StatusPill tone={advancedBriefSelectedCount > 0 ? "active" : "neutral"}>{advancedBriefSelectedCount > 0 ? `${advancedBriefSelectedCount} 项已选` : "可留空"}</StatusPill>
+            </summary>
+            <section className="brief-section">
+              <div className="brief-section-title">
+                <strong>1. 来源 / 可留空</strong>
+                <span>单支影片、系列题库、世界观都走同一个结构化 Brief，不写死题材。</span>
+              </div>
+              <div className="case-brief-grid">
+                <Field label="系列 / Series">
+                  <select value={props.draftSeriesId} onChange={(event) => {
+                    props.setDraftSeriesId(event.target.value);
+                    props.setDraftEpisodeId("");
+                  }}>
+                    <option value="">单支影片，不绑定系列</option>
+                    {props.series.map((series) => <option key={series._id} value={series._id}>{series.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="单集题库 / Episode">
+                  <select value={props.draftEpisodeId} onChange={(event) => props.setDraftEpisodeId(event.target.value)}>
+                    <option value="">不使用题库，手动输入本集方向</option>
+                    {effectiveEpisodes.map((episode) => (
+                      <option key={episode._id} value={episode._id}>
+                        {episode.episodeNo ? `第 ${episode.episodeNo} 集：` : ""}{episode.title}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="背景故事 / Story World">
+                  <select value={props.draftStoryWorldId} onChange={(event) => props.setDraftStoryWorldId(event.target.value)}>
+                    <option value="">不指定，或继承系列绑定</option>
+                    {props.storyWorlds.map((storyWorld) => <option key={storyWorld._id} value={storyWorld._id}>{storyWorld.name}</option>)}
+                  </select>
+                </Field>
+              </div>
+              {selectedSeries || selectedEpisode || selectedStoryWorld ? (
+                <div className="brief-context-strip">
+                  {selectedSeries ? <span>系列：{selectedSeries.name}</span> : null}
+                  {selectedEpisode ? <span>单集：{selectedEpisode.lessonOrTheme || selectedEpisode.moralLesson}</span> : null}
+                  {selectedStoryWorld ? <span>世界观：{selectedStoryWorld.name}</span> : null}
+                </div>
+              ) : null}
+            </section>
+            <section className="brief-section">
+              <div className="brief-section-title">
+                <strong>2. 角色与场景资产 / 可多选</strong>
+                <span>脚本、分镜、图片 prompt 会读取这些资产的角色特质和场景定义。</span>
+              </div>
+              <div className="case-brief-grid two">
+                <AssetMultiSelect
+                  assets={characterAssets}
+                  emptyText="未选择角色，AI 会自动设计"
+                  icon={<UserRound size={17} />}
+                  label="出场角色"
+                  selectedIds={selectedCharacterIds}
+                  onChange={(ids) => {
+                    props.setDraftCharacterAssetIds(ids);
+                  }}
+                />
+                <AssetMultiSelect
+                  assets={backgroundAssets}
+                  emptyText="未选择场景，AI 会自动设计"
+                  icon={<ImageIcon size={17} />}
+                  label="场景设定 / 背景"
+                  selectedIds={selectedSceneIds}
+                  onChange={(ids) => {
+                    props.setDraftSceneAssetIds(ids);
+                  }}
+                />
+              </div>
+            </section>
+            <section className="brief-section">
+              <div className="brief-section-title">
+                <strong>3. 本集目标 / 可选</strong>
+                <span>例如教育主题、冲突、目标、语气。留空时按系列和输入自动补齐。</span>
+              </div>
+              <div className="case-brief-grid four">
+                <Field label="主题 / Lesson">
+                  <input value={props.draftLessonOrTheme} placeholder="例如：诚实、分享、守信用" onChange={(event) => props.setDraftLessonOrTheme(event.target.value)} />
+                </Field>
+                <Field label="目标 / Goal">
+                  <input value={props.draftGoal} placeholder="例如：主角学会承认错误" onChange={(event) => props.setDraftGoal(event.target.value)} />
+                </Field>
+                <Field label="冲突 / Conflict">
+                  <input value={props.draftConflict} placeholder="例如：闯祸后想隐瞒" onChange={(event) => props.setDraftConflict(event.target.value)} />
+                </Field>
+                <Field label="语气 / Tone">
+                  <input value={props.draftTone} placeholder="例如：温柔、轻松、适合全龄" onChange={(event) => props.setDraftTone(event.target.value)} />
+                </Field>
+              </div>
+            </section>
+            {characterAssets.length === 0 && backgroundAssets.length === 0 ? (
+              <div className="draft-reference-help">
+                还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设定表；这里不选择也能继续生成。
+              </div>
+            ) : null}
+          </details>
           <div className="simple-case-actions">
             <button className="primary-button" disabled={!canGeneratePreview || props.isAutoGeneratingCase} type="button" onClick={props.generateDraftScriptStory}>
               {props.isGeneratingDraftPreview ? <Loader2 size={16} className="spin" /> : <FilePenLine size={16} />}
