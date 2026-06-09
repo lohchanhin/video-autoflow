@@ -117,6 +117,13 @@ interface CasesPageProps {
 type CaseTab = "new" | "queue" | "production";
 type ProductionWorkbenchTab = "overview" | "pipeline" | "script" | "assets" | "voice" | "music" | "clips" | "final" | "cost" | "publish" | "activity";
 
+const productionTabGroups: Array<{ label: string; tabs: ProductionWorkbenchTab[] }> = [
+  { label: "案件", tabs: ["overview", "pipeline", "script"] },
+  { label: "媒体", tabs: ["assets", "voice", "music", "clips", "final"] },
+  { label: "交付", tabs: ["cost", "publish"] },
+  { label: "记录", tabs: ["activity"] }
+];
+
 const processStatusOptions: ProcessRecordStatus[] = ["pending", "working", "done", "failed", "skipped"];
 
 function isSelectableDraftAsset(asset: ProductionAsset): boolean {
@@ -906,44 +913,66 @@ function ProductionTab(
         </section>
       ) : null}
 
-      <div className="case-action-bar production-actions">
-        <button className="primary-button" type="button" disabled={nextAction.disabled} onClick={() => runProductionAction(nextAction.onClick)}>
-          {nextAction.loading ? <Loader2 size={16} className="spin" /> : nextAction.icon}
-          {nextAction.label}
-        </button>
-        <button className="secondary-button" type="button" onClick={() => switchProductionTab("overview")}>
-          总览
-        </button>
-        {props.selectedJob.status === "FAILED" ? (
-          <button className="secondary-button" type="button" onClick={() => runProductionAction(() => props.updateJob(props.selectedJob!.id, retryCase))}>
-            <RotateCcw size={16} />
-            重试
+      <section className="case-command-center panel" aria-label="Case production command center">
+        <div className="case-command-primary">
+          <div>
+            <p className="eyebrow">当前下一步</p>
+            <h3>{nextAction.label}</h3>
+            <span>{nextAction.disabled ? "动作暂不可执行；请查看下方阻塞说明或切换到对应页签处理。" : "会使用已保存的脚本、资产和工具设置执行；未保存草稿不会被静默带入。"}</span>
+          </div>
+          <button className="primary-button" type="button" disabled={nextAction.disabled} onClick={() => runProductionAction(nextAction.onClick)}>
+            {nextAction.loading ? <Loader2 size={16} className="spin" /> : nextAction.icon}
+            {nextAction.label}
           </button>
-        ) : (
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={() => runProductionAction(() => window.confirm("确定手动推进这个 Case 的生产状态？这会写入活动记录。") && props.updateJob(props.selectedJob!.id, advanceCase))}
-          >
-            <Play size={16} />
-            手动推进
-          </button>
-        )}
-        <button
-          className="danger-button"
-          type="button"
-          onClick={() => runProductionAction(() => window.confirm("确定把这个 Case 标记为失败？这会影响 Dashboard、队列和后续自动化判断。") && props.updateJob(props.selectedJob!.id, failCase))}
-        >
-          <AlertTriangle size={16} />
-          标记失败
-        </button>
-        {["QC_PASSED", "READY_TO_UPLOAD", "UPLOADED_PRIVATE"].includes(props.selectedJob.status) ? (
-          <button className="secondary-button" type="button" disabled={isStored} onClick={() => runProductionAction(() => props.selectedJob && props.addVideoForJob(props.selectedJob))}>
-            <Save size={16} />
-            {isStored ? "已入库" : "存入影片库"}
-          </button>
-        ) : null}
-      </div>
+        </div>
+
+        <div className="case-command-secondary" aria-label="Secondary case operations">
+          <div className="case-command-group">
+            <span>查看</span>
+            <button className="secondary-button compact-button" type="button" onClick={() => switchProductionTab("overview")}>
+              总览
+            </button>
+            <button className="secondary-button compact-button" type="button" onClick={() => switchProductionTab("activity")}>
+              活动记录
+            </button>
+          </div>
+          <div className="case-command-group">
+            <span>维护</span>
+            {props.selectedJob.status === "FAILED" ? (
+              <button className="secondary-button compact-button" type="button" onClick={() => runProductionAction(() => props.updateJob(props.selectedJob!.id, retryCase))}>
+                <RotateCcw size={15} />
+                重试
+              </button>
+            ) : (
+              <button
+                className="secondary-button compact-button"
+                type="button"
+                onClick={() => runProductionAction(() => window.confirm("确定手动推进这个 Case 的生产状态？这会写入活动记录。") && props.updateJob(props.selectedJob!.id, advanceCase))}
+              >
+                <Play size={15} />
+                手动推进
+              </button>
+            )}
+            <button
+              className="danger-button compact-button"
+              type="button"
+              onClick={() => runProductionAction(() => window.confirm("确定把这个 Case 标记为失败？这会影响 Dashboard、队列和后续自动化判断。") && props.updateJob(props.selectedJob!.id, failCase))}
+            >
+              <AlertTriangle size={15} />
+              标记失败
+            </button>
+          </div>
+          {["QC_PASSED", "READY_TO_UPLOAD", "UPLOADED_PRIVATE"].includes(props.selectedJob.status) ? (
+            <div className="case-command-group">
+              <span>归档</span>
+              <button className="secondary-button compact-button" type="button" disabled={isStored} onClick={() => runProductionAction(() => props.selectedJob && props.addVideoForJob(props.selectedJob))}>
+                <Save size={15} />
+                {isStored ? "已入库" : "存入影片库"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </section>
 
       {!scriptStoryReady ? (
         <div className="pipeline-gate-note">
@@ -1016,19 +1045,26 @@ function ProductionTab(
       {apiUnavailable ? <ServiceIssueBanner apiState={props.apiState} action="Generation" /> : null}
       {props.generationError ? <div className="inline-error">{props.generationError}</div> : null}
 
-      <div className="production-workbench-tabs" role="tablist" aria-label="Production workbench sections">
-        {(["overview", "pipeline", "script", "assets", "voice", "music", "clips", "final", "cost", "publish", "activity"] as ProductionWorkbenchTab[]).map((tab) => (
-          <button
-            aria-selected={activeProductionTab === tab}
-            className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`}
-            key={tab}
-            role="tab"
-            title={formatProductionTab(tab)}
-            type="button"
-            onClick={() => switchProductionTab(tab)}
-          >
-            {formatProductionTab(tab)}
-          </button>
+      <div className="production-workbench-tabs grouped" role="tablist" aria-label="Production workbench sections">
+        {productionTabGroups.map((group) => (
+          <div className="production-tab-group" key={group.label}>
+            <span>{group.label}</span>
+            <div>
+              {group.tabs.map((tab) => (
+                <button
+                  aria-selected={activeProductionTab === tab}
+                  className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`}
+                  key={tab}
+                  role="tab"
+                  title={formatProductionTab(tab)}
+                  type="button"
+                  onClick={() => switchProductionTab(tab)}
+                >
+                  {formatProductionTab(tab)}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 

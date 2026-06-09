@@ -2296,6 +2296,73 @@ textarea {
   margin-bottom: 0;
 }
 
+.case-command-center {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.case-command-primary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.case-command-primary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.case-command-primary h3 {
+  margin: 0;
+  color: #101828;
+  font-size: 18px;
+}
+
+.case-command-primary span {
+  color: #475467;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.case-command-primary .primary-button {
+  flex: 0 0 auto;
+}
+
+.case-command-secondary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.case-command-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.case-command-group > span {
+  flex: 0 0 48px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .production-workbench-tabs {
   display: flex;
   gap: 4px;
@@ -2308,6 +2375,38 @@ textarea {
   background: #eaf0f8;
   scroll-padding-inline: 4px;
   scrollbar-width: thin;
+}
+
+.production-workbench-tabs.grouped {
+  gap: 8px;
+  align-items: stretch;
+  padding: 6px;
+}
+
+.production-tab-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid #d8e1ec;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 64%);
+}
+
+.production-tab-group > span {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.production-tab-group > div {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
 }
 
 .production-workbench-tab {
@@ -5204,6 +5303,10 @@ textarea {
   .workflow-detail-panel {
     position: static;
     max-height: none;
+  }
+
+  .case-command-center {
+    grid-template-columns: 1fr;
   }
 
   .workflow-route-row,
