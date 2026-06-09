@@ -32,8 +32,12 @@ interface SeriesPageProps {
 
 const seriesStatusOptions: ContentSeriesStatus[] = ["draft", "active", "paused", "archived"];
 const episodeStatusOptions: SeriesEpisodeIdeaStatus[] = ["draft", "approved", "converted_to_case", "rejected"];
+type SeriesWorkspaceTab = "settings" | "assets" | "episodes" | "cases";
+
+const seriesWorkspaceTabs: SeriesWorkspaceTab[] = ["settings", "assets", "episodes", "cases"];
 
 export function SeriesPage(props: SeriesPageProps) {
+  const [activeTab, setActiveTab] = useState<SeriesWorkspaceTab>("settings");
   const [ideaCount, setIdeaCount] = useState(10);
   const [storyWorldDraft, setStoryWorldDraft] = useState({
     description: "",
@@ -161,37 +165,6 @@ export function SeriesPage(props: SeriesPageProps) {
 
       {props.error ? <div className="inline-error"><AlertTriangle size={16} />{props.error}</div> : null}
 
-      <section className="panel story-world-composer">
-        <SectionHeader eyebrow="背景故事" title="Story World 草稿" />
-        <div className="series-form-grid">
-          <Field label="世界观名称">
-            <input value={storyWorldDraft.name} onChange={(event) => patchStoryWorldDraft({ name: event.target.value })} placeholder="例如：彩虹森林、森林小学、未来便利店" />
-          </Field>
-          <Field label="视觉风格">
-            <input value={storyWorldDraft.visualStyle} onChange={(event) => patchStoryWorldDraft({ visualStyle: event.target.value })} placeholder="例如：柔和童话、低饱和写实、赛博夜景" />
-          </Field>
-          <Field className="wide" label="世界设定">
-            <textarea rows={3} value={storyWorldDraft.description} onChange={(event) => patchStoryWorldDraft({ description: event.target.value })} placeholder="这个世界发生在哪里、常驻地点是什么、观众应该一眼记住什么。" />
-          </Field>
-          <Field label="角色关系">
-            <textarea rows={3} value={storyWorldDraft.relationshipMap} onChange={(event) => patchStoryWorldDraft({ relationshipMap: event.target.value })} placeholder="常驻角色之间的关系、班级/家庭/团队结构。" />
-          </Field>
-          <Field label="禁忌规则">
-            <textarea rows={3} value={storyWorldDraft.safetyRules} onChange={(event) => patchStoryWorldDraft({ safetyRules: event.target.value })} placeholder="这个系列中不允许出现的内容、语气或视觉限制。" />
-          </Field>
-        </div>
-        <div className="editable-action-bar">
-          <span>{storyWorldDraft.name.trim() ? "待保存背景故事" : "输入名称后可保存为可复用世界观"}</span>
-          <button className="secondary-button" type="button" onClick={() => setStoryWorldDraft({ description: "", name: "", relationshipMap: "", safetyRules: "", visualStyle: "" })}>
-            取消修改
-          </button>
-          <button className="primary-button" type="button" disabled={!storyWorldDraft.name.trim() || isSavingStoryWorld} onClick={() => void saveStoryWorldDraft()}>
-            {isSavingStoryWorld ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
-            保存背景故事
-          </button>
-        </div>
-      </section>
-
       <section className="series-layout">
         <aside className="panel series-list-panel">
           <SectionHeader eyebrow="内容库" title="系列列表" />
@@ -219,11 +192,11 @@ export function SeriesPage(props: SeriesPageProps) {
           )}
         </aside>
 
-        <section className="panel series-editor-panel">
+        <section className="panel series-workspace-panel">
           {selectedSeries && seriesDraft ? (
             <>
               <SectionHeader
-                eyebrow="系列设定"
+                eyebrow="系列工作台"
                 title={seriesDraft.name}
                 action={
                   <button className="danger-button" type="button" onClick={() => window.confirm(`确定删除系列「${selectedSeries.name}」？`) && props.deleteSeries(selectedSeries._id)}>
@@ -232,6 +205,26 @@ export function SeriesPage(props: SeriesPageProps) {
                   </button>
                 }
               />
+              <div className="series-workbench-tabs" role="tablist" aria-label="系列工作台页签">
+                {seriesWorkspaceTabs.map((tab) => (
+                  <button
+                    aria-selected={activeTab === tab}
+                    className={activeTab === tab ? "active" : ""}
+                    key={tab}
+                    role="tab"
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {seriesWorkspaceTabLabel(tab)}
+                    {tab === "assets" ? <span>{seriesDraft.referenceAssetIds.length}</span> : null}
+                    {tab === "episodes" ? <span>{props.episodes.length}</span> : null}
+                    {tab === "cases" ? <span>{selectedSeriesJobs.length}</span> : null}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === "settings" ? (
+                <section className="series-tab-panel">
               <div className="series-form-grid">
                 <Field label="系列名称">
                   <input value={seriesDraft.name} onChange={(event) => patchSeriesDraft({ name: event.target.value })} />
@@ -289,8 +282,46 @@ export function SeriesPage(props: SeriesPageProps) {
                 onCancel={seriesEditor.resetDraft}
                 onSave={saveSeriesDraft}
               />
+                  <section className="series-story-world-card">
+                    <SectionHeader eyebrow="背景故事" title="新增 Story World" />
+                    <div className="series-form-grid">
+                      <Field label="世界观名称">
+                        <input value={storyWorldDraft.name} onChange={(event) => patchStoryWorldDraft({ name: event.target.value })} placeholder="例如：彩虹森林、森林小学、未来便利店" />
+                      </Field>
+                      <Field label="视觉风格">
+                        <input value={storyWorldDraft.visualStyle} onChange={(event) => patchStoryWorldDraft({ visualStyle: event.target.value })} placeholder="例如：柔和童话、低饱和写实、赛博夜景" />
+                      </Field>
+                      <Field className="wide" label="世界设定">
+                        <textarea rows={3} value={storyWorldDraft.description} onChange={(event) => patchStoryWorldDraft({ description: event.target.value })} placeholder="这个世界发生在哪里、常驻地点是什么、观众应该一眼记住什么。" />
+                      </Field>
+                      <Field label="角色关系">
+                        <textarea rows={3} value={storyWorldDraft.relationshipMap} onChange={(event) => patchStoryWorldDraft({ relationshipMap: event.target.value })} placeholder="常驻角色之间的关系、班级/家庭/团队结构。" />
+                      </Field>
+                      <Field label="禁忌规则">
+                        <textarea rows={3} value={storyWorldDraft.safetyRules} onChange={(event) => patchStoryWorldDraft({ safetyRules: event.target.value })} placeholder="这个系列中不允许出现的内容、语气或视觉限制。" />
+                      </Field>
+                    </div>
+                    <div className="editable-action-bar">
+                      <span>{storyWorldDraft.name.trim() ? "待保存背景故事" : "输入名称后可保存为可复用世界观"}</span>
+                      <button className="secondary-button" type="button" onClick={() => setStoryWorldDraft({ description: "", name: "", relationshipMap: "", safetyRules: "", visualStyle: "" })}>
+                        取消修改
+                      </button>
+                      <button className="primary-button" type="button" disabled={!storyWorldDraft.name.trim() || isSavingStoryWorld} onClick={() => void saveStoryWorldDraft()}>
+                        {isSavingStoryWorld ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+                        保存背景故事
+                      </button>
+                    </div>
+                  </section>
+                </section>
+              ) : null}
 
+              {activeTab === "assets" ? (
               <section className="series-asset-binding">
+                <SectionHeader
+                  eyebrow="资产绑定"
+                  title="固定角色 / 场景 / 风格参考"
+                  action={<StatusPill tone={seriesDraft.referenceAssetIds.length > 0 ? "active" : "neutral"}>{seriesDraft.referenceAssetIds.length} 已选</StatusPill>}
+                />
                 {generatedAssets.length === 0 ? (
                   <EmptyState title="还没有可绑定资产" body="先到设计资产中心生成并保存角色三视图、场景设定表或风格参考，再回到这里绑定。" />
                 ) : (
@@ -302,7 +333,52 @@ export function SeriesPage(props: SeriesPageProps) {
                     onChange={(ids) => patchSeriesDraft({ referenceAssetIds: ids })}
                   />
                 )}
+                <EditableActionBar
+                  isDirty={seriesEditor.isDirty}
+                  onCancel={seriesEditor.resetDraft}
+                  onSave={saveSeriesDraft}
+                />
               </section>
+              ) : null}
+
+              {activeTab === "episodes" ? (
+                <SeriesEpisodeBoard
+                  assets={generatedAssets}
+                  convertEpisodeToCase={props.convertEpisodeToCase}
+                  episodes={props.episodes}
+                  generateIdeas={props.generateIdeas}
+                  generating={generating}
+                  ideaCount={ideaCount}
+                  jobs={props.jobs}
+                  openCase={props.openCase}
+                  reportDirtyState={props.reportDirtyState}
+                  selectedSeries={selectedSeries}
+                  setIdeaCount={setIdeaCount}
+                  updateEpisode={props.updateEpisode}
+                />
+              ) : null}
+
+              {activeTab === "cases" ? (
+                <section className="series-tab-panel">
+                  <SectionHeader eyebrow="Case 档案" title="已转入生产的影片" />
+                  {selectedSeriesJobs.length > 0 ? (
+                    <div className="series-case-grid">
+                      {selectedSeriesJobs.map((job) => (
+                        <button key={job.id} className="series-case-card" type="button" onClick={() => props.openCase(job.id)}>
+                          <FileVideo size={18} />
+                          <span>
+                            <strong>{job.topic}</strong>
+                            <small>{job.id} / {job.status}</small>
+                          </span>
+                          <StatusPill tone={job.status === "COMPLETED" || job.status === "PUBLISHED" ? "success" : "neutral"}>{job.status}</StatusPill>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="还没有 Case" body="批准选题后点击转 Case，这里会显示该系列所有生产记录。" />
+                  )}
+                </section>
+              ) : null}
             </>
           ) : (
             <EmptyState title="选择或创建一个系列" body="系列会保存定位、题材、资产、风格和选题库，后续再批量转成 Case。" />
@@ -334,49 +410,65 @@ export function SeriesPage(props: SeriesPageProps) {
         </aside>
       </section>
 
-      <section className="panel episode-board">
-        <SectionHeader
-          eyebrow="Episode Ideas"
-          title="AI 选题库"
-          action={
-            <div className="episode-actions">
-              <input min={1} max={30} type="number" value={ideaCount} onChange={(event) => setIdeaCount(Number(event.target.value))} />
-              <button className="primary-button" disabled={!selectedSeries || generating} type="button" onClick={() => selectedSeries && props.generateIdeas(selectedSeries._id, ideaCount)}>
-                {generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-                AI 生成选题
-              </button>
-            </div>
-          }
-        />
-        {!selectedSeries ? (
-          <EmptyState title="先选择系列" body="选题会根据系列定位、内容类型、目标观众、合规规则和绑定资产生成。" />
-        ) : props.episodes.length === 0 ? (
-          <EmptyState title="还没有选题" body="点击 AI 生成选题，一次生成 10-30 条单集方向，然后人工批准。" />
-        ) : (
-          <div className="episode-table">
-            <div className="episode-table-head">
-              <span>题目 / 核心看点</span>
-              <span>来源 / 灵感</span>
-              <span>风险</span>
-              <span>状态</span>
-              <span>操作</span>
-            </div>
-            {props.episodes.map((episode) => (
-              <EpisodeRow
-                assets={generatedAssets}
-                key={episode._id}
-                episode={episode}
-                linkedJob={props.jobs.find((job) => job.id === episode.caseId) ?? null}
-                openCase={props.openCase}
-                selectedSeries={selectedSeries}
-                reportDirtyState={props.reportDirtyState}
-                updateEpisode={props.updateEpisode}
-                convertEpisodeToCase={props.convertEpisodeToCase}
-              />
-            ))}
+    </section>
+  );
+}
+
+function SeriesEpisodeBoard(props: {
+  assets: ProductionAsset[];
+  convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
+  episodes: SeriesEpisodeIdea[];
+  generateIdeas: (seriesId: string, count: number) => void;
+  generating: boolean;
+  ideaCount: number;
+  jobs: AdminJob[];
+  openCase: (id: string) => void;
+  reportDirtyState?: SeriesPageProps["reportDirtyState"];
+  selectedSeries: ContentSeries;
+  setIdeaCount: (count: number) => void;
+  updateEpisode: SeriesPageProps["updateEpisode"];
+}) {
+  return (
+    <section className="series-tab-panel episode-board">
+      <SectionHeader
+        eyebrow="Episode Ideas"
+        title="AI 选题库"
+        action={
+          <div className="episode-actions">
+            <input min={1} max={30} type="number" value={props.ideaCount} onChange={(event) => props.setIdeaCount(Number(event.target.value))} />
+            <button className="primary-button" disabled={props.generating} type="button" onClick={() => props.generateIdeas(props.selectedSeries._id, props.ideaCount)}>
+              {props.generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+              AI 生成选题
+            </button>
           </div>
-        )}
-      </section>
+        }
+      />
+      {props.episodes.length === 0 ? (
+        <EmptyState title="还没有选题" body="点击 AI 生成选题，一次生成 10-30 条单集方向，然后人工批准。" />
+      ) : (
+        <div className="episode-table">
+          <div className="episode-table-head">
+            <span>题目 / 核心看点</span>
+            <span>来源 / 灵感</span>
+            <span>风险</span>
+            <span>状态</span>
+            <span>操作</span>
+          </div>
+          {props.episodes.map((episode) => (
+            <EpisodeRow
+              assets={props.assets}
+              key={episode._id}
+              episode={episode}
+              linkedJob={props.jobs.find((job) => job.id === episode.caseId) ?? null}
+              openCase={props.openCase}
+              selectedSeries={props.selectedSeries}
+              reportDirtyState={props.reportDirtyState}
+              updateEpisode={props.updateEpisode}
+              convertEpisodeToCase={props.convertEpisodeToCase}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -673,6 +765,16 @@ function getAssetBindingSummary(assets: ProductionAsset[]): Array<{ count: numbe
     { count: scenes, filter: "scene_design", label: "场景" },
     { count: style, filter: "style_reference", label: "风格" }
   ];
+}
+
+function seriesWorkspaceTabLabel(tab: SeriesWorkspaceTab): string {
+  const labels: Record<SeriesWorkspaceTab, string> = {
+    assets: "资产绑定",
+    cases: "Case 档案",
+    episodes: "题库",
+    settings: "系列设定"
+  };
+  return labels[tab];
 }
 
 function seriesStatusLabel(status: ContentSeriesStatus): string {
