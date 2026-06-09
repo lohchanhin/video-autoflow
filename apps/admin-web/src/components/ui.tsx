@@ -31,6 +31,23 @@ export function EmptyState(props: { title: string; body: string }) {
   );
 }
 
+export function MediaFallback(props: {
+  className?: string | undefined;
+  iconSize?: number | undefined;
+  label?: string | undefined;
+  status?: "empty" | "failed" | "loading";
+}) {
+  const status = props.status ?? "empty";
+  const label = props.label ?? (status === "loading" ? "加载中" : "暂无预览");
+
+  return (
+    <div className={`media-fallback ${status === "loading" ? "loading" : ""} ${props.className ?? ""}`.trim()} title={label}>
+      <ImageIcon size={props.iconSize ?? 22} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function SectionHeader(props: { eyebrow: string; title: string; action?: ReactNode }) {
   return (
     <div className="section-header">
@@ -97,10 +114,11 @@ export function MediaImage(props: {
 
   if (!isLoadedCurrentSrc) {
     return (
-      <div className={`media-fallback ${currentStatus === "loading" ? "loading" : ""} ${props.className ?? ""}`.trim()} title={props.fallbackLabel ?? "预览不可用"}>
-        <ImageIcon size={22} />
-        <span>{currentStatus === "loading" ? "加载中" : props.fallbackLabel ?? "预览不可用"}</span>
-      </div>
+      <MediaFallback
+        className={props.className}
+        label={currentStatus === "loading" ? "加载中" : props.fallbackLabel ?? "预览不可用"}
+        status={currentStatus === "loading" ? "loading" : currentStatus === "failed" ? "failed" : "empty"}
+      />
     );
   }
 

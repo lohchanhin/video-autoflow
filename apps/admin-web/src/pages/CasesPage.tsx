@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Search, Sparkles, Square, UserRound, X } from "lucide-react";
 import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea, StoryWorld } from "@ai-content-factory/shared-types";
-import { EditableActionBar, EmptyState, Field, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo, ToolProviderSettings } from "../lib/admin-data.js";
@@ -495,7 +495,7 @@ function AssetMultiSelect(props: {
             <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
               <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
               <span className="asset-multi-thumb">
-                {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="图片不可用" /> : <span className="media-fallback"><ImageIcon size={22} /><span>无预览</span></span>}
+                {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="图片不可用" /> : <MediaFallback label="无预览" />}
               </span>
               <span>
                 <strong>{asset.label}</strong>
@@ -1456,7 +1456,7 @@ function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob
         <div className="case-reference-strip">
           {referenceAssets.map((asset) => (
             <article className="case-reference-tile" key={asset._id}>
-              {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="参考图不可用" /> : <ImageIcon size={18} />}
+              {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="参考图不可用" /> : <MediaFallback iconSize={18} label="无预览" />}
               <div>
                 <strong>{asset.label}</strong>
                 <span>{formatAssetType(asset.type)} / {asset.status}</span>

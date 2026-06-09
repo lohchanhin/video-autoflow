@@ -1227,6 +1227,14 @@ textarea {
   text-align: center;
 }
 
+.asset-multi-thumb .media-fallback,
+.asset-picker-thumb .media-fallback,
+.asset-gallery-thumb .media-fallback {
+  display: grid;
+  place-items: center;
+  grid-template-rows: auto auto;
+}
+
 .asset-multi-thumb .media-fallback svg {
   color: #667085;
 }

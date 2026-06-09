@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, X, XCircle } from "lucide-react";
 import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
-import { EditableActionBar, EmptyState, Field, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
 import { isImageMediaUrl, resolveFirstMediaUrl } from "../lib/media-url.js";
@@ -603,7 +603,7 @@ function AssetBindingPicker(props: {
                 <X size={14} />
               </button>
               <span className="asset-selected-thumb">
-                {assetBindingThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetBindingThumbUrl(asset)} fallbackLabel="预览不可用" /> : <ImageIcon size={18} />}
+                {assetBindingThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetBindingThumbUrl(asset)} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={18} label="无预览" />}
               </span>
               <strong>{asset.label}</strong>
               <small>{assetTypeLabel(asset.type)} / {asset.folderName || "未分类"}</small>
@@ -646,7 +646,7 @@ function AssetBindingPicker(props: {
                 return (
                   <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
                     <span className="asset-picker-thumb">
-                      {assetBindingThumbUrl(asset) ? <MediaImage src={assetBindingThumbUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <ImageIcon size={22} />}
+                      {assetBindingThumbUrl(asset) ? <MediaImage src={assetBindingThumbUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback label="无预览" />}
                       <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
                     </span>
                     <strong>{asset.label}</strong>

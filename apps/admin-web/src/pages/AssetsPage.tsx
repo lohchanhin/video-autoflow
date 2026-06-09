@@ -11,7 +11,7 @@ import {
   type ProductionAssetStatus,
   type ProductionAssetType
 } from "@ai-content-factory/shared-types";
-import { EditableActionBar, EmptyState, Field, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { getProductionAssetDesignSpec } from "../lib/asset-design-specs.js";
 import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from "../lib/asset-readiness.js";
 import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "../lib/design-prompts.js";
@@ -394,7 +394,7 @@ export function AssetsPage(props: AssetsPageProps) {
                   {libraryVisibleAssets.map((asset) => (
                     <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                       <div className="asset-gallery-thumb">
-                        {assetPreviewUrl(asset) ? <MediaImage src={assetPreviewUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <ImageIcon size={26} />}
+                        {assetPreviewUrl(asset) ? <MediaImage src={assetPreviewUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
                       </div>
                       <strong>{asset.label}</strong>
                       <span>{formatAssetCardMeta(asset)}</span>
@@ -455,7 +455,7 @@ export function AssetsPage(props: AssetsPageProps) {
                 {casePlanDisplayAssets.map((asset) => (
                   <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                     <div className="asset-gallery-thumb">
-                      {assetPreviewUrl(asset) ? <MediaImage src={assetPreviewUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <ImageIcon size={26} />}
+                      {assetPreviewUrl(asset) ? <MediaImage src={assetPreviewUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
                     </div>
                     <strong>{asset.label}</strong>
                     <span>{formatAssetCardMeta(asset)}</span>
