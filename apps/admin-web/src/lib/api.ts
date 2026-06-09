@@ -47,8 +47,7 @@ function getDefaultApiBaseUrl(): string {
       return `${window.location.protocol}//${window.location.hostname}:4000`;
     }
 
-    const rootHost = window.location.hostname.replace(/^www\./u, "");
-    return `${window.location.protocol}//api.${rootHost}`;
+    return `${window.location.origin}/api`;
   }
 
   return "http://127.0.0.1:4000";
