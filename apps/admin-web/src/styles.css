@@ -2164,17 +2164,22 @@ textarea {
 }
 
 .production-workbench-tabs {
-  display: grid;
-  grid-template-columns: repeat(10, minmax(86px, 1fr));
+  display: flex;
   gap: 4px;
+  max-width: 100%;
   padding: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid #d8e1ec;
   border-radius: 8px;
   background: #eaf0f8;
-  overflow: auto;
+  scroll-padding-inline: 4px;
+  scrollbar-width: thin;
 }
 
 .production-workbench-tab {
+  flex: 0 0 auto;
+  min-width: 92px;
   min-height: 36px;
   padding: 0 10px;
   border: 0;

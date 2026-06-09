@@ -218,7 +218,15 @@ export function CasesPage(props: CasesPageProps) {
 
 function CaseTabButton(props: { active: boolean; disabled?: boolean; label: string; meta: string; onClick: () => void }) {
   return (
-    <button className={`case-tab ${props.active ? "active" : ""}`} disabled={props.disabled} type="button" onClick={props.onClick}>
+    <button
+      aria-selected={props.active}
+      className={`case-tab ${props.active ? "active" : ""}`}
+      disabled={props.disabled}
+      role="tab"
+      title={`${props.label} / ${props.meta}`}
+      type="button"
+      onClick={props.onClick}
+    >
       <strong>{props.label}</strong>
       <span>{props.meta}</span>
     </button>
@@ -1000,7 +1008,15 @@ function ProductionTab(
 
       <div className="production-workbench-tabs" role="tablist" aria-label="Production workbench sections">
         {(["overview", "pipeline", "script", "assets", "voice", "music", "clips", "final", "cost", "publish", "activity"] as ProductionWorkbenchTab[]).map((tab) => (
-          <button className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`} key={tab} type="button" onClick={() => switchProductionTab(tab)}>
+          <button
+            aria-selected={activeProductionTab === tab}
+            className={`production-workbench-tab ${activeProductionTab === tab ? "active" : ""}`}
+            key={tab}
+            role="tab"
+            title={formatProductionTab(tab)}
+            type="button"
+            onClick={() => switchProductionTab(tab)}
+          >
             {formatProductionTab(tab)}
           </button>
         ))}
