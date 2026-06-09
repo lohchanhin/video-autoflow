@@ -41,6 +41,13 @@ describe("draft reference asset picker rules", () => {
       storagePath: "",
       url: ""
     }))).toBe(true);
+
+    expect(shouldHideFromNewCaseReferencePicker(createAsset({
+      jobId: "job_003",
+      status: "approved",
+      storagePath: "local://uploads/jobs/job_003/references/character_design.png",
+      url: ""
+    }))).toBe(true);
   });
 
   it("hides visual assets whose media value is not an image", () => {
@@ -54,6 +61,14 @@ describe("draft reference asset picker rules", () => {
       status: "approved",
       storagePath: "local://uploads/jobs/asset_library/reference.txt",
       url: ""
+    }))).toBe(true);
+  });
+
+  it("allows approved visual asset-library media even when the upload URL has no extension", () => {
+    expect(isSelectableDraftReferenceAsset(createAsset({
+      jobId: "asset_library",
+      status: "approved",
+      storagePath: "local://uploads/jobs/asset_library/asset_001/reference"
     }))).toBe(true);
   });
 });

@@ -491,6 +491,7 @@ function AssetMultiSelect(props: {
   selectedIds: string[];
 }) {
   const [query, setQuery] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(props.selectedIds.length === 0);
   const selectedAssets = props.selectedIds
     .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
     .filter((asset): asset is ProductionAsset => Boolean(asset));
@@ -508,41 +509,88 @@ function AssetMultiSelect(props: {
     props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
   }
 
+  function removeAsset(id: string) {
+    props.onChange(props.selectedIds.filter((currentId) => currentId !== id));
+  }
+
+  function clearSelectedAssets() {
+    props.onChange([]);
+  }
+
   return (
     <div className="draft-reference-card asset-multi-select">
       <div className="asset-multi-header">
         <span>{props.icon}{props.label}</span>
         <small>{selectedAssets.length > 0 ? `${selectedAssets.length} 已选` : props.emptyText}</small>
       </div>
-      <label className="asset-multi-search">
-        <Search size={15} />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资产名称、文件夹、标签" />
-      </label>
       {selectedAssets.length > 0 ? (
-        <div className="brief-context-strip">
-          {selectedAssets.map((asset) => <span key={asset._id}>{asset.label}</span>)}
-        </div>
-      ) : null}
-      {props.assets.length === 0 ? (
-        <div className="draft-reference-empty">{props.emptyText}</div>
-      ) : filteredAssets.length === 0 ? (
-        <div className="draft-reference-empty">没有符合搜索的资产。</div>
-      ) : (
-        <div className="asset-multi-options">
-          {filteredAssets.map((asset) => (
-            <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
-              <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
-              <span className="asset-multi-thumb">
-                {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="图片不可用" /> : <MediaFallback label="无预览" />}
+        <div className="asset-selected-mini-grid">
+          {selectedAssets.map((asset) => (
+            <article className="asset-selected-mini-card" key={asset._id}>
+              <span className="asset-selected-mini-thumb">
+                {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
               </span>
-              <span>
-                <strong>{asset.label}</strong>
-                <small>{asset.folderName || asset.type}</small>
+              <span className="asset-selected-mini-copy">
+                <strong title={asset.label}>{asset.label}</strong>
+                <small title={asset.folderName || formatAssetType(asset.type)}>{asset.folderName || formatAssetType(asset.type)}</small>
               </span>
-            </label>
+              <button aria-label={`移除 ${asset.label}`} type="button" onClick={() => removeAsset(asset._id)}>
+                <X size={14} />
+              </button>
+            </article>
           ))}
         </div>
-      )}
+      ) : null}
+      <div className="asset-multi-actions">
+        <button className="secondary-button compact-button" type="button" onClick={() => setLibraryOpen((current) => !current)}>
+          {libraryOpen ? "收起资产库" : "选择资产"}
+        </button>
+        {selectedAssets.length > 0 ? (
+          <button className="secondary-button compact-button" type="button" onClick={clearSelectedAssets}>
+            清空选择
+          </button>
+        ) : null}
+      </div>
+      {props.assets.length === 0 ? (
+        <div className="draft-reference-empty">{props.emptyText}</div>
+      ) : libraryOpen ? (
+        <div className="asset-multi-library">
+          <label className="asset-multi-search">
+            <Search size={15} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资产名称、文件夹、标签" />
+          </label>
+          {filteredAssets.length === 0 ? (
+            <div className="draft-reference-empty">没有符合搜索的资产。</div>
+          ) : (
+            <div className="asset-multi-options">
+              {filteredAssets.map((asset) => {
+                const selected = props.selectedIds.includes(asset._id);
+                const thumbUrl = assetThumbUrl(asset);
+
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={selected ? "selected" : ""}
+                    key={asset._id}
+                    title={`${asset.label} / ${asset.folderName || formatAssetType(asset.type)}`}
+                    type="button"
+                    onClick={() => toggleAsset(asset._id)}
+                  >
+                    <span className="asset-multi-check">{selected ? <CheckCircle2 size={16} /> : null}</span>
+                    <span className="asset-multi-thumb">
+                      {thumbUrl ? <MediaImage alt={asset.label} src={thumbUrl} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
+                    </span>
+                    <span className="asset-multi-copy">
+                      <strong>{asset.label}</strong>
+                      <small>{asset.folderName || formatAssetType(asset.type)}</small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

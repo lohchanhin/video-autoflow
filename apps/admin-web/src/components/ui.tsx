@@ -42,7 +42,7 @@ export function MediaFallback(props: {
   status?: "empty" | "failed" | "loading";
 }) {
   const status = props.status ?? "empty";
-  const label = props.label ?? (status === "loading" ? "加载中" : "暂无预览");
+  const label = props.label ?? (status === "loading" ? "加载中" : status === "failed" ? "预览失效" : "暂无预览");
 
   return (
     <div className={`media-fallback ${status === "loading" ? "loading" : ""} ${props.className ?? ""}`.trim()} title={label}>

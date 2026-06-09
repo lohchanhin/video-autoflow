@@ -24,5 +24,13 @@ export function resolveProductionAssetPreviewUrl(asset: ProductionAsset): string
     return "";
   }
 
+  if (isKnownNonImageMediaUrl(mediaUrl)) {
+    return "";
+  }
+
   return isVisualProductionAssetType(asset.type) || isImageMediaUrl(mediaUrl) ? mediaUrl : "";
+}
+
+function isKnownNonImageMediaUrl(value: string): boolean {
+  return /\.(aac|csv|docx?|flac|json|m4a|mov|mp3|mp4|ogg|opus|pdf|srt|txt|wav|webm|xlsx?)(\?|$)/iu.test(value);
 }
