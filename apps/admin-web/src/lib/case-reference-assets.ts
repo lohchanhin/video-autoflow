@@ -1,7 +1,12 @@
 import type { GenerationReferenceAsset, ProductionAsset } from "@ai-content-factory/shared-types";
+import { resolveFirstMediaUrl } from "./media-url.js";
 
 export function isReadyReferenceAsset(asset: ProductionAsset): boolean {
-  return Boolean(asset.url.trim()) && (asset.status === "approved" || asset.status === "ready");
+  return Boolean(getProductionAssetMediaUrl(asset)) && (asset.status === "approved" || asset.status === "ready");
+}
+
+export function getProductionAssetMediaUrl(asset: ProductionAsset): string {
+  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
 }
 
 export function isCharacterDesignAsset(asset: ProductionAsset): boolean {
@@ -30,7 +35,7 @@ export function buildAssetContextBrief(characterAsset: ProductionAsset | null, b
           "Selected optional character reference:",
           `- Label: ${characterAsset.label}`,
           `- Visual brief: ${cleanAssetTextForCaseBrief(characterAsset)}`,
-          characterAsset.url ? "- Use this as the protagonist identity / wardrobe / silhouette reference when compatible with the user idea." : ""
+          getProductionAssetMediaUrl(characterAsset) ? "- Use this as the protagonist identity / wardrobe / silhouette reference when compatible with the user idea." : ""
         ].filter(Boolean).join("\n")
       : "",
     backgroundAsset
@@ -38,7 +43,7 @@ export function buildAssetContextBrief(characterAsset: ProductionAsset | null, b
           "Selected optional background / scene reference:",
           `- Label: ${backgroundAsset.label}`,
           `- Visual brief: ${cleanAssetTextForCaseBrief(backgroundAsset)}`,
-          backgroundAsset.url ? "- Use this as the environment, color, lighting, and set-design reference when compatible with the user idea." : ""
+          getProductionAssetMediaUrl(backgroundAsset) ? "- Use this as the environment, color, lighting, and set-design reference when compatible with the user idea." : ""
         ].filter(Boolean).join("\n")
       : ""
   ].filter(Boolean);
@@ -68,14 +73,14 @@ export function buildAssetContextBriefFromAssets(assets: ProductionAsset[]): str
     .map((asset) => [
       `- Character: ${asset.label}`,
       `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`,
-      asset.url ? "  Use as a fixed cast identity, wardrobe, silhouette, palette, and recurring prop reference." : ""
+      getProductionAssetMediaUrl(asset) ? "  Use as a fixed cast identity, wardrobe, silhouette, palette, and recurring prop reference." : ""
     ].filter(Boolean).join("\n"));
   const sceneLines = readyAssets
     .filter(isBackgroundDesignAsset)
     .map((asset) => [
       `- Scene / style: ${asset.label}`,
       `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`,
-      asset.url ? "  Use as a fixed location, spatial layout, lighting, palette, and camera-zone reference." : ""
+      getProductionAssetMediaUrl(asset) ? "  Use as a fixed location, spatial layout, lighting, palette, and camera-zone reference." : ""
     ].filter(Boolean).join("\n"));
   const otherLines = readyAssets
     .filter((asset) => !isCharacterDesignAsset(asset) && !isBackgroundDesignAsset(asset))
@@ -109,7 +114,7 @@ export function productionAssetToGenerationReference(asset: ProductionAsset): Ge
     prompt: cleanBrief || undefined,
     role: asset.role,
     type: asset.type,
-    url: asset.url
+    url: getProductionAssetMediaUrl(asset)
   };
 }
 

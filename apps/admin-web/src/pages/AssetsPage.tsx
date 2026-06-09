@@ -17,6 +17,7 @@ import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from 
 import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
+import { isImageMediaUrl, resolveFirstMediaUrl } from "../lib/media-url.js";
 
 type AssetStudioTab = "generate" | "library" | "case-plan";
 
@@ -393,7 +394,7 @@ export function AssetsPage(props: AssetsPageProps) {
                   {libraryVisibleAssets.map((asset) => (
                     <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                       <div className="asset-gallery-thumb">
-                        {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
+                        {assetPreviewUrl(asset) ? <img src={assetPreviewUrl(asset)} alt={asset.label} /> : <ImageIcon size={26} />}
                       </div>
                       <strong>{asset.label}</strong>
                       <span>{formatAssetCardMeta(asset)}</span>
@@ -454,7 +455,7 @@ export function AssetsPage(props: AssetsPageProps) {
                 {casePlanDisplayAssets.map((asset) => (
                   <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                     <div className="asset-gallery-thumb">
-                      {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
+                      {assetPreviewUrl(asset) ? <img src={assetPreviewUrl(asset)} alt={asset.label} /> : <ImageIcon size={26} />}
                     </div>
                     <strong>{asset.label}</strong>
                     <span>{formatAssetCardMeta(asset)}</span>
@@ -525,6 +526,7 @@ function AssetInspector(props: {
   }
 
   const asset = props.asset;
+  const previewUrl = assetPreviewUrl(asset);
   const approvedLibraryAsset = Boolean(props.protectRegenerate && asset.status === "approved");
   const readiness = evaluateProductionAssetReadiness(asset);
 
@@ -532,7 +534,7 @@ function AssetInspector(props: {
     <section className="asset-inspector panel">
       <SectionHeader eyebrow="设计检查" title={asset.label} action={<StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>} />
       <div className="asset-preview-frame">
-        {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
+        {previewUrl ? <img src={previewUrl} alt={asset.label} /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
       </div>
       <AssetReadinessPanel readiness={readiness} />
       <AssetDesignSpecPanel type={asset.type} compact />
@@ -810,10 +812,11 @@ function assetStatusTone(status: ProductionAssetStatus): "active" | "danger" | "
   return "neutral";
 }
 
-function isImagePath(value: string | undefined): boolean {
-  return /\.(png|jpe?g|webp|gif|svg)(\?|$)/iu.test(value ?? "");
+function assetPreviewUrl(asset: ProductionAsset): string {
+  const resolved = resolveFirstMediaUrl([asset.url, asset.storagePath]);
+  return isImageMediaUrl(resolved) ? resolved : "";
 }
 
 function isGeneratedDesignAsset(asset: ProductionAsset): boolean {
-  return isImagePath(asset.url) || isImagePath(asset.storagePath);
+  return Boolean(assetPreviewUrl(asset));
 }

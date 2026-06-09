@@ -4,6 +4,7 @@ import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisode
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
+import { isImageMediaUrl, resolveFirstMediaUrl } from "../lib/media-url.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface SeriesPageProps {
@@ -46,7 +47,7 @@ export function SeriesPage(props: SeriesPageProps) {
   const seriesEditor = useEditableDraft(selectedSeries, selectedSeries ? `${selectedSeries._id}:${selectedSeries.updatedAt}` : null);
   const seriesDraft = seriesEditor.draft;
   const selectedSeriesJobs = selectedSeries ? props.jobs.filter((job) => job.seriesId === selectedSeries._id) : [];
-  const generatedAssets = props.assets.filter((asset) => Boolean(asset.url.trim()) && (asset.status === "ready" || asset.status === "approved"));
+  const generatedAssets = props.assets.filter((asset) => Boolean(assetBindingUrl(asset)) && (asset.status === "ready" || asset.status === "approved"));
   const approvedEpisodes = props.episodes.filter((episode) => episode.status === "approved").length;
   const convertedEpisodes = props.episodes.filter((episode) => episode.status === "converted_to_case").length;
   const generating = selectedSeries ? props.generatingSeriesIds.includes(selectedSeries._id) : false;
@@ -568,7 +569,7 @@ function AssetBindingPicker(props: {
         <div className="asset-selected-strip" aria-label="已选资产">
           {selectedAssets.map((asset) => (
             <button key={asset._id} type="button" onClick={() => remove(asset._id)} title={`移除 ${asset.label}`}>
-              {asset.url ? <img alt={asset.label} src={asset.url} /> : <ImageIcon size={16} />}
+              {assetBindingThumbUrl(asset) ? <img alt={asset.label} src={assetBindingThumbUrl(asset)} /> : <ImageIcon size={16} />}
               <span>{asset.label}</span>
               <X size={14} />
             </button>
@@ -603,7 +604,7 @@ function AssetBindingPicker(props: {
             return (
               <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
                 <span className="asset-picker-thumb">
-                  {asset.url ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={22} />}
+                  {assetBindingThumbUrl(asset) ? <img src={assetBindingThumbUrl(asset)} alt={asset.label} /> : <ImageIcon size={22} />}
                   <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
                 </span>
                 <strong>{asset.label}</strong>
@@ -635,6 +636,15 @@ function episodeStatusLabel(status: SeriesEpisodeIdeaStatus): string {
     rejected: "已拒绝"
   };
   return labels[status];
+}
+
+function assetBindingUrl(asset: ProductionAsset): string {
+  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
+}
+
+function assetBindingThumbUrl(asset: ProductionAsset): string {
+  const mediaUrl = assetBindingUrl(asset);
+  return isImageMediaUrl(mediaUrl) ? mediaUrl : "";
 }
 
 function assetTypeLabel(type: ProductionAsset["type"]): string {

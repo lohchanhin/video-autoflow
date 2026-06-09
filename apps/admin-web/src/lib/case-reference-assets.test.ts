@@ -12,11 +12,12 @@ import {
 } from "./case-reference-assets.js";
 
 describe("case reference asset routing", () => {
-  it("only treats approved or ready assets with URLs as generation references", () => {
+  it("only treats approved or ready assets with media URLs as generation references", () => {
     expect(isReadyReferenceAsset(createAsset({ status: "approved", url: "https://cdn.test/paladin.png" }))).toBe(true);
     expect(isReadyReferenceAsset(createAsset({ status: "ready", url: "https://cdn.test/paladin.png" }))).toBe(true);
     expect(isReadyReferenceAsset(createAsset({ status: "planned", url: "https://cdn.test/paladin.png" }))).toBe(false);
-    expect(isReadyReferenceAsset(createAsset({ status: "approved", url: "" }))).toBe(false);
+    expect(isReadyReferenceAsset(createAsset({ status: "approved", url: "" }))).toBe(true);
+    expect(isReadyReferenceAsset(createAsset({ status: "approved", storagePath: "", url: "" }))).toBe(false);
   });
 
   it("classifies character and reusable background assets for case creation", () => {

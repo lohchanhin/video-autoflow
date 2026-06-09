@@ -126,12 +126,14 @@ import {
   buildAssetContextBriefFromAssets,
   buildReferenceAssetPromptContext,
   findReadyReferenceAssetsByIds,
+  getProductionAssetMediaUrl,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
   productionAssetToGenerationReference
 } from "./lib/case-reference-assets.js";
 import { createId } from "./lib/ids.js";
+import { isRasterImageMediaUrl, resolveMediaUrl } from "./lib/media-url.js";
 import {
   createCaseActivity,
   createSceneReviewItems,
@@ -391,7 +393,7 @@ function describeComposedSceneImages(images: GenerateVideoResponse["artifacts"][
 }
 
 function isRasterImageArtifact(value: string | undefined): boolean {
-  return /\.(png|jpe?g|webp|bmp)(\?|$)/iu.test(value ?? "");
+  return isRasterImageMediaUrl(value);
 }
 
 function isAudioArtifact(value: string | undefined): boolean {
@@ -470,8 +472,8 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
   const sceneTimings = parseStoryboardSceneTimings(records, job.id);
   const scenePromptMap = parseScenePromptMap(promptRecord?.output ?? "");
   const jobReviews = sceneReviews.filter((review) => review.jobId === job.id).sort((left, right) => left.sceneId - right.sceneId);
-  const imageArtifacts = splitArtifactPaths(imageRecord?.artifactPath).filter(isRasterImageArtifact);
-  const enabledAssets = referenceAssets.filter((asset) => asset.jobId === job.id && (asset.status === "approved" || asset.status === "ready") && asset.url.trim());
+  const imageArtifacts = splitArtifactPaths(imageRecord?.artifactPath).map(resolveMediaUrl).filter(isRasterImageArtifact);
+  const enabledAssets = referenceAssets.filter((asset) => asset.jobId === job.id && (asset.status === "approved" || asset.status === "ready") && getProductionAssetMediaUrl(asset));
   const sceneIds = collectSceneIds(job, sceneTimings, jobReviews, imageArtifacts);
 
   return sceneIds.map((sceneId) => {
@@ -480,14 +482,16 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
     const sceneImage = imageArtifacts.find((artifact) => getSceneNumberFromArtifact(artifact) === sceneId) ?? imageArtifacts[sceneId - 1];
     const firstFrameAsset = enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === null);
     const lastFrameAsset = enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === null);
-    const imageUrl = firstFrameAsset?.url || review?.artifactPath || sceneImage;
+    const firstFrameUrl = firstFrameAsset ? getProductionAssetMediaUrl(firstFrameAsset) : "";
+    const lastFrameUrl = lastFrameAsset ? getProductionAssetMediaUrl(lastFrameAsset) : "";
+    const imageUrl = firstFrameUrl || resolveMediaUrl(review?.artifactPath) || resolveMediaUrl(sceneImage) || undefined;
     const referenceAssetsForScene = enabledAssets
       .filter((asset) => asset.role === "reference_image" && (asset.sceneId === null || asset.sceneId === sceneId))
-      .filter((asset, index, assets) => assets.findIndex((candidate) => candidate.url === asset.url) === index)
+      .filter((asset, index, assets) => assets.findIndex((candidate) => getProductionAssetMediaUrl(candidate) === getProductionAssetMediaUrl(asset)) === index)
       .slice(0, 8);
     const referenceImageUrls = referenceAssetsForScene
-      .map((asset) => asset.url)
-      .filter((url, index, urls) => url !== imageUrl && url !== lastFrameAsset?.url && urls.indexOf(url) === index);
+      .map(getProductionAssetMediaUrl)
+      .filter((url, index, urls) => Boolean(url) && url !== imageUrl && url !== lastFrameUrl && urls.indexOf(url) === index);
     const imagePrompt = scenePromptMap.get(sceneId) ?? review?.prompt ?? "";
     const durationSeconds = getSeedanceDurationSeconds(timing?.durationSeconds, job.durationSeconds, sceneIds.length);
     const referenceContext = referenceAssetsForScene
@@ -498,7 +502,7 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
     return {
       durationSeconds,
       imageUrl,
-      lastFrameImageUrl: lastFrameAsset?.url,
+      lastFrameImageUrl: lastFrameUrl || undefined,
       prompt: buildSeedanceScenePrompt({
         durationSeconds,
         imagePrompt,
@@ -732,7 +736,7 @@ function enrichProductionBriefWithReferenceAssets(productionBrief: ProductionBri
         label: asset.label,
         notes: buildReferenceAssetPromptContext(asset),
         role: asset.type,
-        url: asset.url,
+        url: getProductionAssetMediaUrl(asset),
         visualIdentity: asset.prompt || asset.notes || asset.label
       }))
       : productionBrief.selectedCharacters,
@@ -742,7 +746,7 @@ function enrichProductionBriefWithReferenceAssets(productionBrief: ProductionBri
         label: asset.label,
         location: asset.folderName,
         notes: buildReferenceAssetPromptContext(asset),
-        url: asset.url,
+        url: getProductionAssetMediaUrl(asset),
         visualRules: asset.prompt || asset.notes || asset.label
       }))
       : productionBrief.selectedScenes,
@@ -1872,7 +1876,7 @@ export function App() {
         label: asset.label,
         notes: buildReferenceAssetPromptContext(asset),
         role: asset.type,
-        url: asset.url,
+        url: getProductionAssetMediaUrl(asset),
         visualIdentity: asset.prompt || asset.notes || asset.label
       })),
       selectedScenes: sceneAssets.map((asset) => ({
@@ -1880,7 +1884,7 @@ export function App() {
         label: asset.label,
         location: asset.folderName,
         notes: buildReferenceAssetPromptContext(asset),
-        url: asset.url,
+        url: getProductionAssetMediaUrl(asset),
         visualRules: asset.prompt || asset.notes || asset.label
       })),
       seriesContext: selectedSeries ? {
@@ -2945,7 +2949,7 @@ export function App() {
     const assets = [...extraAssets, ...productionAssets]
       .filter((asset) => asset.jobId === job.id || selectedAssetIds.has(asset._id))
       .filter(isReadyReferenceAsset);
-    const uniqueAssets = assets.filter((asset, index) => assets.findIndex((candidate) => candidate.url === asset.url) === index);
+    const uniqueAssets = assets.filter((asset, index) => assets.findIndex((candidate) => getProductionAssetMediaUrl(candidate) === getProductionAssetMediaUrl(asset)) === index);
 
     return uniqueAssets
       .map(productionAssetToGenerationReference)
@@ -2982,7 +2986,7 @@ export function App() {
           storagePath: asset.storagePath,
           tags: [...asset.tags, "case_reference"],
           type: asset.type,
-          url: asset.url
+          url: getProductionAssetMediaUrl(asset)
         });
 
         attachedAssets.push(response.asset);
@@ -3182,7 +3186,7 @@ export function App() {
             storagePath: asset.url,
             tags: ["legacy-import"],
             type: asset.type,
-            url: asset.url
+            url: resolveMediaUrl(asset.url)
           })
         )
       );

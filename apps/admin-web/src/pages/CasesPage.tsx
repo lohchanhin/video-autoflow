@@ -9,6 +9,7 @@ import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, typ
 import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEditableDraft } from "../lib/editable-draft.js";
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
+import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveFirstMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
 import type { ProductionStageId } from "../lib/production.js";
 import type { CaseDraftPreview } from "../App.js";
 
@@ -117,7 +118,7 @@ type ProductionWorkbenchTab = "overview" | "pipeline" | "script" | "assets" | "v
 const processStatusOptions: ProcessRecordStatus[] = ["pending", "working", "done", "failed", "skipped"];
 
 function isSelectableDraftAsset(asset: ProductionAsset): boolean {
-  return Boolean(asset.url.trim()) && (asset.status === "approved" || asset.status === "ready");
+  return Boolean(assetMediaUrl(asset)) && (asset.status === "approved" || asset.status === "ready");
 }
 
 export function CasesPage(props: CasesPageProps) {
@@ -483,7 +484,7 @@ function AssetMultiSelect(props: {
           {filteredAssets.map((asset) => (
             <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
               <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
-              {asset.url ? <img alt={asset.label} src={asset.url} /> : <ImageIcon size={18} />}
+              {assetThumbUrl(asset) ? <img alt={asset.label} src={assetThumbUrl(asset)} /> : <ImageIcon size={18} />}
               <span>
                 <strong>{asset.label}</strong>
                 <small>{asset.folderName || asset.type}</small>
@@ -1373,7 +1374,7 @@ function getCaseCostEstimateTone(estimate: CaseNextCostEstimate): "neutral" | "a
 
 function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob; openAssetPlan: (jobId: string) => void }) {
   const referenceAssets = props.assets
-    .filter((asset) => asset.url.trim() && (asset.role === "reference_image" || asset.role === "first_frame" || asset.role === "last_frame" || asset.type === "character_design" || asset.type === "scene_design" || asset.type === "style_reference"))
+    .filter((asset) => assetMediaUrl(asset) && (asset.role === "reference_image" || asset.role === "first_frame" || asset.role === "last_frame" || asset.type === "character_design" || asset.type === "scene_design" || asset.type === "style_reference"))
     .sort((left, right) => left.type.localeCompare(right.type) || left.label.localeCompare(right.label));
   const characterCount = referenceAssets.filter((asset) => asset.type === "character_design").length;
   const sceneCount = referenceAssets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame" || asset.type === "last_frame").length;
@@ -1416,7 +1417,7 @@ function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob
         <div className="case-reference-strip">
           {referenceAssets.map((asset) => (
             <article className="case-reference-tile" key={asset._id}>
-              <img alt={asset.label} src={asset.url} />
+              {assetThumbUrl(asset) ? <img alt={asset.label} src={assetThumbUrl(asset)} /> : <ImageIcon size={18} />}
               <div>
                 <strong>{asset.label}</strong>
                 <span>{formatAssetType(asset.type)} / {asset.status}</span>
@@ -1458,7 +1459,7 @@ function SceneImageWorkbench(props: {
   const storyboardReady = props.records.some((record) => record.stageId === "storyboard" && record.status === "done");
   const promptReady = props.records.some((record) => record.stageId === "prompt" && record.status === "done");
   const imageRecord = props.records.find((record) => record.stageId === "image");
-  const readyReferences = props.assets.filter((asset) => asset.url.trim() && (asset.status === "approved" || asset.status === "ready")).length;
+  const readyReferences = props.assets.filter((asset) => assetMediaUrl(asset) && (asset.status === "approved" || asset.status === "ready")).length;
   const canGenerateImages = scriptReady && storyboardReady && promptReady && !props.isGeneratingImages;
 
   return (
@@ -1519,14 +1520,14 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
   const ttsRecord = props.records.find((record) => record.stageId === "tts");
   const bgmRecord = props.records.find((record) => record.stageId === "bgm");
   const storedVideo = props.storedVideos.find((video) => video.jobId === props.job.id);
-  const videoPath = firstPath(composeRecord?.artifactPath) ?? storedVideo?.publicUrl ?? storedVideo?.storagePath ?? "";
+  const videoPath = resolveMediaUrl(firstPath(composeRecord?.artifactPath) ?? storedVideo?.publicUrl ?? storedVideo?.storagePath ?? "");
   const jobAssetsBaseUrl = inferJobAssetsBaseUrl(videoPath);
-  const imagePaths = splitArtifactPaths(imageRecord?.artifactPath).filter(isImagePath);
+  const imagePaths = splitArtifactPaths(imageRecord?.artifactPath).map(resolveMediaUrl).filter(isImagePath);
   const resolvedImagePaths = imagePaths.length > 0 ? imagePaths : jobAssetsBaseUrl ? inferSceneImageUrls(jobAssetsBaseUrl, props.job.sceneCount) : [];
-  const subtitlePath = firstPath(subtitleRecord?.artifactPath) ?? (jobAssetsBaseUrl ? `${jobAssetsBaseUrl}/subtitles.srt` : undefined);
-  const audioAndSfxPaths = splitArtifactPaths(ttsRecord?.artifactPath);
+  const subtitlePath = resolveMediaUrl(firstPath(subtitleRecord?.artifactPath) ?? (jobAssetsBaseUrl ? `${jobAssetsBaseUrl}/subtitles.srt` : undefined));
+  const audioAndSfxPaths = splitArtifactPaths(ttsRecord?.artifactPath).map(resolveMediaUrl);
   const voiceoverPath = audioAndSfxPaths.find(isAudioPath) ?? audioAndSfxPaths.find((artifact) => artifact.includes("voiceover"));
-  const bgmPath = splitArtifactPaths(bgmRecord?.artifactPath).find(isAudioPath);
+  const bgmPath = splitArtifactPaths(bgmRecord?.artifactPath).map(resolveMediaUrl).find(isAudioPath);
   const sfxPath = audioAndSfxPaths.find((artifact) => artifact.includes("sfx")) ?? (jobAssetsBaseUrl ? `${jobAssetsBaseUrl}/sfx.json` : undefined);
   const audioAssetCount = [voiceoverPath && isAudioPath(voiceoverPath) ? voiceoverPath : "", bgmPath ?? "", sfxPath].filter(Boolean).length;
 
@@ -1536,8 +1537,8 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
       {props.job.visualBible ? <VisualBibleCard visualBible={props.job.visualBible} /> : null}
       {videoPath ? (
         <div className="case-video-preview">
-          {isVideoPath(videoPath) && videoPath.startsWith("http") ? <video controls src={videoPath} /> : null}
-          <a href={videoPath.startsWith("http") ? videoPath : undefined} target="_blank" rel="noreferrer">
+          {isVideoPath(videoPath) && isOpenableMediaUrl(videoPath) ? <video controls src={videoPath} /> : null}
+          <a href={isOpenableMediaUrl(videoPath) ? videoPath : undefined} target="_blank" rel="noreferrer">
             {videoPath}
           </a>
         </div>
@@ -1562,7 +1563,7 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
       {resolvedImagePaths.length > 0 ? (
         <div className="image-asset-grid">
           {resolvedImagePaths.map((path, index) => (
-            <a className="image-asset-tile" href={path.startsWith("http") ? path : undefined} target="_blank" rel="noreferrer" key={`${path}-${index}`}>
+            <a className="image-asset-tile" href={isOpenableMediaUrl(path) ? path : undefined} target="_blank" rel="noreferrer" key={`${path}-${index}`}>
               <img src={path} alt={`Scene ${index + 1}`} />
               <span>场景 {index + 1} / {props.sceneReviews.find((review) => review.sceneId === index + 1)?.status ?? "未审核"}</span>
             </a>
@@ -1578,7 +1579,7 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
               <span>配音音频</span>
             </div>
             <audio controls src={voiceoverPath} />
-            <a href={voiceoverPath.startsWith("http") ? voiceoverPath : undefined} target="_blank" rel="noreferrer">{voiceoverPath}</a>
+            <a href={isOpenableMediaUrl(voiceoverPath) ? voiceoverPath : undefined} target="_blank" rel="noreferrer">{voiceoverPath}</a>
           </div>
         ) : voiceoverPath ? (
           <ArtifactLink icon={<Music2 size={14} />} label="配音文本" path={voiceoverPath} />
@@ -1590,7 +1591,7 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
               <span>背景音乐</span>
             </div>
             <audio controls src={bgmPath} />
-            <a href={bgmPath.startsWith("http") ? bgmPath : undefined} target="_blank" rel="noreferrer">{bgmPath}</a>
+            <a href={isOpenableMediaUrl(bgmPath) ? bgmPath : undefined} target="_blank" rel="noreferrer">{bgmPath}</a>
           </div>
         ) : null}
         {sfxPath ? <ArtifactLink icon={<Music2 size={14} />} label="音效提示" path={sfxPath} /> : null}
@@ -1611,13 +1612,14 @@ function AssetCount(props: { icon: ReactNode; label: string; value: string }) {
 }
 
 function ArtifactLink(props: { icon: ReactNode; label: string; path: string }) {
-  const isLinkable = props.path.startsWith("http");
+  const resolvedPath = resolveMediaUrl(props.path);
+  const isLinkable = isOpenableMediaUrl(resolvedPath);
 
   return (
-    <a className="asset-link-row" href={isLinkable ? props.path : undefined} target="_blank" rel="noreferrer">
+    <a className="asset-link-row" href={isLinkable ? resolvedPath : undefined} target="_blank" rel="noreferrer">
       {props.icon}
       <span>{props.label}</span>
-      <code>{props.path}</code>
+      <code>{resolvedPath}</code>
     </a>
   );
 }
@@ -1808,7 +1810,7 @@ function SceneReviewCard(props: {
   return (
     <article className={`scene-review-card ${draft.status}`}>
       <div className="scene-review-media">
-        {isImagePath(draft.artifactPath) ? <img src={draft.artifactPath} alt={`Scene ${draft.sceneId}`} /> : <div className="scene-placeholder">Scene {draft.sceneId}</div>}
+        {isImagePath(draft.artifactPath) ? <img src={resolveMediaUrl(draft.artifactPath)} alt={`Scene ${draft.sceneId}`} /> : <div className="scene-placeholder">Scene {draft.sceneId}</div>}
       </div>
       <div className="scene-review-body">
         <div className="scene-review-title">
@@ -2173,7 +2175,7 @@ function StageEditorPanel(props: {
 }
 
 function ArtifactPreview(props: { artifactPath: string }) {
-  const artifacts = splitArtifactPaths(props.artifactPath);
+  const artifacts = splitArtifactPaths(props.artifactPath).map(resolveMediaUrl).filter(Boolean);
   const firstArtifact = artifacts[0];
 
   if (!firstArtifact) {
@@ -2186,19 +2188,19 @@ function ArtifactPreview(props: { artifactPath: string }) {
 
   return (
     <div className="artifact-preview">
-      {videoArtifacts.map((artifact) => (artifact.startsWith("http") ? <video controls src={artifact} key={artifact} /> : null))}
-      {audioArtifacts.map((artifact) => (artifact.startsWith("http") ? <audio controls src={artifact} key={artifact} /> : null))}
+      {videoArtifacts.map((artifact) => (isOpenableMediaUrl(artifact) ? <video controls src={artifact} key={artifact} /> : null))}
+      {audioArtifacts.map((artifact) => (isOpenableMediaUrl(artifact) ? <audio controls src={artifact} key={artifact} /> : null))}
       {imageArtifacts.length > 0 ? (
         <div className="artifact-image-strip">
           {imageArtifacts.map((artifact, index) => (
-            <a href={artifact.startsWith("http") ? artifact : undefined} target="_blank" rel="noreferrer" key={`${artifact}-${index}`}>
+            <a href={isOpenableMediaUrl(artifact) ? artifact : undefined} target="_blank" rel="noreferrer" key={`${artifact}-${index}`}>
               <img src={artifact} alt={`Artifact ${index + 1}`} />
             </a>
           ))}
         </div>
       ) : null}
       {artifacts.map((artifact) =>
-        artifact.startsWith("http") ? (
+        isOpenableMediaUrl(artifact) ? (
           <a href={artifact} target="_blank" rel="noreferrer" key={artifact}>
             Open artifact
           </a>
@@ -2222,19 +2224,32 @@ function firstPath(value: string | undefined): string | undefined {
 }
 
 function isImagePath(value: string): boolean {
-  return /\.(svg|png|jpe?g|webp|bmp)(\?|$)/iu.test(value);
+  return isImageMediaUrl(value);
 }
 
 function isRasterImagePath(value: string): boolean {
-  return /\.(png|jpe?g|webp|bmp)(\?|$)/iu.test(value);
+  return isRasterImageMediaUrl(value);
 }
 
 function isVideoPath(value: string): boolean {
-  return /\.(mp4|mov|webm)(\?|$)/iu.test(value);
+  return isVideoMediaUrl(value);
 }
 
 function isAudioPath(value: string): boolean {
-  return /\.(mp3|wav|m4a|aac|ogg|opus|flac)(\?|$)/iu.test(value);
+  return isAudioMediaUrl(value);
+}
+
+function assetMediaUrl(asset: ProductionAsset): string {
+  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
+}
+
+function assetThumbUrl(asset: ProductionAsset): string {
+  const mediaUrl = assetMediaUrl(asset);
+  return isImageMediaUrl(mediaUrl) ? mediaUrl : "";
+}
+
+function isOpenableMediaUrl(value: string | null | undefined): boolean {
+  return /^(https?:|blob:|data:)/iu.test(resolveMediaUrl(value));
 }
 
 function inferJobAssetsBaseUrl(videoPath: string): string | null {
