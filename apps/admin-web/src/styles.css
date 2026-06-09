@@ -2687,6 +2687,37 @@ textarea {
   line-height: 1.45;
 }
 
+.case-budget-helper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border: 1px solid #fedf89;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.case-budget-helper div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.case-budget-helper strong {
+  color: #93370d;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.case-budget-helper span {
+  color: #7a4b13;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
 .case-budget-alert-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);

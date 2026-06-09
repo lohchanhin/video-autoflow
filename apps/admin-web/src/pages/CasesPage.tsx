@@ -1364,6 +1364,11 @@ function CaseOverviewPanel(props: {
     records: props.records,
     settings: props.toolProviderSettings
   });
+  const budgetNeedsAction = props.job.actualCostRM >= props.job.costLimitRM || nextCostEstimate.exceedsBudget;
+  const budgetTargetRM = getCaseBudgetRecoveryAmount(
+    props.job.actualCostRM + (nextCostEstimate.estimatedCostRM ?? 0),
+    props.job.costLimitRM
+  );
   const blockers = [
     props.scriptStoryReady ? "" : "脚本、分镜或图片提示词还没完成。",
     props.imageReadyForCompose ? "" : "场景图片还没准备好，或仍需要审核。",
@@ -1416,6 +1421,17 @@ function CaseOverviewPanel(props: {
         />
         <div className="budget-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
         <div className="case-budget-editor">
+          {budgetNeedsAction ? (
+            <div className="case-budget-helper">
+              <div>
+                <strong>{props.job.actualCostRM >= props.job.costLimitRM ? "当前 Case 已超过预算" : "下一步预计会超过预算"}</strong>
+                <span>先调高当前 Case 预算并保存，再继续付费生成。</span>
+              </div>
+              <button className="secondary-button compact-button" type="button" onClick={() => budgetEditor.setDraftPatch({ costLimitRM: budgetTargetRM })}>
+                建议调到 RM {budgetTargetRM.toFixed(2)}
+              </button>
+            </div>
+          ) : null}
           <Field label="当前 Case 预算 RM">
             <input
               min={0.1}

@@ -18,8 +18,9 @@ describe("case budget guards", () => {
     });
 
     expect(guard.canRun).toBe(false);
-    expect(guard.message).toContain("Generate Seedance clips blocked");
-    expect(guard.message).toContain("budget exhausted");
+    expect(guard.message).toContain("生成 Seedance 影片片段");
+    expect(guard.message).toContain("已被预算护栏停止");
+    expect(guard.message).toContain("总览 > 预算");
   });
 
   it("blocks when an estimated next step exceeds remaining budget", () => {
@@ -29,7 +30,8 @@ describe("case budget guards", () => {
     });
 
     expect(guard.canRun).toBe(false);
-    expect(guard.message).toContain("estimated next cost");
+    expect(guard.message).toContain("下一步预计");
+    expect(guard.message).toContain("改用更低成本工具");
   });
 
   it("blocks invalid zero budgets", () => {
@@ -38,7 +40,8 @@ describe("case budget guards", () => {
     });
 
     expect(guard.canRun).toBe(false);
-    expect(guard.message).toContain("no valid budget");
+    expect(guard.message).toContain("没有有效预算上限");
+    expect(guard.message).toContain("成本");
   });
 });
 
