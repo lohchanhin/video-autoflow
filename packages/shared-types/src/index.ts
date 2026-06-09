@@ -58,6 +58,22 @@ export interface DatabaseStatusResponse {
   timestamp: string;
 }
 
+export interface AppStateEntry {
+  key: string;
+  updatedAt: string;
+  value: string;
+}
+
+export interface AppStateSnapshotResponse {
+  entries: AppStateEntry[];
+  source: "mongodb";
+  timestamp: string;
+}
+
+export interface AppStateUpsertResponse {
+  entry: AppStateEntry;
+}
+
 export interface ProviderSecretStatus {
   configured: boolean;
   keyName: string;

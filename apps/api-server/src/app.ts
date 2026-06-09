@@ -23,11 +23,12 @@ import type { QcReportService } from "./modules/generation/qc-service.js";
 import type { SeriesEpisodeIdeaService } from "./modules/series/episode-idea-service.js";
 import type { TrendScanService } from "./modules/trends/trend-service.js";
 import type { TtsGenerationService } from "./modules/generation/tts-service.js";
+import { createAppStateRouter } from "./routes/app-state.js";
 import { createTrendsRouter } from "./routes/trends.js";
 import { createTtsRouter } from "./routes/tts.js";
 import { createVideoClipsRouter } from "./routes/video-clips.js";
 import type { VideoClipGenerationService } from "./modules/generation/video-clip-service.js";
-import type { ContentSeriesRepository, CostLogsRepository, ProductionAssetsRepository, StoryWorldsRepository } from "@ai-content-factory/database";
+import type { AppStateRepository, ContentSeriesRepository, CostLogsRepository, ProductionAssetsRepository, StoryWorldsRepository } from "@ai-content-factory/database";
 import { createCostRecorder } from "./modules/costs/cost-recorder.js";
 import { ApiError } from "./errors.js";
 
@@ -70,6 +71,7 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 };
 
 export interface CreateAppOptions {
+  appStateRepository?: AppStateRepository | undefined;
   composeVideo?: ComposeVideo | undefined;
   connectDatabase?: ConnectDatabase | undefined;
   contentSeriesRepository?: ContentSeriesRepository | undefined;
@@ -115,8 +117,9 @@ export function createApp(options: CreateAppOptions = {}): Express {
 
   app.disable("x-powered-by");
   app.use(corsHeaders);
-  app.use(express.json());
+  app.use(express.json({ limit: "5mb" }));
   app.use(createHealthRouter({ env: config.env }));
+  app.use(createAppStateRouter({ appStateRepository: options.appStateRepository, connectDatabase: options.connectDatabase }));
   app.use(createDatabaseRouter({ connectDatabase: options.connectDatabase }));
   app.use(createCostsRouter({ connectDatabase: options.connectDatabase, costLogsRepository: options.costLogsRepository }));
   app.use(createProviderKeysRouter({ readSecret: options.readProviderSecret, writeSecret: options.writeProviderSecret }));
@@ -174,7 +177,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
 }
 
 const corsHeaders: RequestHandler = (req, res, next) => {
-  res.header("Access-Control-Allow-Origin", config.adminWebUrl);
+  res.header("Access-Control-Allow-Origin", resolveAllowedCorsOrigin(req.headers.origin));
   res.header("Access-Control-Allow-Headers", "Content-Type");
   res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
 
@@ -185,3 +188,20 @@ const corsHeaders: RequestHandler = (req, res, next) => {
 
   next();
 };
+
+function resolveAllowedCorsOrigin(origin: string | undefined): string {
+  const allowedOrigins = new Set([
+    config.adminWebUrl,
+    "https://vertex-workflow.com",
+    "https://www.vertex-workflow.com",
+    "http://137.184.100.54:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173"
+  ]);
+
+  if (origin && allowedOrigins.has(origin)) {
+    return origin;
+  }
+
+  return config.adminWebUrl;
+}

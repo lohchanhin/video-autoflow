@@ -1,3 +1,5 @@
+import { syncLocalStateKey } from "./app-state-sync.js";
+
 export function readJson<T>(key: string, fallback: T): T {
   const storage = getLocalStorage();
 
@@ -27,7 +29,9 @@ export function writeJson<T>(key: string, value: T): void {
     return;
   }
 
-  storage.setItem(key, JSON.stringify(value));
+  const serialized = JSON.stringify(value);
+  storage.setItem(key, serialized);
+  syncLocalStateKey(key, serialized);
 }
 
 function getLocalStorage(): Storage | null {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Collection, type Db, type Document, type Filter, type MongoClientOptions } from "mongodb";
 import type {
+  AppStateEntry,
   ContentSeries,
   ContentSeriesStatus,
   CostLog,
@@ -92,6 +93,62 @@ export function getDatabaseNameFromMongoUri(mongoUri: string, fallback = "ai_con
 }
 
 export type CostLogDocument = CostLog & Document;
+export type AppStateDocument = AppStateEntry & Document;
+
+export interface AppStateRepository {
+  ensureIndexes(): Promise<void>;
+  list(prefix?: string | undefined): Promise<AppStateEntry[]>;
+  upsert(key: string, value: string): Promise<AppStateEntry>;
+  upsertMany(entries: Array<{ key: string; value: string }>): Promise<AppStateEntry[]>;
+}
+
+export function createAppStateRepository(connection: MongoDatabaseConnection): AppStateRepository {
+  const collection = connection.collection<AppStateDocument>("app_state");
+
+  return {
+    async ensureIndexes(): Promise<void> {
+      await collection.createIndex({ key: 1 }, { unique: true });
+    },
+
+    async list(prefix?: string | undefined): Promise<AppStateEntry[]> {
+      await this.ensureIndexes();
+
+      const query: Filter<AppStateDocument> = prefix ? { key: { $regex: `^${escapeRegExp(prefix)}` } } as Filter<AppStateDocument> : {};
+      const rows = await collection.find(query).sort({ key: 1 }).toArray();
+      return rows.map(stripAppStateDocument);
+    },
+
+    async upsert(key: string, value: string): Promise<AppStateEntry> {
+      await this.ensureIndexes();
+
+      const now = new Date().toISOString();
+      const existing = await collection.findOne({ key } as Filter<AppStateDocument>);
+      const entry: AppStateEntry = {
+        key,
+        updatedAt: now,
+        value
+      };
+
+      if (existing) {
+        await collection.findOneAndUpdate({ key } as Filter<AppStateDocument>, { $set: entry });
+        return entry;
+      }
+
+      await collection.insertOne({ _id: key, ...entry } as unknown as AppStateDocument);
+      return entry;
+    },
+
+    async upsertMany(entries: Array<{ key: string; value: string }>): Promise<AppStateEntry[]> {
+      const saved: AppStateEntry[] = [];
+
+      for (const entry of entries) {
+        saved.push(await this.upsert(entry.key, entry.value));
+      }
+
+      return saved;
+    }
+  };
+}
 
 export interface CostLogCreateInput {
   costRM: number;
@@ -109,6 +166,18 @@ export interface CostLogCreateInput {
   toolType: CostLogToolType;
   unit: string;
   usage?: CostLogUsage | undefined;
+}
+
+function stripAppStateDocument(document: AppStateDocument): AppStateEntry {
+  return {
+    key: document.key,
+    updatedAt: document.updatedAt,
+    value: document.value
+  };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 export interface CostLogListFilter {

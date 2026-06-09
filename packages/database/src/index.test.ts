@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MongoClient } from "mongodb";
-import { connectMongoDatabase, createContentSeriesRepository, createProductionAssetsRepository, createStoryWorldsRepository, getDatabaseNameFromMongoUri, type MongoDatabaseConnection } from "./index.js";
+import { connectMongoDatabase, createAppStateRepository, createContentSeriesRepository, createProductionAssetsRepository, createStoryWorldsRepository, getDatabaseNameFromMongoUri, type MongoDatabaseConnection } from "./index.js";
 
 describe("getDatabaseNameFromMongoUri", () => {
   it("reads the database name from a MongoDB URI", () => {
@@ -55,6 +55,28 @@ describe("connectMongoDatabase", () => {
     expect(connect).toHaveBeenCalledOnce();
     expect(db).toHaveBeenCalledWith("ai_content_factory");
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("appStateRepository", () => {
+  it("upserts and lists app state by key prefix", async () => {
+    const fakeCollection = createFakeProductionAssetsCollection();
+    const repository = createAppStateRepository({
+      collection: () => fakeCollection
+    } as unknown as MongoDatabaseConnection);
+
+    await repository.upsert("ai-content-factory:admin-jobs", JSON.stringify([{ id: "job_001" }]));
+    await repository.upsert("other-app:key", "ignore");
+    await repository.upsert("ai-content-factory:budget-settings", JSON.stringify({ defaultCaseBudgetRM: 30 }));
+    await repository.upsert("ai-content-factory:budget-settings", JSON.stringify({ defaultCaseBudgetRM: 50 }));
+
+    const entries = await repository.list("ai-content-factory:");
+
+    expect(entries.map((entry) => entry.key)).toEqual(["ai-content-factory:admin-jobs", "ai-content-factory:budget-settings"]);
+    expect(JSON.parse(entries.find((entry) => entry.key === "ai-content-factory:budget-settings")?.value ?? "{}")).toEqual({
+      defaultCaseBudgetRM: 50
+    });
+    expect(fakeCollection.createIndex).toHaveBeenCalledWith({ key: 1 }, { unique: true });
   });
 });
 
@@ -283,10 +305,18 @@ function matchesQuery(document: Record<string, unknown>, query: Record<string, u
       return value.$in.includes(document[key] as never);
     }
 
+    if (isRegexFilter(value)) {
+      return new RegExp(value.$regex).test(String(document[key] ?? ""));
+    }
+
     return document[key] === value;
   });
 }
 
 function isInFilter(value: unknown): value is { $in: unknown[] } {
   return typeof value === "object" && value !== null && "$in" in value && Array.isArray((value as { $in?: unknown }).$in);
+}
+
+function isRegexFilter(value: unknown): value is { $regex: string } {
+  return typeof value === "object" && value !== null && typeof (value as { $regex?: unknown }).$regex === "string";
 }

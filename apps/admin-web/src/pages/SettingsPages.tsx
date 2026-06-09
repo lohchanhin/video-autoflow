@@ -510,7 +510,7 @@ function LocalDataMigrationPanel() {
 
   return (
     <section className="panel local-data-migration-panel">
-      <SectionHeader eyebrow="Browser data" title="本地资料迁移与备份" />
+      <SectionHeader eyebrow="Browser cache" title="本地缓存备份与应急恢复" />
       <div className="migration-status-grid">
         <div>
           <span>当前网址</span>
@@ -526,13 +526,13 @@ function LocalDataMigrationPanel() {
         </div>
       </div>
       <p className="migration-copy">
-        换域名后，旧 IP 页面和新 HTTPS 域名的浏览器资料互相隔离。请在旧网址打开本页，点击迁移到正式域名；或下载备份 JSON 后在新域名导入。
+        正常业务资料会通过 API 同步到 MongoDB。这里仅用于旧版本浏览器缓存的备份和应急恢复，不再作为正式资料源。
       </p>
       <div className="migration-actions">
         {!isProductionOrigin ? (
           <button className="primary-button" type="button" onClick={migrateToProductionDomain}>
             <Send size={16} />
-            迁移到 vertex-workflow.com
+            应急发送到 vertex-workflow.com
           </button>
         ) : null}
         <button className="secondary-button" type="button" onClick={downloadBackup}>
