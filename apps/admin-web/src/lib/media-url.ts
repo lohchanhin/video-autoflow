@@ -67,8 +67,14 @@ function shouldRewriteUploadUrl(url: URL): boolean {
     return false;
   }
 
-  if (isLocalHost(url.hostname) || isVpsHost(url.hostname)) {
+  if (isLocalHost(url.hostname)) {
     return true;
+  }
+
+  const currentHostname = window.location.hostname;
+
+  if (isVpsHost(url.hostname)) {
+    return !isLocalHost(currentHostname);
   }
 
   return window.location.protocol === "https:" && url.protocol === "http:" && url.pathname.startsWith("/uploads/");

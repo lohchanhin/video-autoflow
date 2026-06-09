@@ -4527,6 +4527,7 @@ export function App() {
             schedules={productionSchedules}
             storedVideos={storedVideos}
             summary={summary}
+            onNavigate={switchView}
             onOpenCase={(id) => {
               setSelectedJobId(id);
               switchView("cases");

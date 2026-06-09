@@ -620,6 +620,47 @@ textarea {
   color: #344054;
 }
 
+.dashboard-empty-focus {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboard-action-grid button {
+  display: grid;
+  gap: 4px;
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid #d8e3f0;
+  border-radius: 8px;
+  color: #475467;
+  text-align: left;
+  background: #ffffff;
+}
+
+.dashboard-action-grid button:hover {
+  border-color: #75a7f8;
+  background: #f4f8ff;
+}
+
+.dashboard-action-grid strong {
+  color: #182230;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.dashboard-action-grid span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -5113,6 +5154,7 @@ textarea {
   }
 
   .dashboard-grid,
+  .dashboard-action-grid,
   .settings-grid,
   .youtube-console,
   .metric-grid,

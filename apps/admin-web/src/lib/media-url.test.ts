@@ -20,6 +20,19 @@ describe("media-url", () => {
     expect(resolveMediaUrl("http://137.184.100.54:4000/uploads/jobs/job_001/final/video.mp4")).toBe("https://vertex-workflow.com/uploads/jobs/job_001/final/video.mp4");
   });
 
+  it("keeps remote VPS upload URLs when the admin web is running locally", () => {
+    vi.stubGlobal("window", {
+      location: {
+        hostname: "127.0.0.1",
+        origin: "http://127.0.0.1:5173",
+        protocol: "http:"
+      }
+    });
+
+    expect(resolveMediaUrl("http://137.184.100.54:4000/uploads/jobs/asset_library/character.png")).toBe("http://137.184.100.54:4000/uploads/jobs/asset_library/character.png");
+    expect(resolveMediaUrl("https://vertex-workflow.com/uploads/jobs/asset_library/character.png")).toBe("https://vertex-workflow.com/uploads/jobs/asset_library/character.png");
+  });
+
   it("keeps external CDN URLs unchanged", () => {
     vi.stubGlobal("window", {
       location: {
