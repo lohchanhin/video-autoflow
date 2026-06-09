@@ -164,6 +164,7 @@ import { tryAcquireScheduleRunLock } from "./lib/schedule-run-locks.js";
 import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
 import { countDirtyDrafts, updateDirtyDraftMap } from "./lib/editable-draft.js";
+import { importLocalDataSnapshot, isLocalDataMigrationMessage } from "./lib/local-data-portability.js";
 
 type ApiState = "checking" | "online" | "offline";
 type ServiceState = "checking" | "online" | "offline" | "warning";
@@ -1300,6 +1301,37 @@ export function App() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [hasUnsavedDrafts]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent<unknown>) => {
+      if (!isLocalDataMigrationMessage(event.data)) {
+        return;
+      }
+
+      const recentlyImportedAt = Number(window.sessionStorage.getItem("ai-content-factory:last-local-data-import") ?? 0);
+
+      if (Date.now() - recentlyImportedAt < 30_000) {
+        return;
+      }
+
+      const snapshot = event.data.snapshot;
+      const shouldImport = window.confirm(
+        `检测到来自 ${snapshot.sourceOrigin} 的旧站资料迁移包，共 ${snapshot.entries.length} 项。\n\n导入会覆盖当前浏览器在 ${window.location.origin} 的本地业务资料，并刷新页面。是否继续？`
+      );
+
+      if (!shouldImport) {
+        return;
+      }
+
+      const result = importLocalDataSnapshot(snapshot, { overwrite: true });
+      window.sessionStorage.setItem("ai-content-factory:last-local-data-import", String(Date.now()));
+      window.alert(`已导入 ${result.imported} 项资料，跳过 ${result.skipped} 项。页面将刷新。`);
+      window.location.reload();
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
 
   useEffect(() => {
     function onHashChange() {

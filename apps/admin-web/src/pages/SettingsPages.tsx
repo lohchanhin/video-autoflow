@@ -1,10 +1,19 @@
-import { useEffect, useState } from "react";
-import { Eye, EyeOff, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Download, Eye, EyeOff, RefreshCw, Save, Send, ShieldCheck, UploadCloud } from "lucide-react";
 import type { CostLog, CostSummaryResponse } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { BudgetSettings, ProviderKeyRecord, PublishingTarget, StorageSettings, StoredVideo, YouTubeAccount } from "../lib/admin-data.js";
 import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import {
+  createLocalDataSnapshot,
+  downloadLocalDataSnapshot,
+  getLocalDataStats,
+  importLocalDataSnapshot,
+  isLocalDataSnapshot,
+  productionAppOrigin,
+  sendLocalDataToProductionDomain
+} from "../lib/local-data-portability.js";
 import type { AdminJob } from "../lib/jobs.js";
 
 export function KeysPage(props: {
@@ -422,8 +431,139 @@ export function StoragePage(props: {
           ))}
         </div>
       </div>
+
+      <LocalDataMigrationPanel />
     </section>
   );
+}
+
+function LocalDataMigrationPanel() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [stats, setStats] = useState(() => getLocalDataStats());
+  const currentOrigin = typeof window === "undefined" ? "" : window.location.origin;
+  const isProductionOrigin = currentOrigin === productionAppOrigin;
+  const formattedBytes = useMemo(() => formatBytes(stats.bytes), [stats.bytes]);
+
+  function refreshStats() {
+    setStats(getLocalDataStats());
+  }
+
+  function downloadBackup() {
+    const snapshot = createLocalDataSnapshot();
+
+    if (snapshot.entries.length === 0) {
+      setMessage("当前浏览器没有可导出的本地业务资料。");
+      return;
+    }
+
+    downloadLocalDataSnapshot(snapshot);
+    setMessage(`已导出 ${snapshot.entries.length} 项本地资料备份。`);
+    refreshStats();
+  }
+
+  function migrateToProductionDomain() {
+    const snapshot = createLocalDataSnapshot();
+
+    if (snapshot.entries.length === 0) {
+      setMessage("当前浏览器没有可迁移的本地业务资料。");
+      return;
+    }
+
+    const opened = sendLocalDataToProductionDomain(snapshot);
+
+    setMessage(
+      opened
+        ? `已打开 ${productionAppOrigin} 并发送 ${snapshot.entries.length} 项资料。请在新页面确认导入。`
+        : "浏览器阻止了新窗口。请允许弹窗，或先下载备份 JSON 再到正式域名导入。"
+    );
+  }
+
+  async function importBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const content = await file.text();
+      const snapshot = JSON.parse(content) as unknown;
+
+      if (!isLocalDataSnapshot(snapshot)) {
+        setMessage("这个文件不是 AI Content Factory 本地资料备份。");
+        return;
+      }
+
+      if (!window.confirm(`将导入来自 ${snapshot.sourceOrigin} 的 ${snapshot.entries.length} 项本地资料，并覆盖当前浏览器资料。继续？`)) {
+        return;
+      }
+
+      const result = importLocalDataSnapshot(snapshot, { overwrite: true });
+      setMessage(`已导入 ${result.imported} 项，跳过 ${result.skipped} 项。页面将刷新。`);
+      window.setTimeout(() => window.location.reload(), 500);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "导入失败，请确认 JSON 文件完整。");
+    }
+  }
+
+  return (
+    <section className="panel local-data-migration-panel">
+      <SectionHeader eyebrow="Browser data" title="本地资料迁移与备份" />
+      <div className="migration-status-grid">
+        <div>
+          <span>当前网址</span>
+          <strong>{currentOrigin}</strong>
+        </div>
+        <div>
+          <span>本地资料项</span>
+          <strong>{stats.count}</strong>
+        </div>
+        <div>
+          <span>估算大小</span>
+          <strong>{formattedBytes}</strong>
+        </div>
+      </div>
+      <p className="migration-copy">
+        换域名后，旧 IP 页面和新 HTTPS 域名的浏览器资料互相隔离。请在旧网址打开本页，点击迁移到正式域名；或下载备份 JSON 后在新域名导入。
+      </p>
+      <div className="migration-actions">
+        {!isProductionOrigin ? (
+          <button className="primary-button" type="button" onClick={migrateToProductionDomain}>
+            <Send size={16} />
+            迁移到 vertex-workflow.com
+          </button>
+        ) : null}
+        <button className="secondary-button" type="button" onClick={downloadBackup}>
+          <Download size={16} />
+          下载本地资料备份
+        </button>
+        <button className="secondary-button" type="button" onClick={() => fileInputRef.current?.click()}>
+          <UploadCloud size={16} />
+          导入备份 JSON
+        </button>
+        <button className="secondary-button" type="button" onClick={refreshStats}>
+          <RefreshCw size={16} />
+          刷新统计
+        </button>
+        <input ref={fileInputRef} accept="application/json,.json" hidden type="file" onChange={(event) => void importBackup(event)} />
+      </div>
+      {message ? <div className="migration-message">{message}</div> : null}
+    </section>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
 function StoredVideoSettingsRow(props: {
