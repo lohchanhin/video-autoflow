@@ -1,6 +1,6 @@
 import { AlertTriangle, ExternalLink, Search, Sparkles, Trash2 } from "lucide-react";
 import type { TrendIdeaSeed, TrendVideoCandidate } from "@ai-content-factory/shared-types";
-import { EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EmptyState, Field, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import type { TrendReport } from "../lib/admin-data.js";
 
 interface TrendRadarPageProps {
@@ -258,7 +258,7 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
             {props.currentReport.videos.map((video) => (
               <article className="trend-video-row" key={video.id}>
                 <div className="trend-video-title-cell">
-                  {video.thumbnailUrl ? <img alt="" src={video.thumbnailUrl} /> : <span className="trend-thumb-placeholder" />}
+                  {video.thumbnailUrl ? <MediaImage alt={video.title} src={video.thumbnailUrl} fallbackLabel="缩略图不可用" /> : <span className="trend-thumb-placeholder" />}
                   <div>
                     <strong>{video.title}</strong>
                     <span>{video.channelTitle} / {formatDuration(video.durationSeconds)} / {formatDate(video.publishedAt)}</span>
@@ -295,7 +295,7 @@ function ReferenceVideoStrip(props: { videos: TrendVideoCandidate[] }) {
       <span className="trend-reference-label">Reference examples</span>
       {props.videos.map((video) => (
         <a className="trend-reference-video" href={video.url} key={video.id} target="_blank" rel="noreferrer">
-          {video.thumbnailUrl ? <img alt="" src={video.thumbnailUrl} /> : <span className="trend-thumb-placeholder" />}
+          {video.thumbnailUrl ? <MediaImage alt={video.title} src={video.thumbnailUrl} fallbackLabel="缩略图不可用" /> : <span className="trend-thumb-placeholder" />}
           <div>
             <strong>{video.title}</strong>
             <span>{formatNumber(video.viewCount)} views / {formatNumber(video.velocityScore)}/h</span>

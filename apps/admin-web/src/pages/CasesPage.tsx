@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Captions, CheckCircle2, Clock3, FilePenLine, FileVideo, Image as ImageIcon, Loader2, LockKeyhole, Music2, Play, RefreshCw, RotateCcw, Save, Search, Sparkles, Square, UserRound, X } from "lucide-react";
 import type { ContentSeries, CostLog, CostSummaryResponse, ProductionAsset, SeriesEpisodeIdea, StoryWorld } from "@ai-content-factory/shared-types";
-import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { getAgentLabel, getAgentTypeLabel, type StaffAgent } from "../lib/agents.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSchedule, PublishingTarget, StoredVideo, ToolProviderSettings } from "../lib/admin-data.js";
@@ -484,7 +484,7 @@ function AssetMultiSelect(props: {
           {filteredAssets.map((asset) => (
             <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
               <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
-              {assetThumbUrl(asset) ? <img alt={asset.label} src={assetThumbUrl(asset)} /> : <ImageIcon size={18} />}
+              {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="图片加载失败" /> : <ImageIcon size={18} />}
               <span>
                 <strong>{asset.label}</strong>
                 <small>{asset.folderName || asset.type}</small>
@@ -1417,7 +1417,7 @@ function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob
         <div className="case-reference-strip">
           {referenceAssets.map((asset) => (
             <article className="case-reference-tile" key={asset._id}>
-              {assetThumbUrl(asset) ? <img alt={asset.label} src={assetThumbUrl(asset)} /> : <ImageIcon size={18} />}
+              {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="参考图不可用" /> : <ImageIcon size={18} />}
               <div>
                 <strong>{asset.label}</strong>
                 <span>{formatAssetType(asset.type)} / {asset.status}</span>
@@ -1564,7 +1564,7 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
         <div className="image-asset-grid">
           {resolvedImagePaths.map((path, index) => (
             <a className="image-asset-tile" href={isOpenableMediaUrl(path) ? path : undefined} target="_blank" rel="noreferrer" key={`${path}-${index}`}>
-              <img src={path} alt={`Scene ${index + 1}`} />
+              <MediaImage src={path} alt={`Scene ${index + 1}`} fallbackLabel="场景图不可用" />
               <span>场景 {index + 1} / {props.sceneReviews.find((review) => review.sceneId === index + 1)?.status ?? "未审核"}</span>
             </a>
           ))}
@@ -1810,7 +1810,7 @@ function SceneReviewCard(props: {
   return (
     <article className={`scene-review-card ${draft.status}`}>
       <div className="scene-review-media">
-        {isImagePath(draft.artifactPath) ? <img src={resolveMediaUrl(draft.artifactPath)} alt={`Scene ${draft.sceneId}`} /> : <div className="scene-placeholder">Scene {draft.sceneId}</div>}
+        {isImagePath(draft.artifactPath) ? <MediaImage src={resolveMediaUrl(draft.artifactPath)} alt={`Scene ${draft.sceneId}`} fallbackLabel="场景图不可用" /> : <div className="scene-placeholder">Scene {draft.sceneId}</div>}
       </div>
       <div className="scene-review-body">
         <div className="scene-review-title">
@@ -2194,7 +2194,7 @@ function ArtifactPreview(props: { artifactPath: string }) {
         <div className="artifact-image-strip">
           {imageArtifacts.map((artifact, index) => (
             <a href={isOpenableMediaUrl(artifact) ? artifact : undefined} target="_blank" rel="noreferrer" key={`${artifact}-${index}`}>
-              <img src={artifact} alt={`Artifact ${index + 1}`} />
+              <MediaImage src={artifact} alt={`Artifact ${index + 1}`} fallbackLabel="产物不可用" />
             </a>
           ))}
         </div>

@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Image as ImageIcon } from "lucide-react";
 
 export function StatusPill(props: { children: ReactNode; tone?: "neutral" | "active" | "success" | "danger" | "warning" }) {
   return <span className={`status-pill ${props.tone ?? "neutral"}`}>{props.children}</span>;
@@ -35,6 +36,40 @@ export function Field(props: {
       <span>{props.label}</span>
       {props.children}
     </label>
+  );
+}
+
+export function MediaImage(props: {
+  alt: string;
+  className?: string;
+  fallbackLabel?: string;
+  src: string | null | undefined;
+}) {
+  const src = (props.src ?? "").trim();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return (
+      <div className={`media-fallback ${props.className ?? ""}`.trim()} title={props.fallbackLabel ?? "预览不可用"}>
+        <ImageIcon size={22} />
+        <span>{props.fallbackLabel ?? "预览不可用"}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      alt={props.alt}
+      className={props.className}
+      decoding="async"
+      loading="lazy"
+      src={src}
+      onError={() => setFailed(true)}
+    />
   );
 }
 
