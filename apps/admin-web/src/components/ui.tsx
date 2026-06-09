@@ -1,6 +1,23 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Image as ImageIcon } from "lucide-react";
 
+export type MediaImageLoadState = {
+  src: string;
+  status: "empty" | "loading" | "loaded" | "failed";
+};
+
+export function getMediaImageCurrentStatus(src: string, state: MediaImageLoadState): MediaImageLoadState["status"] {
+  if (state.src === src) {
+    return state.status;
+  }
+
+  return src ? "loading" : "empty";
+}
+
+export function canRenderMediaImage(src: string, state: MediaImageLoadState): boolean {
+  return Boolean(src) && state.src === src && state.status === "loaded";
+}
+
 export function StatusPill(props: { children: ReactNode; tone?: "neutral" | "active" | "success" | "danger" | "warning" }) {
   return <span className={`status-pill ${props.tone ?? "neutral"}`}>{props.children}</span>;
 }
@@ -46,23 +63,28 @@ export function MediaImage(props: {
   src: string | null | undefined;
 }) {
   const src = (props.src ?? "").trim();
-  const [status, setStatus] = useState<"empty" | "loading" | "loaded" | "failed">(src ? "loading" : "empty");
+  const [state, setState] = useState<MediaImageLoadState>({
+    src,
+    status: src ? "loading" : "empty"
+  });
+  const currentStatus = getMediaImageCurrentStatus(src, state);
+  const isLoadedCurrentSrc = canRenderMediaImage(src, state);
 
   useEffect(() => {
     if (!src) {
-      setStatus("empty");
+      setState({ src: "", status: "empty" });
       return;
     }
 
     let active = true;
     const image = new Image();
 
-    setStatus("loading");
+    setState({ src, status: "loading" });
     image.onload = () => {
-      if (active) setStatus("loaded");
+      if (active) setState({ src, status: "loaded" });
     };
     image.onerror = () => {
-      if (active) setStatus("failed");
+      if (active) setState({ src, status: "failed" });
     };
     image.src = src;
 
@@ -73,11 +95,11 @@ export function MediaImage(props: {
     };
   }, [src]);
 
-  if (!src || status !== "loaded") {
+  if (!isLoadedCurrentSrc) {
     return (
-      <div className={`media-fallback ${status === "loading" ? "loading" : ""} ${props.className ?? ""}`.trim()} title={props.fallbackLabel ?? "预览不可用"}>
+      <div className={`media-fallback ${currentStatus === "loading" ? "loading" : ""} ${props.className ?? ""}`.trim()} title={props.fallbackLabel ?? "预览不可用"}>
         <ImageIcon size={22} />
-        <span>{status === "loading" ? "加载中" : props.fallbackLabel ?? "预览不可用"}</span>
+        <span>{currentStatus === "loading" ? "加载中" : props.fallbackLabel ?? "预览不可用"}</span>
       </div>
     );
   }
@@ -89,7 +111,7 @@ export function MediaImage(props: {
       decoding="async"
       loading="lazy"
       src={src}
-      onError={() => setStatus("failed")}
+      onError={() => setState({ src, status: "failed" })}
     />
   );
 }
