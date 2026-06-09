@@ -48,7 +48,7 @@ export function KeysPage(props: {
           <article className="settings-row key-settings-row" key={key.id}>
             <div>
               <strong>{key.provider}</strong>
-              <span>{key.service}</span>
+              <span>{providerKeyServiceLabel(key.service)}</span>
             </div>
             <StatusPill tone={key.status === "configured" ? "success" : key.status === "needs_rotation" ? "warning" : "danger"}>{providerKeyStatusLabel(key.status)}</StatusPill>
             <span>{key.keyName}</span>
@@ -124,6 +124,23 @@ function providerKeyStatusLabel(status: ProviderKeyRecord["status"]): string {
   };
 
   return labels[status] ?? status;
+}
+
+function providerKeyServiceLabel(service: string): string {
+  const labels: Record<string, string> = {
+    "Alternative image provider": "备用图片供应商",
+    "Alternative LLM": "备用 LLM",
+    "GCS video storage": "GCS 影片存储",
+    "Image / video generation": "图片 / 视频生成",
+    "LLM, image, TTS voiceover": "脚本、图片、配音",
+    "Music / BGM and optional TTS voiceover provider": "背景音乐 / 可选配音",
+    "Official video clips / image-to-video": "官方视频片段 / 图生视频",
+    "Optional video API": "可选视频 API",
+    "Private upload": "私密上传",
+    "Trend Radar research": "趋势雷达研究"
+  };
+
+  return labels[service] ?? service;
 }
 
 export function YouTubePage(props: {
@@ -520,7 +537,7 @@ function LocalDataMigrationPanel() {
 
   return (
     <section className="panel local-data-migration-panel">
-      <SectionHeader eyebrow="Browser cache" title="本地缓存备份与应急恢复" />
+      <SectionHeader eyebrow="浏览器缓存" title="本地缓存备份与应急恢复" />
       <div className="migration-status-grid">
         <div>
           <span>当前网址</span>
