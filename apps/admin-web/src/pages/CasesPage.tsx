@@ -8,6 +8,7 @@ import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSched
 import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEditableDraft } from "../lib/editable-draft.js";
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
+import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveFirstMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
 import type { ProductionStageId } from "../lib/production.js";
@@ -812,6 +813,7 @@ function ProductionTab(
   const finalMp4Ready = Boolean(composeRecord?.status === "done" && splitArtifactPaths(composeRecord.artifactPath).some(isVideoPath));
   const canApproveMp4 = finalMp4Ready && voiceoverReadyForCompose && ["QC_PASSED", "READY_TO_UPLOAD", "COMPOSED"].includes(props.selectedJob.status);
   const budgetExhausted = props.selectedJob.actualCostRM >= props.selectedJob.costLimitRM;
+  const budgetRecoveryAmount = getCaseBudgetRecoveryAmount(props.selectedJob.actualCostRM, props.selectedJob.costLimitRM);
   const schedule = props.productionSchedules.find((candidate) => candidate.id === props.selectedJob?.scheduleId);
   const sourceSeries = props.selectedJob.seriesId ? props.series.find((series) => series._id === props.selectedJob?.seriesId) ?? null : null;
   const sourceEpisode = props.selectedJob.episodeId ? props.seriesEpisodes.find((episode) => episode._id === props.selectedJob?.episodeId) ?? null : null;
@@ -984,6 +986,14 @@ function ProductionTab(
             <p className="eyebrow">当前 Case 预算</p>
             <strong>这支影片已经超出 RM {props.selectedJob.costLimitRM.toFixed(2)}，请调高后保存。</strong>
             <span>这里只改当前 Case。以后新 Case 的默认预算在左侧「成本」页面调整。</span>
+            <div className="case-budget-alert-actions">
+              <button className="secondary-button compact-button" type="button" onClick={() => visibleBudgetEditor.setDraftPatch({ costLimitRM: budgetRecoveryAmount })}>
+                建议调到 RM {budgetRecoveryAmount.toFixed(2)}
+              </button>
+              <button className="secondary-button compact-button" type="button" onClick={props.openCostSettings}>
+                打开全局预算
+              </button>
+            </div>
           </div>
           <Field label="新的 Case 预算 RM">
             <input

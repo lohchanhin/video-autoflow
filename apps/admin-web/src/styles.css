@@ -2305,6 +2305,13 @@ textarea {
   font-weight: 800;
 }
 
+.case-budget-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .case-budget-alert-editor .editable-action-bar {
   grid-column: 1 / -1;
   margin-top: 0;
