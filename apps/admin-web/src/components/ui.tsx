@@ -46,17 +46,38 @@ export function MediaImage(props: {
   src: string | null | undefined;
 }) {
   const src = (props.src ?? "").trim();
-  const [failed, setFailed] = useState(false);
+  const [status, setStatus] = useState<"empty" | "loading" | "loaded" | "failed">(src ? "loading" : "empty");
 
   useEffect(() => {
-    setFailed(false);
+    if (!src) {
+      setStatus("empty");
+      return;
+    }
+
+    let active = true;
+    const image = new Image();
+
+    setStatus("loading");
+    image.onload = () => {
+      if (active) setStatus("loaded");
+    };
+    image.onerror = () => {
+      if (active) setStatus("failed");
+    };
+    image.src = src;
+
+    return () => {
+      active = false;
+      image.onload = null;
+      image.onerror = null;
+    };
   }, [src]);
 
-  if (!src || failed) {
+  if (!src || status !== "loaded") {
     return (
-      <div className={`media-fallback ${props.className ?? ""}`.trim()} title={props.fallbackLabel ?? "预览不可用"}>
+      <div className={`media-fallback ${status === "loading" ? "loading" : ""} ${props.className ?? ""}`.trim()} title={props.fallbackLabel ?? "预览不可用"}>
         <ImageIcon size={22} />
-        <span>{props.fallbackLabel ?? "预览不可用"}</span>
+        <span>{status === "loading" ? "加载中" : props.fallbackLabel ?? "预览不可用"}</span>
       </div>
     );
   }
@@ -68,7 +89,7 @@ export function MediaImage(props: {
       decoding="async"
       loading="lazy"
       src={src}
-      onError={() => setFailed(true)}
+      onError={() => setStatus("failed")}
     />
   );
 }

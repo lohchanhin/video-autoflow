@@ -485,7 +485,9 @@ function AssetMultiSelect(props: {
           {filteredAssets.map((asset) => (
             <label key={asset._id} className={props.selectedIds.includes(asset._id) ? "selected" : ""}>
               <input checked={props.selectedIds.includes(asset._id)} type="checkbox" onChange={() => toggleAsset(asset._id)} />
-              {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="图片加载失败" /> : <ImageIcon size={18} />}
+              <span className="asset-multi-thumb">
+                {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="图片不可用" /> : <span className="media-fallback"><ImageIcon size={22} /><span>无预览</span></span>}
+              </span>
               <span>
                 <strong>{asset.label}</strong>
                 <small>{asset.folderName || asset.type}</small>
