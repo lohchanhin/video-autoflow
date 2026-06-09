@@ -352,6 +352,29 @@ h3 {
     linear-gradient(135deg, rgb(238 242 247 / 92%), rgb(248 251 255 / 92%));
 }
 
+.media-fallback.loading {
+  position: relative;
+  color: #8a97aa;
+  background:
+    linear-gradient(110deg, #eef2f7 8%, #f8fbff 18%, #eef2f7 33%);
+  background-size: 220% 100%;
+  animation: media-skeleton 1.15s ease-in-out infinite;
+}
+
+.media-fallback.loading svg {
+  display: none;
+}
+
+@keyframes media-skeleton {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
 .media-fallback svg {
   flex: 0 0 auto;
   color: #71839a;
@@ -1620,6 +1643,32 @@ textarea {
   display: grid;
   gap: 10px;
   margin-top: 14px;
+  min-width: 0;
+}
+
+.series-asset-binding-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.asset-binding-missing-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #f6c767;
+  border-radius: 8px;
+  color: #7a4b00;
+  background: #fffbeb;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.asset-binding-missing-note span {
   min-width: 0;
 }
 

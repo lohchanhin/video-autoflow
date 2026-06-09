@@ -42,6 +42,20 @@ describe("draft reference asset picker rules", () => {
       url: ""
     }))).toBe(true);
   });
+
+  it("hides visual assets whose media value is not an image", () => {
+    expect(isSelectableDraftReferenceAsset(createAsset({
+      status: "approved",
+      storagePath: "local://uploads/jobs/asset_library/reference.txt",
+      url: ""
+    }))).toBe(false);
+
+    expect(shouldHideFromNewCaseReferencePicker(createAsset({
+      status: "approved",
+      storagePath: "local://uploads/jobs/asset_library/reference.txt",
+      url: ""
+    }))).toBe(true);
+  });
 });
 
 function createAsset(overrides: Partial<ProductionAsset> = {}): ProductionAsset {

@@ -3,8 +3,9 @@ import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, L
 import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset } from "../lib/draft-reference-assets.js";
 import type { AdminJob } from "../lib/jobs.js";
-import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
+import { resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface SeriesPageProps {
@@ -51,7 +52,7 @@ export function SeriesPage(props: SeriesPageProps) {
   const seriesEditor = useEditableDraft(selectedSeries, selectedSeries ? `${selectedSeries._id}:${selectedSeries.updatedAt}` : null);
   const seriesDraft = seriesEditor.draft;
   const selectedSeriesJobs = selectedSeries ? props.jobs.filter((job) => job.seriesId === selectedSeries._id) : [];
-  const generatedAssets = props.assets.filter((asset) => Boolean(assetBindingUrl(asset)) && (asset.status === "ready" || asset.status === "approved"));
+  const generatedAssets = props.assets.filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset));
   const approvedEpisodes = props.episodes.filter((episode) => episode.status === "approved").length;
   const convertedEpisodes = props.episodes.filter((episode) => episode.status === "converted_to_case").length;
   const generating = selectedSeries ? props.generatingSeriesIds.includes(selectedSeries._id) : false;
@@ -143,6 +144,15 @@ export function SeriesPage(props: SeriesPageProps) {
     props.createSeries();
   }
 
+  const boundReferenceAssets = seriesDraft
+    ? seriesDraft.referenceAssetIds
+      .map((id) => generatedAssets.find((asset) => asset._id === id) ?? null)
+      .filter((asset): asset is ProductionAsset => Boolean(asset))
+    : [];
+  const missingReferenceAssetIds = seriesDraft
+    ? seriesDraft.referenceAssetIds.filter((id) => !generatedAssets.some((asset) => asset._id === id))
+    : [];
+
   return (
     <section className="series-page">
       <section className="series-toolbar panel">
@@ -216,7 +226,7 @@ export function SeriesPage(props: SeriesPageProps) {
                     onClick={() => setActiveTab(tab)}
                   >
                     {seriesWorkspaceTabLabel(tab)}
-                    {tab === "assets" ? <span>{seriesDraft.referenceAssetIds.length}</span> : null}
+                    {tab === "assets" ? <span>{boundReferenceAssets.length}</span> : null}
                     {tab === "episodes" ? <span>{props.episodes.length}</span> : null}
                     {tab === "cases" ? <span>{selectedSeriesJobs.length}</span> : null}
                   </button>
@@ -320,8 +330,26 @@ export function SeriesPage(props: SeriesPageProps) {
                 <SectionHeader
                   eyebrow="资产绑定"
                   title="固定角色 / 场景 / 风格参考"
-                  action={<StatusPill tone={seriesDraft.referenceAssetIds.length > 0 ? "active" : "neutral"}>{seriesDraft.referenceAssetIds.length} 已选</StatusPill>}
+                  action={
+                    <div className="series-asset-binding-status">
+                      <StatusPill tone={boundReferenceAssets.length > 0 ? "active" : "neutral"}>{boundReferenceAssets.length} 可用</StatusPill>
+                      {missingReferenceAssetIds.length > 0 ? <StatusPill tone="warning">{missingReferenceAssetIds.length} 失效</StatusPill> : null}
+                    </div>
+                  }
                 />
+                {missingReferenceAssetIds.length > 0 ? (
+                  <div className="asset-binding-missing-note">
+                    <AlertTriangle size={16} />
+                    <span>有 {missingReferenceAssetIds.length} 个已绑定资产已不存在、不属于资产库，或缺少可预览图。已从选择器隐藏，但不会静默修改你的系列设定。</span>
+                    <button
+                      className="secondary-button compact-button"
+                      type="button"
+                      onClick={() => patchSeriesDraft({ referenceAssetIds: boundReferenceAssets.map((asset) => asset._id) })}
+                    >
+                      移除失效绑定
+                    </button>
+                  </div>
+                ) : null}
                 {generatedAssets.length === 0 ? (
                   <EmptyState title="还没有可绑定资产" body="先到设计资产中心生成并保存角色三视图、场景设定表或风格参考，再回到这里绑定。" />
                 ) : (
@@ -391,7 +419,7 @@ export function SeriesPage(props: SeriesPageProps) {
             <div><span>选题数量</span><strong>{props.episodes.length}</strong></div>
             <div><span>已批准</span><strong>{approvedEpisodes}</strong></div>
             <div><span>已转 Case</span><strong>{convertedEpisodes}</strong></div>
-            <div><span>绑定资产</span><strong>{selectedSeries?.referenceAssetIds.length ?? 0}</strong></div>
+            <div><span>绑定资产</span><strong>{selectedSeries?._id === seriesDraft?._id ? boundReferenceAssets.length : selectedSeries?.referenceAssetIds.length ?? 0}</strong></div>
           </div>
           {selectedSeriesJobs.length > 0 ? (
             <div className="series-linked-cases">
@@ -795,10 +823,6 @@ function episodeStatusLabel(status: SeriesEpisodeIdeaStatus): string {
     rejected: "已拒绝"
   };
   return labels[status];
-}
-
-function assetBindingUrl(asset: ProductionAsset): string {
-  return resolveProductionAssetMediaUrl(asset);
 }
 
 function assetBindingThumbUrl(asset: ProductionAsset): string {

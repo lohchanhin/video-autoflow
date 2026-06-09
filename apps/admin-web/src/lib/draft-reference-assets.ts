@@ -1,8 +1,11 @@
 import type { ProductionAsset } from "@ai-content-factory/shared-types";
-import { resolveProductionAssetMediaUrl } from "./production-asset-media.js";
+import { isImageMediaUrl } from "./media-url.js";
+import { resolveProductionAssetPreviewUrl } from "./production-asset-media.js";
 
 export function isSelectableDraftReferenceAsset(asset: ProductionAsset): boolean {
-  return Boolean(resolveProductionAssetMediaUrl(asset)) && (asset.status === "approved" || asset.status === "ready");
+  const previewUrl = resolveProductionAssetPreviewUrl(asset);
+
+  return Boolean(previewUrl) && isImageMediaUrl(previewUrl) && (asset.status === "approved" || asset.status === "ready");
 }
 
 export function isReusableDraftReferenceAsset(asset: ProductionAsset): boolean {
