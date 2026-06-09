@@ -99,6 +99,7 @@ export function AssetsPage(props: AssetsPageProps) {
   const readyFrames = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && (asset.role === "first_frame" || asset.role === "last_frame") && isGeneratedDesignAsset(asset)).length;
   const blockedAssets = libraryVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
   const generatingDraft = selectedAsset ? props.generatingAssetIds.includes(selectedAsset._id) : false;
+  const designDraftTypes = productionAssetTypes.filter((type) => type !== "bgm_reference");
 
   useEffect(() => {
     setAssetSaveMessage(null);
@@ -283,10 +284,28 @@ export function AssetsPage(props: AssetsPageProps) {
         <section className="design-generator-grid">
           <section className="design-generator-panel panel">
             <SectionHeader eyebrow="OpenAI 设计草稿" title="输入需求，生成可保存的设计图" />
+            <div className="asset-type-starter-grid" aria-label="选择要生成的设计资产类型">
+              {designDraftTypes.map((type) => {
+                const spec = getProductionAssetDesignSpec(type);
+
+                return (
+                  <button
+                    className={`asset-type-starter ${draftType === type ? "active" : ""}`}
+                    key={type}
+                    type="button"
+                    onClick={() => updateDraftType(type)}
+                  >
+                    <span>{assetTypeLabel(type)}</span>
+                    <strong>{spec.title}</strong>
+                    <small>{spec.purpose}</small>
+                  </button>
+                );
+              })}
+            </div>
             <div className="asset-two-col">
               <Field label="设计类型">
                 <select value={draftType} onChange={(event) => updateDraftType(event.target.value as ProductionAssetType)}>
-                  {productionAssetTypes.filter((type) => type !== "bgm_reference").map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
+                  {designDraftTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
                 </select>
               </Field>
               <Field label="文件夹">
