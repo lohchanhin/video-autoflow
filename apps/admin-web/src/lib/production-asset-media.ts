@@ -14,7 +14,7 @@ export function isVisualProductionAssetType(type: ProductionAssetType): boolean 
 }
 
 export function resolveProductionAssetMediaUrl(asset: ProductionAsset): string {
-  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
+  return resolveFirstMediaUrl([asset.storagePath, asset.url]);
 }
 
 export function resolveProductionAssetPreviewUrl(asset: ProductionAsset): string {

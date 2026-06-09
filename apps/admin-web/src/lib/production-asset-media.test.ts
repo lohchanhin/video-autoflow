@@ -25,6 +25,25 @@ describe("production asset media helpers", () => {
     expect(resolveProductionAssetPreviewUrl(asset)).toBe("https://vertex-workflow.com/uploads/assets/asset_123");
   });
 
+  it("prefers the stored upload path over a stale public URL", () => {
+    vi.stubGlobal("window", {
+      location: {
+        hostname: "vertex-workflow.com",
+        origin: "https://vertex-workflow.com",
+        protocol: "https:"
+      }
+    });
+
+    const asset = createAsset({
+      storagePath: "local://uploads/jobs/asset_library/current/references/character_design.png",
+      type: "character_design",
+      url: "http://137.184.100.54:4000/uploads/jobs/asset_library/stale/references/character_design.png"
+    });
+
+    expect(resolveProductionAssetMediaUrl(asset)).toBe("https://vertex-workflow.com/uploads/jobs/asset_library/current/references/character_design.png");
+    expect(resolveProductionAssetPreviewUrl(asset)).toBe("https://vertex-workflow.com/uploads/jobs/asset_library/current/references/character_design.png");
+  });
+
   it("does not treat non-visual production assets without an image extension as image previews", () => {
     const asset = createAsset({
       storagePath: "local://uploads/assets/music_123",

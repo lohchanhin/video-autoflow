@@ -18,6 +18,10 @@ export function canRenderMediaImage(src: string, state: MediaImageLoadState): bo
   return Boolean(src) && state.src === src && state.status === "loaded";
 }
 
+export function hasRenderableImageDimensions(image: Pick<HTMLImageElement, "naturalHeight" | "naturalWidth">): boolean {
+  return image.naturalWidth > 0 && image.naturalHeight > 0;
+}
+
 export function StatusPill(props: { children: ReactNode; tone?: "neutral" | "active" | "success" | "danger" | "warning" }) {
   return <span className={`status-pill ${props.tone ?? "neutral"}`}>{props.children}</span>;
 }
@@ -98,7 +102,7 @@ export function MediaImage(props: {
 
     setState({ src, status: "loading" });
     image.onload = () => {
-      if (active) setState({ src, status: "loaded" });
+      if (active) setState({ src, status: hasRenderableImageDimensions(image) ? "loaded" : "failed" });
     };
     image.onerror = () => {
       if (active) setState({ src, status: "failed" });

@@ -868,6 +868,37 @@ textarea {
   margin-top: 10px;
 }
 
+.budget-scope-panel {
+  align-self: start;
+}
+
+.budget-scope-list {
+  display: grid;
+  gap: 10px;
+}
+
+.budget-scope-list div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e1e8f0;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.budget-scope-list strong {
+  color: #182230;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.budget-scope-list span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .case-table-row,
 .settings-row,
 .agent-row,

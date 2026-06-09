@@ -738,39 +738,6 @@ export function CostPage(props: {
           <Field label="每月预算 RM">
             <input min={1} step={10} type="number" value={budgetDraft.monthlyBudgetRM} onChange={(event) => patchBudgetDraft({ monthlyBudgetRM: Number(event.target.value) })} />
           </Field>
-        </div>
-        <EditableActionBar
-          isDirty={budgetEditor.isDirty}
-          onCancel={budgetEditor.resetDraft}
-          onSave={saveBudgetDraft}
-          saveLabel="保存预算设置"
-        />
-      </div>
-      <div className="panel">
-        <SectionHeader eyebrow="全局预算设置" title="预算控制中心" action={<StatusPill tone={budgetEditor.isDirty ? "warning" : "success"}>{budgetEditor.isDirty ? "未保存" : "已保存"}</StatusPill>} />
-        <p className="muted-copy">这里是全系统预算默认来源。保存后会同步新建 Case 默认预算、自动排程预算、每日产量上限，以及主控 Agent 的单 Case 成本护栏。</p>
-        <div className="budget-preset-row" aria-label="快速预算档位">
-          {[7.5, 25, 50, 100].map((amount) => (
-            <button
-              className={Number(budgetDraft.defaultCaseBudgetRM) === amount ? "active" : ""}
-              key={amount}
-              type="button"
-              onClick={() => patchBudgetDraft({ defaultCaseBudgetRM: amount })}
-            >
-              默认 Case RM {amount.toFixed(amount % 1 === 0 ? 0 : 1)}
-            </button>
-          ))}
-        </div>
-        <div className="two-column-fields">
-          <Field label="默认单支 Case 预算 RM">
-            <input min={0.1} step={0.1} type="number" value={budgetDraft.defaultCaseBudgetRM} onChange={(event) => patchBudgetDraft({ defaultCaseBudgetRM: Number(event.target.value) })} />
-          </Field>
-          <Field label="每日预算 RM">
-            <input min={1} step={1} type="number" value={budgetDraft.dailyBudgetRM} onChange={(event) => patchBudgetDraft({ dailyBudgetRM: Number(event.target.value) })} />
-          </Field>
-          <Field label="每月预算 RM">
-            <input min={1} step={10} type="number" value={budgetDraft.monthlyBudgetRM} onChange={(event) => patchBudgetDraft({ monthlyBudgetRM: Number(event.target.value) })} />
-          </Field>
           <Field label="每次排程最多 Case">
             <input min={1} max={50} type="number" value={budgetDraft.maxCasesPerRun} onChange={(event) => patchBudgetDraft({ maxCasesPerRun: Number(event.target.value) })} />
           </Field>
@@ -788,8 +755,29 @@ export function CostPage(props: {
           isDirty={budgetEditor.isDirty}
           onCancel={budgetEditor.resetDraft}
           onSave={saveBudgetDraft}
-          saveLabel="保存全局预算"
+          saveLabel="保存预算设置"
         />
+      </div>
+      <div className="panel budget-scope-panel">
+        <SectionHeader eyebrow="生效范围" title="预算如何作用到生产流" action={<StatusPill tone={budgetEditor.isDirty ? "warning" : "success"}>{budgetEditor.isDirty ? "待保存" : "已同步"}</StatusPill>} />
+        <div className="budget-scope-list">
+          <div>
+            <strong>新建 Case</strong>
+            <span>保存后会使用新的默认单支预算；已经存在的 Case 不会被静默覆盖。</span>
+          </div>
+          <div>
+            <strong>当前 Case</strong>
+            <span>如果某支影片已经超预算，请进入该 Case「总览 ＞ 预算」单独调高并保存。</span>
+          </div>
+          <div>
+            <strong>自动排程</strong>
+            <span>每日预算、单次 Case 数、每日影片上限会同步到排程护栏。</span>
+          </div>
+          <div>
+            <strong>付费 API</strong>
+            <span>{budgetDraft.stopWhenBudgetExceeded ? "超预算时自动停止付费生成。" : "超预算时允许人工继续，但仍会记录成本。"}</span>
+          </div>
+        </div>
       </div>
 
       <div className="panel">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canRenderMediaImage, getMediaImageCurrentStatus } from "./ui.js";
+import { canRenderMediaImage, getMediaImageCurrentStatus, hasRenderableImageDimensions } from "./ui.js";
 
 describe("MediaImage render guard", () => {
   it("does not render an img when the loaded state belongs to a previous src", () => {
@@ -23,5 +23,10 @@ describe("MediaImage render guard", () => {
 
   it("treats empty src as empty instead of loading", () => {
     expect(getMediaImageCurrentStatus("", { src: "https://vertex-workflow.com/uploads/assets/current.png", status: "loaded" })).toBe("empty");
+  });
+
+  it("treats zero-size image loads as failed media", () => {
+    expect(hasRenderableImageDimensions({ naturalHeight: 0, naturalWidth: 0 })).toBe(false);
+    expect(hasRenderableImageDimensions({ naturalHeight: 768, naturalWidth: 1024 })).toBe(true);
   });
 });
