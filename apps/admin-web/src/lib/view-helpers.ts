@@ -1,5 +1,5 @@
 import type { JobStatus } from "@ai-content-factory/shared-types";
-import type { ProcessRecordStatus } from "./jobs.js";
+import type { ProcessRecordStatus, SceneReviewItem } from "./jobs.js";
 
 export const statusLabels: Record<JobStatus, string> = {
   PENDING: "待处理",
@@ -75,6 +75,40 @@ export function getRecordTone(status: ProcessRecordStatus): "neutral" | "active"
   }
 
   return "neutral";
+}
+
+export function formatProcessRecordStatus(status: ProcessRecordStatus): string {
+  const labels: Record<ProcessRecordStatus, string> = {
+    done: "已完成",
+    failed: "失败",
+    pending: "待处理",
+    skipped: "已跳过",
+    working: "处理中"
+  };
+
+  return labels[status];
+}
+
+export function formatSceneReviewStatus(status: SceneReviewItem["status"]): string {
+  const labels: Record<SceneReviewItem["status"], string> = {
+    approved: "已批准",
+    generated: "待审核",
+    needs_review: "需复核",
+    rejected: "已拒绝"
+  };
+
+  return labels[status];
+}
+
+export function formatSceneQcStatus(status: SceneReviewItem["qcStatus"]): string {
+  const labels: Record<SceneReviewItem["qcStatus"], string> = {
+    fail: "未通过",
+    not_checked: "未检查",
+    pass: "通过",
+    warning: "需注意"
+  };
+
+  return labels[status];
 }
 
 export function formatList(values: string[]): string {

@@ -10,7 +10,7 @@ import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEdi
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
 import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
 import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset, shouldHideFromNewCaseReferencePicker } from "../lib/draft-reference-assets.js";
-import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
+import { formatDateTime, formatProcessRecordStatus, formatSceneQcStatus, formatSceneReviewStatus, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
 import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
 import type { ProductionStageId } from "../lib/production.js";
@@ -1182,7 +1182,7 @@ function ProductionTab(
                     <span>{record.queueName}</span>
                     {record.status === "failed" && record.notes ? <small className="stage-failure-text">{record.notes}</small> : null}
                   </div>
-                  <StatusPill tone={getRecordTone(record.status)}>{record.status}</StatusPill>
+                  <StatusPill tone={getRecordTone(record.status)}>{formatProcessRecordStatus(record.status)}</StatusPill>
                 </button>
               ))}
             </div>
@@ -1856,7 +1856,7 @@ function StageOutputPanel(props: {
                 {props.isRunningQc ? "检查中" : "执行 QC"}
               </button>
             ) : (
-              <StatusPill tone={getRecordTone(props.record.status)}>{props.record.status}</StatusPill>
+              <StatusPill tone={getRecordTone(props.record.status)}>{formatProcessRecordStatus(props.record.status)}</StatusPill>
             )
           ) : null
         }
@@ -1904,7 +1904,7 @@ function StageOutputPanel(props: {
           {isQcStage && props.qcReport ? <QcReportPanel report={props.qcReport} /> : null}
         </>
       ) : (
-        <EmptyState title="No stage selected" body="Choose a production step to review generated output and artifacts." />
+        <EmptyState title="尚未选择阶段" body="选择一个生产步骤后，可以查看产出内容和相关资产。" />
       )}
     </section>
   );
@@ -1927,9 +1927,9 @@ function SceneReviewPanel(props: {
       <div className="section-heading-row">
         <div>
           <span>场景图片审核</span>
-          <strong>Inspect and fix each generated image</strong>
+          <strong>逐张检查、锁定或重生成场景图</strong>
         </div>
-        <small>{props.sceneReviews.length} scene(s)</small>
+        <small>{props.sceneReviews.length} 个场景</small>
       </div>
       <div className="scene-review-list">
         {props.sceneReviews.map((scene) => (
@@ -1985,10 +1985,10 @@ function SceneReviewCard(props: {
       <div className="scene-review-body">
         <div className="scene-review-title">
           <strong>场景 {draft.sceneId}</strong>
-          <StatusPill tone={draft.status === "approved" ? "success" : draft.status === "rejected" ? "danger" : "warning"}>{draft.status}</StatusPill>
+          <StatusPill tone={draft.status === "approved" ? "success" : draft.status === "rejected" ? "danger" : "warning"}>{formatSceneReviewStatus(draft.status)}</StatusPill>
         </div>
         <div className={`scene-qc-strip ${draft.qcStatus}`}>
-          <strong>QC: {draft.qcStatus}</strong>
+          <strong>QC：{formatSceneQcStatus(draft.qcStatus)}</strong>
           <span>{draft.qcSummary || "还没有视觉 QC 结果。"}</span>
         </div>
         {draft.qcIssues.length > 0 ? (
@@ -1996,15 +1996,15 @@ function SceneReviewCard(props: {
             {draft.qcIssues.map((issue) => <span key={issue}>{issue}</span>)}
           </div>
         ) : null}
-        {draft.referenceImagePath ? <ArtifactLink icon={<UserRound size={14} />} label="Character reference" path={draft.referenceImagePath} /> : null}
-        <Field label="Image prompt">
+        {draft.referenceImagePath ? <ArtifactLink icon={<UserRound size={14} />} label="角色参考图" path={draft.referenceImagePath} /> : null}
+        <Field label="图片提示词">
           <textarea
             rows={4}
             value={draft.prompt}
             onChange={(event) => sceneEditor.setDraftPatch({ prompt: event.target.value, status: draft.status === "approved" ? "generated" : draft.status })}
           />
         </Field>
-        <Field label="Review notes">
+        <Field label="审核备注">
           <input value={draft.notes} onChange={(event) => sceneEditor.setDraftPatch({ notes: event.target.value })} />
         </Field>
         <div className="scene-review-actions">
@@ -2025,11 +2025,11 @@ function SceneReviewCard(props: {
           </button>
           <button className="secondary-button compact-button" type="button" onClick={() => saveSceneDraft({ status: "approved" })}>
             <LockKeyhole size={14} />
-            Lock approved
+            锁定通过
           </button>
           <button className="danger-button compact-button" type="button" onClick={() => saveSceneDraft({ status: "rejected" })}>
             <X size={14} />
-            Reject
+            拒绝
           </button>
         </div>
         <EditableActionBar
@@ -2250,7 +2250,7 @@ function StageEditorPanel(props: {
           <SectionHeader
             eyebrow="Selected stage"
             title={props.record.stageName}
-            action={<StatusPill tone={getRecordTone(props.record.status)}>{props.record.status}</StatusPill>}
+            action={<StatusPill tone={getRecordTone(props.record.status)}>{formatProcessRecordStatus(props.record.status)}</StatusPill>}
           />
           <div className="stage-editor-grid">
             <Field label="状态">
