@@ -199,13 +199,13 @@ export function YouTubePage(props: {
         />
         <div className="policy-note">
           <ShieldCheck size={18} />
-          <span>MVP 上传锁定为 private，这里不会提供 public 发布入口。</span>
+          <span>MVP 上传锁定为私密状态，这里不会提供公开发布入口。</span>
         </div>
       </section>
 
       <div className="panel table-panel">
         <SectionHeader eyebrow="发布账号" title="频道登记表" />
-        {props.accounts.length === 0 ? <EmptyState title="暂无 YouTube 账号" body="先登记频道，再连接真实 OAuth 凭证，之后才允许 private upload。" /> : null}
+        {props.accounts.length === 0 ? <EmptyState title="暂无 YouTube 账号" body="先登记频道，再连接真实 OAuth 凭证，之后才允许私密上传。" /> : null}
         <div className="settings-table">
           {props.accounts.map((account) => (
             <YouTubeAccountSettingsRow key={account.id} account={account} reportDirtyState={props.reportDirtyState} updateAccount={props.updateAccount} />
@@ -214,7 +214,7 @@ export function YouTubePage(props: {
       </div>
 
       <section className="panel youtube-target-form">
-        <SectionHeader eyebrow="发布目标矩阵" title="新增发布目标" action={<StatusPill tone="success">仅 private</StatusPill>} />
+        <SectionHeader eyebrow="发布目标矩阵" title="新增发布目标" action={<StatusPill tone="success">仅私密上传</StatusPill>} />
         <Field label="Google / YouTube 账号">
           <select value={targetCreateDraft.accountId} onChange={(event) => targetCreateEditor.setDraftPatch({ accountId: event.target.value })}>
             <option value="">选择已登记账号</option>
@@ -621,7 +621,7 @@ function StoredVideoSettingsRow(props: {
         <strong>{draft.title}</strong>
         <span>{draft.publicUrl ?? draft.storagePath}</span>
       </div>
-      <StatusPill tone={draft.status === "uploaded_private" ? "success" : "active"}>{draft.status}</StatusPill>
+      <StatusPill tone={draft.status === "uploaded_private" ? "success" : "active"}>{storedVideoStatusLabel(draft.status)}</StatusPill>
       <span>{draft.resolution}</span>
       {draft.publicUrl ? (
         <a className="secondary-button" href={draft.publicUrl} target="_blank" rel="noreferrer">
@@ -631,7 +631,7 @@ function StoredVideoSettingsRow(props: {
       <select value={draft.status} onChange={(event) => editor.setDraftPatch({ status: event.target.value as StoredVideo["status"] })}>
         <option value="draft">草稿</option>
         <option value="ready_to_upload">待上传</option>
-        <option value="uploaded_private">已 private 上传</option>
+        <option value="uploaded_private">已私密上传</option>
       </select>
       <EditableActionBar
         isDirty={editor.isDirty}
@@ -640,6 +640,16 @@ function StoredVideoSettingsRow(props: {
       />
     </article>
   );
+}
+
+function storedVideoStatusLabel(status: StoredVideo["status"]): string {
+  const labels: Record<StoredVideo["status"], string> = {
+    draft: "草稿",
+    ready_to_upload: "待上传",
+    uploaded_private: "已私密上传"
+  };
+
+  return labels[status] ?? status;
 }
 
 function storageDriverLabel(driver: StorageSettings["driver"]): string {

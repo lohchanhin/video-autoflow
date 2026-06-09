@@ -145,7 +145,7 @@ export const productionStages: ProductionStageDefinition[] = [
     category: "publishing",
     queueName: "publish.queue",
     provider: "YouTubeProvider",
-    defaultInput: "除非明确启用自动公开，否则只允许 private 上传。",
+    defaultInput: "除非明确启用自动公开，否则只允许私密上传。",
     defaultOutput: "YouTube video ID 和发布记录。"
   },
   {

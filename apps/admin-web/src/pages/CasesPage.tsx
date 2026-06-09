@@ -2084,7 +2084,7 @@ function PublishTargetMatrix(props: {
   return (
     <section className="publish-target-panel panel">
       <SectionHeader eyebrow="私密上传矩阵" title="YouTube 发布目标" />
-      {props.caseTargets.length === 0 ? <EmptyState title="还没有 YouTube 目标" body="这个 Case 会停在 MP4/QC。准备好 private upload 后，再新增 YouTube 发布目标。" /> : null}
+      {props.caseTargets.length === 0 ? <EmptyState title="还没有 YouTube 目标" body="这个 Case 会停在 MP4/QC。准备好私密上传后，再新增 YouTube 发布目标。" /> : null}
       <div className="publish-target-list">
         {props.caseTargets.map((caseTarget) => {
           const target = props.publishingTargets.find((candidate) => candidate.id === caseTarget.targetId);

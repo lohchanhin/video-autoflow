@@ -59,7 +59,7 @@ export function evaluateScheduleRunGuard(input: ScheduleGuardInput): ScheduleGua
   if (input.schedule.targetIds.length > 0 && activeTargetIds.length === 0) {
     blockers.push("已选择的 YouTube 发布目标都未启用。");
   } else if (input.schedule.targetIds.length === 0) {
-    warnings.push("未选择 YouTube 目标；自动排程会先产出到 MP4/QC，等待之后再绑定 private upload。");
+    warnings.push("未选择 YouTube 目标；自动排程会先产出到 MP4/QC，之后可再绑定私密上传目标。");
   } else if (disabledTargetCount > 0) {
     warnings.push(`${disabledTargetCount} 个发布目标已停用，本次会忽略。`);
   }

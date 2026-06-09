@@ -42,7 +42,7 @@ export function AutomationPage(props: AutomationPageProps) {
         <div>
           <p className="eyebrow">自动排程</p>
           <h2>每日自动生产控制台</h2>
-          <p>设定 AI Producer Agent 什么时候开工、每次产量、每日上限、预算上限，以及每支排程 Case 要准备到哪些 YouTube private 目标。</p>
+          <p>设定 AI Producer Agent 什么时候开工、每次产量、每日上限、预算上限，以及每支排程 Case 要准备到哪些 YouTube 私密上传目标。</p>
         </div>
         <div className="hero-stat">
           <span>下次开工</span>
@@ -73,15 +73,15 @@ export function AutomationPage(props: AutomationPageProps) {
 
         <aside className="panel automation-run-panel">
           <SectionHeader eyebrow="运行记录" title="排程执行日志" />
-          {latestRuns.length === 0 ? <EmptyState title="还没有排程执行记录" body="点击 Run now，或等待已启用排程到达下次开工时间。" /> : null}
+          {latestRuns.length === 0 ? <EmptyState title="还没有排程执行记录" body="点击「立即执行」，或等待已启用排程到达下次开工时间。" /> : null}
           <div className="automation-run-list">
             {latestRuns.map((run) => (
               <article className="automation-run-row" key={run.id}>
                 <div>
-                  <strong>{run.status}</strong>
+                  <strong>{getScheduleRunLabel(run.status)}</strong>
                   <span>{formatDateTime(run.startedAt)}</span>
                 </div>
-                <span>{run.createdCaseIds.length} cases</span>
+                <span>{run.createdCaseIds.length} 个 Case</span>
                 <StatusPill tone={getScheduleRunTone(run.status)}>
                   {run.error ?? getScheduleRunLabel(run.status)}
                 </StatusPill>
@@ -125,7 +125,7 @@ function ScheduleCard(props: {
     stopWhenBudgetExceeded: props.budgetSettings.stopWhenBudgetExceeded
   });
   const runNowTitle = scheduleEditor.isDirty
-    ? "保存排程修改后才能 Run now"
+    ? "保存排程修改后才能立即执行"
     : runGuard.canRun
       ? "立即按当前已保存排程创建 Case"
       : runGuard.blockers[0] ?? "当前排程暂时不能执行";
@@ -164,7 +164,7 @@ function ScheduleCard(props: {
               onClick={() => props.runSchedule(props.schedule.id)}
             >
               <Play size={15} />
-              Run now
+              立即执行
             </button>
           </>
         }
@@ -194,7 +194,7 @@ function ScheduleCard(props: {
         </div>
         <div>
           <span>发布目标</span>
-          <strong>{runGuard.activeTargetIds.length > 0 ? `${runGuard.activeTargetIds.length} 个 private` : "MP4/QC"}</strong>
+          <strong>{runGuard.activeTargetIds.length > 0 ? `${runGuard.activeTargetIds.length} 个私密上传目标` : "MP4/QC"}</strong>
         </div>
       </div>
 
@@ -268,7 +268,7 @@ function ScheduleCard(props: {
       </div>
 
       <div className="automation-target-list">
-        <strong>YouTube private 目标矩阵</strong>
+        <strong>YouTube 私密上传目标矩阵</strong>
         {props.publishingTargets.map((target) => (
           <label className="automation-target-row" key={target.id}>
             <input
@@ -323,8 +323,8 @@ function getNextRunLabel(schedules: ProductionSchedule[]): string {
   const nextRun = schedules.filter((schedule) => schedule.enabled).sort((a, b) => new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime())[0];
 
   if (!nextRun) {
-    return "Paused";
+    return "已暂停";
   }
 
-  return new Date(nextRun.nextRunAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(nextRun.nextRunAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }

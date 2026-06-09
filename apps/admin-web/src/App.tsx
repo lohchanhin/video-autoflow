@@ -179,6 +179,17 @@ export interface CaseDraftPreview {
 
 const libraryJobId = "asset_library";
 
+function formatApiEnvironmentLabel(env: string | null | undefined): string {
+  if (env === "production") return "生产环境";
+  if (env === "development") return "开发环境";
+  if (env === "test") return "测试环境";
+  return env ? env : "在线";
+}
+
+function formatScheduleRunSource(mode: "manual" | "due"): string {
+  return mode === "manual" ? "手动立即执行" : "到点自动执行";
+}
+
 const viewTitles: Record<ActiveView, { eyebrow: string; title: string }> = {
   dashboard: { eyebrow: "运营总览", title: "内容工厂控制台" },
   automation: { eyebrow: "自动排程", title: "自动化控制" },
@@ -290,8 +301,8 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
     video: {
       artifactPath: result.artifacts.sceneClips?.map((clip) => clip.publicUrl ?? clip.storagePath).join("\n") ?? "",
       output: result.artifacts.sceneClips?.length
-        ? `Attached ${result.artifacts.sceneClips.length} Seedance scene clip(s). Final MP4 used available clips as the visual track and overlaid synced TTS/subtitles in FFmpeg.`
-        : "No Seedance scene clips were available. Final MP4 used reviewed scene images as the visual track.",
+        ? `已接入 ${result.artifacts.sceneClips.length} 个 Seedance 视频片段；最终 MP4 使用可用片段作为视觉轨，并由 FFmpeg 叠加同步配音与字幕。`
+        : "没有可用的 Seedance 视频片段；最终 MP4 使用已审核场景图片作为视觉轨。",
       status: result.artifacts.sceneClips?.length ? "done" : "skipped"
     }
   };
@@ -308,8 +319,8 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
         ? {
             ...record,
             output: hasUploadTargets
-              ? "Waiting for human approval before YouTube private upload."
-              : "No YouTube targets configured. Production stops at completed MP4 / QC; upload can be added later.",
+              ? "等待人工审核后再执行 YouTube 私密上传。"
+              : "未配置 YouTube 目标；生产会停在 MP4/QC 完成状态，之后可再补充上传目标。",
             status: hasUploadTargets ? "pending" : "skipped",
             updatedAt: now
           }
@@ -340,13 +351,13 @@ function applyVideoClipGenerationResultsToRecords(
   const totalDurationSeconds = results.reduce((sum, result) => sum + result.clip.durationSeconds, 0);
   const output = [
     results.length > 0
-      ? `Seedance 2.0 generated ${results.length} scene clip(s), ${totalDurationSeconds}s total. Each clip was created from the storyboard scene duration and scene text.`
-      : "No Seedance clip was generated.",
+      ? `Seedance 2.0 已生成 ${results.length} 个场景视频片段，总时长 ${totalDurationSeconds}s。每个片段都按分镜场景时长和场景文本生成。`
+      : "没有生成 Seedance 视频片段。",
     notes,
     "",
     ...results.flatMap((result) => [
-      `Scene ${result.clip.sceneId}: ${result.clip.durationSeconds}s / ${result.clip.mode} / ${result.model}`,
-      `Task: ${result.clip.taskId}`,
+      `场景 ${result.clip.sceneId}: ${result.clip.durationSeconds}s / ${result.clip.mode} / ${result.model}`,
+      `任务: ${result.clip.taskId}`,
       result.fallbackReason ? `Note: ${result.fallbackReason}` : "",
       result.clip.prompt,
       ""
@@ -1563,7 +1574,7 @@ export function App() {
     const template = target?.templateType ?? "rules_horror";
 
     return {
-      prompt: `自动排程生产一支45秒中文 Shorts。频道方向：${channel}。内容类型：${niche}。模板：${template}。要求：原创虚构内容、清楚分镜、生成到 MP4 后人工审核，再 private 上传。`,
+      prompt: `自动排程生产一支45秒中文 Shorts。频道方向：${channel}。内容类型：${niche}。模板：${template}。要求：原创虚构内容、清楚分镜、生成到 MP4 后人工审核，再私密上传。`,
       topic: `${channel} 自动排程内容 ${runLabel}`
     };
   }
@@ -1643,7 +1654,7 @@ export function App() {
         try {
           const generatedJob = await runAutopilotPipelineFromInput(draftInput, activeTargetIds, [], {
             openCase: index === 0,
-            sourceLabel: mode === "manual" ? "Run now" : "Due schedule"
+            sourceLabel: formatScheduleRunSource(mode)
           });
           createdCaseIds.push(generatedJob.id);
         } catch (error) {
@@ -1694,10 +1705,10 @@ export function App() {
       createCaseActivity({
         detail:
           activeTargetIds.length > 0
-            ? `${mode === "manual" ? "Run now" : "Due schedule"} queued this case for production with ${activeTargetIds.length} private upload target(s).`
-            : `${mode === "manual" ? "Run now" : "Due schedule"} queued this case for production without YouTube targets. It must reach MP4/QC before upload can be added.`,
+            ? `${formatScheduleRunSource(mode)}已将这个 Case 排入生产，并绑定 ${activeTargetIds.length} 个私密上传目标。`
+            : `${formatScheduleRunSource(mode)}已将这个 Case 排入生产；当前没有 YouTube 目标，会先停在 MP4/QC，之后可再绑定上传目标。`,
         jobId: job.id,
-        title: "Scheduled case queued",
+        title: "排程 Case 已建立",
         type: "schedule_run"
       })
     );
@@ -2304,10 +2315,10 @@ export function App() {
       appendCaseActivity(
         workingJob.id,
         "video_generated",
-        "Autopilot MP4 generated",
+        "自动生成 MP4 完成",
         hasUploadTargets
-          ? `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. Waiting for human review before private upload.`
-          : `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+          ? `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。等待人工审核后再执行私密上传。`
+          : `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
 
       return workingJob;
@@ -2574,10 +2585,10 @@ export function App() {
       appendCaseActivity(
         workingJob.id,
         "video_generated",
-        "Autopilot MP4 generated",
+        "自动生成 MP4 完成",
         hasUploadTargets
-          ? `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. Waiting for human review before private upload.`
-          : `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+          ? `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。等待人工审核后再执行私密上传。`
+          : `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Autopilot generation failed.";
@@ -3893,8 +3904,8 @@ export function App() {
       appendCaseActivity(
         job.id,
         "stage_updated",
-        "Seedance scene clips generated",
-        `${successfulResults[0]?.model ?? "Seedance 2.0"} generated ${successfulResults.length} scene clip(s) from the storyboard. Total cost RM ${totalCostRM.toFixed(4)}.`
+        "Seedance 视频片段已生成",
+        `${successfulResults[0]?.model ?? "Seedance 2.0"} 已根据分镜生成 ${successfulResults.length} 个场景片段。总成本 RM ${totalCostRM.toFixed(4)}。`
       );
       setSelectedJobId(job.id);
     } catch (error) {
@@ -4029,7 +4040,7 @@ export function App() {
         pipelineCostRM += clipCostRM;
         workingRecords = applyVideoClipGenerationResultsToRecords(workingRecords, job.id, clipResults, clipNow);
         setJobProcessRecords((currentRecords) => applyVideoClipGenerationResultsToRecords(currentRecords, job.id, clipResults, clipNow));
-        appendCaseActivity(job.id, "stage_updated", "Seedance scene clips generated", `${clipResults[0]?.model ?? "Seedance 2.0"} auto-generated ${clipResults.length} scene clip(s) before MP4. Cost RM ${clipCostRM.toFixed(4)}.`);
+        appendCaseActivity(job.id, "stage_updated", "Seedance 视频片段已生成", `${clipResults[0]?.model ?? "Seedance 2.0"} 已在合成 MP4 前自动生成 ${clipResults.length} 个场景片段。成本 RM ${clipCostRM.toFixed(4)}。`);
       }
 
       setJobProcessRecords((currentRecords) =>
@@ -4070,10 +4081,10 @@ export function App() {
       appendCaseActivity(
         job.id,
         "video_generated",
-        "Video generated",
+        "影片已生成",
         hasUploadTargets
-          ? `Final MP4 created at ${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}. Waiting for private upload approval.`
-          : `Final MP4 created at ${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+          ? `最终 MP4 已生成：${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}。等待私密上传审核。`
+          : `最终 MP4 已生成：${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
       setSelectedJobId(job.id);
       void handleRunQc({
@@ -4301,7 +4312,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "case_approved", "MP4 approved", "Human review approved this MP4. No YouTube target is configured, so production remains complete at MP4/QC.");
+      appendCaseActivity(job.id, "case_approved", "MP4 已审核通过", "人工审核已批准这个 MP4。当前未配置 YouTube 目标，所以生产会停在 MP4/QC 完成状态。");
       return;
     }
 
@@ -4330,7 +4341,7 @@ export function App() {
           : target
       )
     );
-    appendCaseActivity(job.id, "case_approved", "MP4 approved", "Human review approved this MP4 for private upload targets.");
+    appendCaseActivity(job.id, "case_approved", "MP4 已审核通过", "人工审核已批准这个 MP4，可继续执行已绑定目标的私密上传。");
   }
 
   function uploadPrivateTarget(job: AdminJob, targetId: string) {
@@ -4485,7 +4496,7 @@ export function App() {
             ) : null}
             <StatusButton
               state={apiState}
-              label={apiState === "online" ? `API ${health?.env ?? "online"}` : apiState === "offline" ? "API 离线" : "检查 API"}
+              label={apiState === "online" ? `API ${formatApiEnvironmentLabel(health?.env)}` : apiState === "offline" ? "API 离线" : "检查 API"}
               onClick={() => void refreshOperationalStatus()}
             />
             <StatusButton

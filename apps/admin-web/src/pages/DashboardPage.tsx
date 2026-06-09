@@ -58,11 +58,11 @@ export function DashboardPage(props: DashboardPageProps) {
         <div>
           <p className="eyebrow">运营控制台</p>
           <h2>AI 内容生产总览</h2>
-          <p>集中查看自动开工时间、今日产能、待审核 MP4、预算风险和 YouTube private 发布准备度。这里应该告诉运营者下一步要做什么，而不是只显示数字。</p>
+          <p>集中查看自动开工时间、今日产能、待审核 MP4、预算风险和 YouTube 私密发布准备度。这里应该告诉运营者下一步要做什么，而不是只显示数字。</p>
         </div>
         <div className="hero-stat">
           <span>下次自动开工</span>
-          <strong>{props.summary.nextRunAt ? new Date(props.summary.nextRunAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "暂停"}</strong>
+          <strong>{props.summary.nextRunAt ? new Date(props.summary.nextRunAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }) : "暂停"}</strong>
           <small>今日排程 {props.summary.scheduledToday} 个 Case</small>
         </div>
       </div>
@@ -105,7 +105,7 @@ export function DashboardPage(props: DashboardPageProps) {
           <Readiness label="发布目标" value={`${enabledTargets} 个启用`} ok={enabledTargets > 0} />
           <Readiness label="影片档案" value={`${props.storedVideos.length} 个文件`} ok />
           <Readiness label="人工审核闸口" value={`${props.summary.reviewCases} 个等待`} ok />
-          <Readiness label="上传策略" value="锁定 private" ok />
+          <Readiness label="上传策略" value="锁定私密上传" ok />
         </div>
       </section>
     </section>
@@ -131,7 +131,7 @@ function DashboardEmptyFocus(props: { onNavigate: (view: DashboardNavigationTarg
         </button>
         <button type="button" onClick={() => props.onNavigate("youtube")}>
           <strong>管理 YouTube 目标</strong>
-          <span>维护多账号 private upload 目标和配额。</span>
+          <span>维护多账号私密上传目标和配额。</span>
         </button>
       </div>
     </div>

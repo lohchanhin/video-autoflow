@@ -780,7 +780,7 @@ const defaultBudgetSettings: BudgetSettings = {
 const defaultProductionSchedules: ProductionSchedule[] = [
   {
     id: "schedule_daily_shorts",
-    name: "Daily Shorts Batch",
+    name: "每日短视频批次",
     enabled: true,
     executionMode: "queue_only",
     timezone: "Asia/Kuala_Lumpur",
@@ -1011,7 +1011,7 @@ export const workflowSteps: WorkflowStep[] = [
     worker: "publisher-worker",
     queueName: "publish.queue",
     toolId: "tool_youtube",
-    output: "YouTube private video"
+    output: "YouTube 私密影片"
   },
   {
     id: "workflow_storage",
@@ -2105,7 +2105,7 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
     lastRunAt: schedule.lastRunAt ?? null,
     maxCasesPerRun: clampNumber(Number(schedule.maxCasesPerRun), 1, 50, defaultBudgetSettings.maxCasesPerRun),
     maxVideosPerDay: clampNumber(Number(schedule.maxVideosPerDay), 1, 100, defaultBudgetSettings.maxVideosPerDay),
-    name: schedule.name || "Daily Production Batch",
+    name: normalizeProductionScheduleName(schedule.name),
     nextRunAt: schedule.nextRunAt,
     startTime: normalizeStartTime(schedule.startTime),
     targetIds,
@@ -2116,6 +2116,16 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
     ...normalized,
     nextRunAt: normalized.nextRunAt && new Date(normalized.nextRunAt).toString() !== "Invalid Date" ? normalized.nextRunAt : calculateNextRunAt(normalized)
   };
+}
+
+function normalizeProductionScheduleName(name: string | undefined): string {
+  const normalizedName = (name ?? "").trim();
+
+  if (!normalizedName || normalizedName === "Daily Shorts Batch" || normalizedName === "Daily Production Batch") {
+    return "每日短视频批次";
+  }
+
+  return normalizedName;
 }
 
 function normalizeBudgetSettings(settings: Partial<BudgetSettings>): BudgetSettings {
