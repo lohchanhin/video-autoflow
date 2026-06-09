@@ -30,8 +30,8 @@ export function KeysPage(props: {
   return (
     <section className="panel table-panel">
       <SectionHeader
-        eyebrow="Provider access"
-        title="Key Management"
+        eyebrow="供应商访问"
+        title="密钥管理"
         action={
           <button
             className="secondary-button"
@@ -39,7 +39,7 @@ export function KeysPage(props: {
             onClick={() => window.confirm("确定重置密钥状态记录？已保存到 API server 的真实密钥不会显示在前端，但本地状态会被覆盖。") && props.resetKeys()}
           >
             <RefreshCw size={15} />
-            Reset
+            重置状态
           </button>
         }
       />
@@ -50,20 +50,20 @@ export function KeysPage(props: {
               <strong>{key.provider}</strong>
               <span>{key.service}</span>
             </div>
-            <StatusPill tone={key.status === "configured" ? "success" : key.status === "needs_rotation" ? "warning" : "danger"}>{key.status}</StatusPill>
+            <StatusPill tone={key.status === "configured" ? "success" : key.status === "needs_rotation" ? "warning" : "danger"}>{providerKeyStatusLabel(key.status)}</StatusPill>
             <span>{key.keyName}</span>
             <ProviderKeyEnabledDraft providerKey={key} reportDirtyState={props.reportDirtyState} updateProviderKey={props.updateProviderKey} />
             <div className="secret-control">
               <input
                 type={props.visibleDrafts[key.id] ? "text" : "password"}
                 value={props.secretDrafts[key.id] ?? ""}
-                placeholder={key.lastFour ? `configured · ${key.lastFour}` : "Paste key locally"}
+                placeholder={key.lastFour ? `已配置 · ${key.lastFour}` : "在本机输入密钥"}
                 onChange={(event) => props.updateSecretDraft(key.id, event.target.value)}
               />
-              <button className="icon-button" type="button" onClick={() => props.toggleSecretDraftVisibility(key.id)} aria-label="Toggle secret visibility">
+              <button className="icon-button" type="button" onClick={() => props.toggleSecretDraftVisibility(key.id)} aria-label="切换密钥可见性">
                 {props.visibleDrafts[key.id] ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
-              <button className="icon-button primary" type="button" onClick={() => props.saveProviderSecret(key.id)} aria-label="Save key status">
+              <button className="icon-button primary" type="button" onClick={() => props.saveProviderSecret(key.id)} aria-label="保存密钥">
                 <Save size={16} />
               </button>
             </div>
@@ -105,7 +105,7 @@ function ProviderKeyEnabledDraft(props: {
           checked={draft.enabled}
           onChange={(event) => editor.setDraftPatch({ enabled: event.target.checked })}
         />
-        <span>Enabled</span>
+        <span>启用</span>
       </label>
       <EditableActionBar
         isDirty={editor.isDirty}
@@ -114,6 +114,16 @@ function ProviderKeyEnabledDraft(props: {
       />
     </div>
   );
+}
+
+function providerKeyStatusLabel(status: ProviderKeyRecord["status"]): string {
+  const labels: Record<ProviderKeyRecord["status"], string> = {
+    configured: "已配置",
+    missing: "未配置",
+    needs_rotation: "建议轮换"
+  };
+
+  return labels[status] ?? status;
 }
 
 export function YouTubePage(props: {
@@ -156,8 +166,8 @@ export function YouTubePage(props: {
   return (
     <section className="youtube-console">
       <section className="panel">
-        <SectionHeader eyebrow="YouTube OAuth" title="Connected Channels" action={<StatusPill tone={props.canUpload ? "success" : "danger"}>{props.canUpload ? "Ready" : "Missing"}</StatusPill>} />
-        <Field label="Channel name">
+        <SectionHeader eyebrow="YouTube OAuth" title="已连接频道" action={<StatusPill tone={props.canUpload ? "success" : "danger"}>{props.canUpload ? "可上传" : "未完成"}</StatusPill>} />
+        <Field label="频道名称">
           <input value={accountCreateDraft.channelName} onChange={(event) => accountCreateEditor.setDraftPatch({ channelName: event.target.value })} />
         </Field>
         <Field label="YouTube channel ID">
@@ -168,17 +178,17 @@ export function YouTubePage(props: {
           isDirty={accountCreateEditor.isDirty}
           onCancel={accountCreateEditor.resetDraft}
           onSave={saveAccountDraft}
-          saveLabel="Register channel"
+          saveLabel="登记频道"
         />
         <div className="policy-note">
           <ShieldCheck size={18} />
-          <span>MVP uploads are locked to private. Public upload is not available here.</span>
+          <span>MVP 上传锁定为 private，这里不会提供 public 发布入口。</span>
         </div>
       </section>
 
       <div className="panel table-panel">
-        <SectionHeader eyebrow="Publishing accounts" title="Channel Registry" />
-        {props.accounts.length === 0 ? <EmptyState title="No YouTube accounts" body="Register a channel, then connect real OAuth credentials before private upload is available." /> : null}
+        <SectionHeader eyebrow="发布账号" title="频道登记表" />
+        {props.accounts.length === 0 ? <EmptyState title="暂无 YouTube 账号" body="先登记频道，再连接真实 OAuth 凭证，之后才允许 private upload。" /> : null}
         <div className="settings-table">
           {props.accounts.map((account) => (
             <YouTubeAccountSettingsRow key={account.id} account={account} reportDirtyState={props.reportDirtyState} updateAccount={props.updateAccount} />
@@ -187,10 +197,10 @@ export function YouTubePage(props: {
       </div>
 
       <section className="panel youtube-target-form">
-        <SectionHeader eyebrow="Target matrix" title="Add Publishing Target" action={<StatusPill tone="success">private only</StatusPill>} />
-        <Field label="Google / YouTube account">
+        <SectionHeader eyebrow="发布目标矩阵" title="新增发布目标" action={<StatusPill tone="success">仅 private</StatusPill>} />
+        <Field label="Google / YouTube 账号">
           <select value={targetCreateDraft.accountId} onChange={(event) => targetCreateEditor.setDraftPatch({ accountId: event.target.value })}>
-            <option value="">Select registered account</option>
+            <option value="">选择已登记账号</option>
             {props.accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.channelName}
@@ -198,10 +208,10 @@ export function YouTubePage(props: {
             ))}
           </select>
         </Field>
-        <Field label="Target channel name">
+        <Field label="目标频道名称">
           <input value={targetCreateDraft.channelName} onChange={(event) => targetCreateEditor.setDraftPatch({ channelName: event.target.value })} />
         </Field>
-        <Field label="Target channel ID">
+        <Field label="目标 Channel ID">
           <input value={targetCreateDraft.youtubeChannelId} onChange={(event) => targetCreateEditor.setDraftPatch({ youtubeChannelId: event.target.value })} />
         </Field>
         <EditableActionBar
@@ -209,13 +219,13 @@ export function YouTubePage(props: {
           isDirty={targetCreateEditor.isDirty}
           onCancel={targetCreateEditor.resetDraft}
           onSave={saveTargetDraft}
-          saveLabel="Add target"
+          saveLabel="新增目标"
         />
       </section>
 
       <div className="panel table-panel youtube-target-panel">
-        <SectionHeader eyebrow="Multi-account publishing" title="Publishing Targets" />
-        {props.publishingTargets.length === 0 ? <EmptyState title="No publishing targets" body="Add real channel targets after registering a YouTube account. Upload remains blocked until OAuth is connected." /> : null}
+        <SectionHeader eyebrow="多账号发布" title="发布目标" />
+        {props.publishingTargets.length === 0 ? <EmptyState title="暂无发布目标" body="登记 YouTube 账号后添加真实频道目标；OAuth 未连接前上传仍会被阻塞。" /> : null}
         <div className="settings-table">
           {props.publishingTargets.map((target) => (
             <PublishingTargetSettingsRow key={target.id} reportDirtyState={props.reportDirtyState} target={target} updatePublishingTarget={props.updatePublishingTarget} />
@@ -334,8 +344,8 @@ function PublishingTargetSettingsRow(props: {
         <strong>{draft.channelName}</strong>
         <span>{draft.youtubeChannelId}</span>
       </div>
-      <StatusPill tone={draft.enabled ? "success" : "neutral"}>{draft.enabled ? "enabled" : "paused"}</StatusPill>
-      <Field label="Daily quota">
+      <StatusPill tone={draft.enabled ? "success" : "neutral"}>{draft.enabled ? "已启用" : "已暂停"}</StatusPill>
+      <Field label="每日配额">
         <input
           min={1}
           max={50}
@@ -344,15 +354,15 @@ function PublishingTargetSettingsRow(props: {
           onChange={(event) => patchDraft({ dailyQuota: Number(event.target.value) })}
         />
       </Field>
-      <Field label="Niche">
+      <Field label="赛道 / Niche">
         <input value={draft.niche} onChange={(event) => patchDraft({ niche: event.target.value })} />
       </Field>
-      <Field label="Upload window">
+      <Field label="上传窗口">
         <input value={draft.uploadWindow} onChange={(event) => patchDraft({ uploadWindow: event.target.value })} />
       </Field>
       <label className="toggle-line">
         <input checked={draft.enabled} type="checkbox" onChange={(event) => patchDraft({ enabled: event.target.checked })} />
-        <span>Enabled</span>
+        <span>启用</span>
       </label>
       <EditableActionBar
         isDirty={editor.isDirty}
@@ -392,15 +402,15 @@ export function StoragePage(props: {
   return (
     <section className="settings-grid">
       <div className="panel">
-        <SectionHeader eyebrow="Video library" title="GCP / GCS Storage" action={<StatusPill tone={props.canUpload ? "success" : "warning"}>{settingsDraft.driver}</StatusPill>} />
-        <Field label="Storage driver">
+        <SectionHeader eyebrow="影片档案库" title="GCP / GCS 存储" action={<StatusPill tone={props.canUpload ? "success" : "warning"}>{storageDriverLabel(settingsDraft.driver)}</StatusPill>} />
+        <Field label="存储驱动">
           <select value={settingsDraft.driver} onChange={(event) => patchSettingsDraft({ driver: event.target.value as StorageSettings["driver"] })}>
             <option value="gcs">Google Cloud Storage</option>
-            <option value="minio">MinIO local</option>
-            <option value="local">Project uploads folder</option>
+            <option value="minio">MinIO 本地</option>
+            <option value="local">项目 uploads 文件夹</option>
           </select>
         </Field>
-        <Field label="Local uploads path">
+        <Field label="本地 uploads 路径">
           <input value={settingsDraft.localUploadsPath} onChange={(event) => patchSettingsDraft({ localUploadsPath: event.target.value })} />
         </Field>
         <Field label="GCP project ID">
@@ -423,8 +433,8 @@ export function StoragePage(props: {
       </div>
 
       <div className="panel table-panel">
-        <SectionHeader eyebrow="Artifacts" title="Stored Videos" />
-        {props.storedVideos.length === 0 ? <EmptyState title="No stored videos" body="Final MP4 records will appear here after QC." /> : null}
+        <SectionHeader eyebrow="产物档案" title="已存影片" />
+        {props.storedVideos.length === 0 ? <EmptyState title="暂无影片档案" body="最终 MP4 通过 QC 后会出现在这里。" /> : null}
         <div className="settings-table">
           {props.storedVideos.map((video) => (
             <StoredVideoSettingsRow key={video.id} reportDirtyState={props.reportDirtyState} updateStoredVideo={props.updateStoredVideo} video={video} />
@@ -598,13 +608,13 @@ function StoredVideoSettingsRow(props: {
       <span>{draft.resolution}</span>
       {draft.publicUrl ? (
         <a className="secondary-button" href={draft.publicUrl} target="_blank" rel="noreferrer">
-          Open
+          打开
         </a>
       ) : null}
       <select value={draft.status} onChange={(event) => editor.setDraftPatch({ status: event.target.value as StoredVideo["status"] })}>
-        <option value="draft">draft</option>
-        <option value="ready_to_upload">ready_to_upload</option>
-        <option value="uploaded_private">uploaded_private</option>
+        <option value="draft">草稿</option>
+        <option value="ready_to_upload">待上传</option>
+        <option value="uploaded_private">已 private 上传</option>
       </select>
       <EditableActionBar
         isDirty={editor.isDirty}
@@ -613,6 +623,16 @@ function StoredVideoSettingsRow(props: {
       />
     </article>
   );
+}
+
+function storageDriverLabel(driver: StorageSettings["driver"]): string {
+  const labels: Record<StorageSettings["driver"], string> = {
+    gcs: "GCS",
+    local: "本地 uploads",
+    minio: "MinIO"
+  };
+
+  return labels[driver] ?? driver;
 }
 
 export function CostPage(props: {

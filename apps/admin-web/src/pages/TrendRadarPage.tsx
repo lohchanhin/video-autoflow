@@ -43,13 +43,13 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
     <section className="trend-radar-shell">
       <section className="panel trend-command-panel">
         <SectionHeader
-          eyebrow="Market research"
-          title="Trend Radar"
+          eyebrow="市场研究"
+          title="趋势雷达"
           action={
             <>
               <button className="secondary-button" type="button" onClick={props.applyAiNichePreset}>
                 <Sparkles size={15} />
-                AI niche preset
+                AI 赛道预设
               </button>
               <button
                 className="secondary-button"
@@ -58,7 +58,7 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
                 disabled={props.reports.length === 0}
               >
                 <Trash2 size={15} />
-                Clear history
+                清空历史
               </button>
             </>
           }
@@ -70,80 +70,80 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
             props.runTrendScan();
           }}
         >
-          <Field className="trend-query-field" label="Search topic / market angle">
-            <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="shorts story, comedy sketch, romance shorts..." />
+          <Field className="trend-query-field" label="搜索主题 / 赛道角度">
+            <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="AI短剧、亲子教育、喜剧短片、爱情故事..." />
           </Field>
-          <Field label="Region">
+          <Field label="地区">
             <input value={props.regionCode} maxLength={2} onChange={(event) => props.setRegionCode(event.target.value.toUpperCase())} />
           </Field>
-          <Field label="Window">
+          <Field label="时间范围">
             <select value={props.publishedWithinDays} onChange={(event) => props.setPublishedWithinDays(Number(event.target.value))}>
-              <option value={1}>1 day</option>
-              <option value={3}>3 days</option>
-              <option value={7}>7 days</option>
-              <option value={14}>14 days</option>
-              <option value={30}>30 days</option>
+              <option value={1}>近 1 天</option>
+              <option value={3}>近 3 天</option>
+              <option value={7}>近 7 天</option>
+              <option value={14}>近 14 天</option>
+              <option value={30}>近 30 天</option>
             </select>
           </Field>
-          <Field label="Language">
+          <Field label="语言">
             <select value={props.language} onChange={(event) => props.setLanguage(event.target.value === "en-US" ? "en-US" : "zh-CN")}>
-              <option value="zh-CN">zh-CN</option>
-              <option value="en-US">en-US</option>
+              <option value="zh-CN">中文</option>
+              <option value="en-US">英文</option>
             </select>
           </Field>
-          <Field label="Results">
+          <Field label="结果数量">
             <select value={props.maxResults} onChange={(event) => props.setMaxResults(Number(event.target.value))}>
               <option value={10}>10</option>
               <option value={15}>15</option>
               <option value={25}>25</option>
             </select>
           </Field>
-          <Field label="Safety">
+          <Field label="安全筛选">
             <select value={props.safeMode} onChange={(event) => props.setSafeMode(event.target.value === "standard" ? "standard" : "strict")}>
-              <option value="strict">Strict safe</option>
-              <option value="standard">Standard</option>
+              <option value="strict">严格</option>
+              <option value="standard">标准</option>
             </select>
           </Field>
           <button className="primary-button trend-scan-button" type="submit" disabled={props.isScanning || !props.query.trim()}>
             <Search size={16} />
-            {props.isScanning ? "Scanning..." : "Scan YouTube"}
+            {props.isScanning ? "扫描中..." : "扫描 YouTube"}
           </button>
         </form>
         <div className="trend-filter-grid">
-          <Field label="Category">
+          <Field label="分类">
             <select value={props.categoryId} onChange={(event) => props.setCategoryId(event.target.value)}>
-              <option value="">Any video category</option>
-              <option value="1">Film & Animation</option>
-              <option value="22">People & Blogs</option>
-              <option value="23">Comedy</option>
-              <option value="24">Entertainment</option>
-              <option value="26">Howto & Style</option>
-              <option value="27">Education</option>
-              <option value="28">Science & Technology</option>
+              <option value="">不限分类</option>
+              <option value="1">电影与动画</option>
+              <option value="22">人物与博客</option>
+              <option value="23">喜剧</option>
+              <option value="24">娱乐</option>
+              <option value="26">生活方式</option>
+              <option value="27">教育</option>
+              <option value="28">科学与技术</option>
             </select>
           </Field>
-          <Field label="Language match">
+          <Field label="语言匹配">
             <select value={props.languageMode} onChange={(event) => props.setLanguageMode(event.target.value === "strict" ? "strict" : "loose")}>
-              <option value="loose">Loose</option>
-              <option value="strict">Strict target language</option>
+              <option value="loose">宽松</option>
+              <option value="strict">严格目标语言</option>
             </select>
           </Field>
-          <Field label="Must include">
-            <input value={props.includeKeywords} onChange={(event) => props.setIncludeKeywords(event.target.value)} placeholder="comma separated" />
+          <Field label="必须包含">
+            <input value={props.includeKeywords} onChange={(event) => props.setIncludeKeywords(event.target.value)} placeholder="用逗号分隔关键词" />
           </Field>
-          <Field label="Exclude">
-            <input value={props.excludeKeywords} onChange={(event) => props.setExcludeKeywords(event.target.value)} placeholder="kids, prank, gore..." />
+          <Field label="排除关键词">
+            <input value={props.excludeKeywords} onChange={(event) => props.setExcludeKeywords(event.target.value)} placeholder="儿童不宜、恶作剧、血腥..." />
           </Field>
-          <Field label="Min views">
+          <Field label="最低观看数">
             <input min={0} type="number" value={props.minViews} onChange={(event) => props.setMinViews(Number(event.target.value))} />
           </Field>
-          <Field label="Min views/hour">
+          <Field label="最低每小时观看">
             <input min={0} type="number" value={props.minVelocityScore} onChange={(event) => props.setMinVelocityScore(Number(event.target.value))} />
           </Field>
         </div>
         <div className="trend-policy-note">
-          <StatusPill tone="active">Real API only</StatusPill>
-          <span>Strict safe mode filters mature, violent, minor-related, low relevance, and excluded-keyword videos after the YouTube API scan.</span>
+          <StatusPill tone="active">只用真实 API</StatusPill>
+          <span>严格模式会在 YouTube API 扫描后过滤成人、暴力、未成年人相关、低相关度和命中排除关键词的视频。</span>
         </div>
         {props.scanError ? (
           <div className="trend-error">
@@ -156,27 +156,27 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
       <section className="trend-radar-grid">
         <section className="panel trend-main-panel">
           <SectionHeader
-            eyebrow="Detected patterns"
-            title={props.currentReport ? `${props.currentReport.query} / ${props.currentReport.regionCode}` : "No scan yet"}
-            action={props.currentReport ? <StatusPill tone={props.currentReport.status === "ready" ? "success" : "warning"}>{props.currentReport.status}</StatusPill> : null}
+            eyebrow="趋势信号"
+            title={props.currentReport ? `${props.currentReport.query} / ${props.currentReport.regionCode}` : "尚未扫描"}
+            action={props.currentReport ? <StatusPill tone={props.currentReport.status === "ready" ? "success" : "warning"}>{formatTrendStatus(props.currentReport.status)}</StatusPill> : null}
           />
-          {!props.currentReport ? <EmptyState title="No trend scan" body="Enter a topic, then scan YouTube to find current Shorts patterns and reusable idea seeds." /> : null}
+          {!props.currentReport ? <EmptyState title="暂无趋势扫描" body="输入主题后扫描 YouTube，系统会整理近期 Shorts 模式和可复用选题种子。" /> : null}
           {props.currentReport?.status === "blocked" ? (
             <div className="trend-blocker">
               <AlertTriangle size={18} />
               <div>
-                <strong>Trend Radar needs setup</strong>
-                <span>{props.currentReport.blocker ?? "Configure YOUTUBE_API_KEY before scanning."}</span>
+                <strong>趋势雷达需要先完成设置</strong>
+                <span>{props.currentReport.blocker ?? "请先配置 YOUTUBE_API_KEY 再扫描。"}</span>
               </div>
             </div>
           ) : null}
           {props.currentReport?.status === "ready" ? (
             <>
               <div className="trend-summary-strip">
-                <TrendMetric label="Videos" value={String(props.currentReport.videos.length)} />
-                <TrendMetric label="Patterns" value={String(props.currentReport.patterns.length)} />
-                <TrendMetric label="Filtered" value={String(props.currentReport.filteredOut.length)} />
-                <TrendMetric label="Quota units" value={String(props.currentReport.quotaUnits)} />
+                <TrendMetric label="参考视频" value={String(props.currentReport.videos.length)} />
+                <TrendMetric label="趋势模式" value={String(props.currentReport.patterns.length)} />
+                <TrendMetric label="已过滤" value={String(props.currentReport.filteredOut.length)} />
+                <TrendMetric label="API 配额" value={String(props.currentReport.quotaUnits)} />
               </div>
               {props.currentReport.filterSummary.length > 0 ? (
                 <div className="trend-filter-summary">
@@ -186,7 +186,7 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
                 </div>
               ) : null}
               {props.currentReport.patterns.length === 0 ? (
-                <EmptyState title="No strong pattern found" body="The scan completed, but the candidate set did not show enough shared signals. Try a more specific topic or wider time window." />
+                <EmptyState title="没有找到强趋势" body="扫描已完成，但候选视频没有明显共同信号。可以换更具体主题，或放宽时间范围再试。" />
               ) : (
                 <div className="trend-pattern-grid">
                   {props.currentReport.patterns.map((pattern) => (
@@ -196,8 +196,8 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
                         <span>{pattern.summary}</span>
                       </div>
                       <div className="trend-pattern-metrics">
-                        <StatusPill tone="active">{pattern.count} videos</StatusPill>
-                        <StatusPill tone="neutral">score {pattern.score}</StatusPill>
+                        <StatusPill tone="active">{pattern.count} 支视频</StatusPill>
+                        <StatusPill tone="neutral">分数 {pattern.score}</StatusPill>
                       </div>
                     </article>
                   ))}
@@ -208,9 +208,9 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
         </section>
 
         <aside className="panel trend-side-panel">
-          <SectionHeader eyebrow="Idea seeds" title="Use in New Case" />
+          <SectionHeader eyebrow="选题种子" title="带入 New Case" />
           {!props.currentReport || props.currentReport.ideaSeeds.length === 0 ? (
-            <EmptyState title="No idea seeds" body="Run a successful scan to generate original case prompts from current market signals." />
+            <EmptyState title="暂无选题种子" body="完成一次有效扫描后，系统会根据市场信号生成原创 Case 方向。" />
           ) : (
             <div className="trend-seed-list">
               {props.currentReport.ideaSeeds.map((seed) => {
@@ -225,13 +225,13 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
                     <p>{seed.angle}</p>
                     <div className="trend-seed-meta">
                       <StatusPill tone="success">{seed.genre}</StatusPill>
-                      <StatusPill tone="neutral">{Math.round(seed.confidence * 100)}% confidence</StatusPill>
+                      <StatusPill tone="neutral">可信度 {Math.round(seed.confidence * 100)}%</StatusPill>
                     </div>
                     <small>{seed.whyNow}</small>
                     {referenceVideos.length > 0 ? <ReferenceVideoStrip videos={referenceVideos} /> : null}
                     <button className="primary-button compact-button" type="button" onClick={() => props.useIdeaSeed(seed)}>
                       <Sparkles size={14} />
-                      Use as case
+                      带入 Case
                     </button>
                   </article>
                 );
@@ -242,18 +242,18 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
       </section>
 
       <section className="panel trend-video-panel">
-        <SectionHeader eyebrow="Source videos" title="Candidate Shorts" />
+        <SectionHeader eyebrow="参考视频" title="候选 Shorts" />
         {!props.currentReport || props.currentReport.videos.length === 0 ? (
-          <EmptyState title="No source videos" body="Trend Radar will list real YouTube candidates here after a successful scan." />
+          <EmptyState title="暂无参考视频" body="趋势雷达完成扫描后，会在这里列出真实 YouTube 候选视频。" />
         ) : (
           <div className="trend-video-table">
             <div className="trend-video-header">
-              <span>Video</span>
-              <span>Signals</span>
-              <span>Views</span>
-              <span>Velocity</span>
-              <span>Engagement</span>
-              <span>Link</span>
+              <span>视频</span>
+              <span>信号</span>
+              <span>观看</span>
+              <span>增速</span>
+              <span>互动</span>
+              <span>链接</span>
             </div>
             {props.currentReport.videos.map((video) => (
               <article className="trend-video-row" key={video.id}>
@@ -264,11 +264,11 @@ export function TrendRadarPage(props: TrendRadarPageProps) {
                     <span>{video.channelTitle} / {formatDuration(video.durationSeconds)} / {formatDate(video.publishedAt)}</span>
                   </div>
                 </div>
-                <span className="trend-signal-list">{video.matchedSignals.length ? video.matchedSignals.join(", ") : "No shared signal"}</span>
+                <span className="trend-signal-list">{video.matchedSignals.length ? video.matchedSignals.join(", ") : "没有共同信号"}</span>
                 <span>{formatNumber(video.viewCount)}</span>
                 <span>{formatNumber(video.velocityScore)}/h</span>
                 <span>{formatPercent(video.engagementRate)}</span>
-                <a className="icon-button" href={video.url} target="_blank" rel="noreferrer" aria-label="Open YouTube video">
+                <a className="icon-button" href={video.url} target="_blank" rel="noreferrer" aria-label="打开 YouTube 视频">
                   <ExternalLink size={15} />
                 </a>
               </article>
@@ -292,13 +292,13 @@ function TrendMetric(props: { label: string; value: string }) {
 function ReferenceVideoStrip(props: { videos: TrendVideoCandidate[] }) {
   return (
     <div className="trend-reference-strip">
-      <span className="trend-reference-label">Reference examples</span>
+      <span className="trend-reference-label">参考样本</span>
       {props.videos.map((video) => (
         <a className="trend-reference-video" href={video.url} key={video.id} target="_blank" rel="noreferrer">
           {video.thumbnailUrl ? <MediaImage alt={video.title} src={video.thumbnailUrl} fallbackLabel="缩略图不可用" /> : <span className="trend-thumb-placeholder" />}
           <div>
             <strong>{video.title}</strong>
-            <span>{formatNumber(video.viewCount)} views / {formatNumber(video.velocityScore)}/h</span>
+            <span>{formatNumber(video.viewCount)} 次观看 / {formatNumber(video.velocityScore)}/h</span>
           </div>
           <ExternalLink size={14} />
         </a>
@@ -314,18 +314,27 @@ function getReferenceVideos(seed: TrendIdeaSeed, videos: TrendVideoCandidate[]):
 
 function formatFilterReason(reason: string): string {
   const labels: Record<string, string> = {
-    below_min_velocity: "Low velocity",
-    below_min_views: "Low views",
-    excluded_keyword: "Excluded keyword",
-    language_mismatch: "Language mismatch",
-    low_relevance: "Low relevance",
-    mature_or_unsafe: "Unsafe",
-    minor_or_kids_related: "Minor/kids",
-    missing_include_keyword: "Missing include",
-    too_long: "Too long"
+    below_min_velocity: "增速过低",
+    below_min_views: "观看过低",
+    excluded_keyword: "命中排除词",
+    language_mismatch: "语言不符",
+    low_relevance: "相关度低",
+    mature_or_unsafe: "不安全内容",
+    minor_or_kids_related: "未成年人 / 儿童相关",
+    missing_include_keyword: "缺少必要关键词",
+    too_long: "时长过长"
   };
 
   return labels[reason] ?? reason;
+}
+
+function formatTrendStatus(status: TrendReport["status"]): string {
+  const labels: Record<TrendReport["status"], string> = {
+    blocked: "已阻塞",
+    ready: "已就绪"
+  };
+
+  return labels[status] ?? status;
 }
 
 function formatNumber(value: number): string {
