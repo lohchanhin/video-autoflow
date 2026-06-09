@@ -17,7 +17,7 @@ import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from 
 import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
-import { resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
+import { resolveProductionAssetPreviewUrl, resolveProductionAssetPreviewUrls } from "../lib/production-asset-media.js";
 
 type AssetStudioTab = "generate" | "library" | "case-plan";
 
@@ -413,7 +413,7 @@ export function AssetsPage(props: AssetsPageProps) {
                   {libraryVisibleAssets.map((asset) => (
                     <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                       <div className="asset-gallery-thumb">
-                        {assetPreviewUrl(asset) ? <MediaImage src={assetPreviewUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
+                        {assetPreviewUrls(asset).length > 0 ? <MediaImage src={assetPreviewUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
                       </div>
                       <strong>{asset.label}</strong>
                       <span>{formatAssetCardMeta(asset)}</span>
@@ -474,7 +474,7 @@ export function AssetsPage(props: AssetsPageProps) {
                 {casePlanDisplayAssets.map((asset) => (
                   <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                     <div className="asset-gallery-thumb">
-                      {assetPreviewUrl(asset) ? <MediaImage src={assetPreviewUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
+                      {assetPreviewUrls(asset).length > 0 ? <MediaImage src={assetPreviewUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
                     </div>
                     <strong>{asset.label}</strong>
                     <span>{formatAssetCardMeta(asset)}</span>
@@ -545,7 +545,7 @@ function AssetInspector(props: {
   }
 
   const asset = props.asset;
-  const previewUrl = assetPreviewUrl(asset);
+  const previewUrls = assetPreviewUrls(asset);
   const approvedLibraryAsset = Boolean(props.protectRegenerate && asset.status === "approved");
   const readiness = evaluateProductionAssetReadiness(asset);
 
@@ -553,7 +553,7 @@ function AssetInspector(props: {
     <section className="asset-inspector panel">
       <SectionHeader eyebrow="设计检查" title={asset.label} action={<StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>} />
       <div className="asset-preview-frame">
-        {previewUrl ? <MediaImage src={previewUrl} alt={asset.label} fallbackLabel="预览不可用" /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
+        {previewUrls.length > 0 ? <MediaImage src={previewUrls} alt={asset.label} fallbackLabel="预览不可用" /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
       </div>
       <AssetReadinessPanel readiness={readiness} />
       <AssetDesignSpecPanel type={asset.type} compact />
@@ -833,6 +833,10 @@ function assetStatusTone(status: ProductionAssetStatus): "active" | "danger" | "
 
 function assetPreviewUrl(asset: ProductionAsset): string {
   return resolveProductionAssetPreviewUrl(asset);
+}
+
+function assetPreviewUrls(asset: ProductionAsset): string[] {
+  return resolveProductionAssetPreviewUrls(asset);
 }
 
 function isGeneratedDesignAsset(asset: ProductionAsset): boolean {

@@ -14,12 +14,43 @@ export function getMediaImageCurrentStatus(src: string, state: MediaImageLoadSta
   return src ? "loading" : "empty";
 }
 
+export function getMediaImageSourcesStatus(sources: string[], state: MediaImageLoadState): MediaImageLoadState["status"] {
+  if (sources.length === 0) {
+    return "empty";
+  }
+
+  return sources.includes(state.src) ? state.status : "loading";
+}
+
 export function canRenderMediaImage(src: string, state: MediaImageLoadState): boolean {
   return Boolean(src) && state.src === src && state.status === "loaded";
 }
 
+export function canRenderMediaImageFromSources(sources: string[], state: MediaImageLoadState): boolean {
+  return state.status === "loaded" && sources.includes(state.src);
+}
+
 export function hasRenderableImageDimensions(image: Pick<HTMLImageElement, "naturalHeight" | "naturalWidth">): boolean {
   return image.naturalWidth > 0 && image.naturalHeight > 0;
+}
+
+export function normalizeMediaImageSources(src: string | string[] | null | undefined): string[] {
+  const rawSources = Array.isArray(src) ? src : [src];
+  const seen = new Set<string>();
+  const sources: string[] = [];
+
+  for (const rawSource of rawSources) {
+    const source = (rawSource ?? "").trim();
+
+    if (!source || seen.has(source)) {
+      continue;
+    }
+
+    seen.add(source);
+    sources.push(source);
+  }
+
+  return sources;
 }
 
 export function StatusPill(props: { children: ReactNode; tone?: "neutral" | "active" | "success" | "danger" | "warning" }) {
@@ -81,40 +112,63 @@ export function MediaImage(props: {
   alt: string;
   className?: string;
   fallbackLabel?: string;
-  src: string | null | undefined;
+  src: string | string[] | null | undefined;
 }) {
-  const src = (props.src ?? "").trim();
+  const sources = normalizeMediaImageSources(props.src);
+  const sourceKey = sources.join("\n");
   const [state, setState] = useState<MediaImageLoadState>({
-    src,
-    status: src ? "loading" : "empty"
+    src: sources[0] ?? "",
+    status: sources.length > 0 ? "loading" : "empty"
   });
-  const currentStatus = getMediaImageCurrentStatus(src, state);
-  const isLoadedCurrentSrc = canRenderMediaImage(src, state);
+  const currentStatus = getMediaImageSourcesStatus(sources, state);
+  const isLoadedCurrentSrc = canRenderMediaImageFromSources(sources, state);
+  const loadedSrc = isLoadedCurrentSrc ? state.src : "";
 
   useEffect(() => {
-    if (!src) {
+    if (sources.length === 0) {
       setState({ src: "", status: "empty" });
       return;
     }
 
     let active = true;
-    const image = new Image();
+    let image: HTMLImageElement | null = null;
 
-    setState({ src, status: "loading" });
-    image.onload = () => {
-      if (active) setState({ src, status: hasRenderableImageDimensions(image) ? "loaded" : "failed" });
-    };
-    image.onerror = () => {
-      if (active) setState({ src, status: "failed" });
-    };
-    image.src = src;
+    function tryLoad(index: number) {
+      const candidate = sources[index];
+
+      if (!candidate) {
+        setState({ src: sources[sources.length - 1] ?? "", status: "failed" });
+        return;
+      }
+
+      image = new Image();
+      setState({ src: candidate, status: "loading" });
+      image.onload = () => {
+        if (!active || !image) return;
+
+        if (hasRenderableImageDimensions(image)) {
+          setState({ src: candidate, status: "loaded" });
+          return;
+        }
+
+        tryLoad(index + 1);
+      };
+      image.onerror = () => {
+        if (active) tryLoad(index + 1);
+      };
+      image.src = candidate;
+    }
+
+    tryLoad(0);
 
     return () => {
       active = false;
-      image.onload = null;
-      image.onerror = null;
+      if (image) {
+        image.onload = null;
+        image.onerror = null;
+      }
     };
-  }, [src]);
+  }, [sourceKey]);
 
   if (!isLoadedCurrentSrc) {
     return (
@@ -132,8 +186,8 @@ export function MediaImage(props: {
       className={props.className}
       decoding="async"
       loading="lazy"
-      src={src}
-      onError={() => setState({ src, status: "failed" })}
+      src={loadedSrc}
+      onError={() => setState({ src: loadedSrc, status: "failed" })}
     />
   );
 }

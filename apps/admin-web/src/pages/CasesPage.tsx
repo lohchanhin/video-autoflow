@@ -12,7 +12,7 @@ import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
 import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset, shouldHideFromNewCaseReferencePicker } from "../lib/draft-reference-assets.js";
 import { formatDateTime, formatProcessRecordStatus, formatSceneQcStatus, formatSceneReviewStatus, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
-import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
+import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrls } from "../lib/production-asset-media.js";
 import type { ProductionStageId } from "../lib/production.js";
 import type { CaseDraftPreview } from "../App.js";
 
@@ -528,7 +528,7 @@ function AssetMultiSelect(props: {
           {selectedAssets.map((asset) => (
             <article className="asset-selected-mini-card" key={asset._id}>
               <span className="asset-selected-mini-thumb">
-                {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
+                {assetThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetThumbUrls(asset)} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
               </span>
               <span className="asset-selected-mini-copy">
                 <strong title={asset.label}>{asset.label}</strong>
@@ -565,7 +565,7 @@ function AssetMultiSelect(props: {
             <div className="asset-multi-options">
               {filteredAssets.map((asset) => {
                 const selected = props.selectedIds.includes(asset._id);
-                const thumbUrl = assetThumbUrl(asset);
+                const thumbUrls = assetThumbUrls(asset);
 
                 return (
                   <button
@@ -578,7 +578,7 @@ function AssetMultiSelect(props: {
                   >
                     <span className="asset-multi-check">{selected ? <CheckCircle2 size={16} /> : null}</span>
                     <span className="asset-multi-thumb">
-                      {thumbUrl ? <MediaImage alt={asset.label} src={thumbUrl} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
+                      {thumbUrls.length > 0 ? <MediaImage alt={asset.label} src={thumbUrls} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
                     </span>
                     <span className="asset-multi-copy">
                       <strong>{asset.label}</strong>
@@ -1587,7 +1587,7 @@ function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob
         <div className="case-reference-strip">
           {referenceAssets.map((asset) => (
             <article className="case-reference-tile" key={asset._id}>
-              {assetThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetThumbUrl(asset)} fallbackLabel="参考图不可用" /> : <MediaFallback iconSize={18} label="无预览" />}
+              {assetThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetThumbUrls(asset)} fallbackLabel="参考图不可用" /> : <MediaFallback iconSize={18} label="无预览" />}
               <div>
                 <strong>{asset.label}</strong>
                 <span>{formatAssetType(asset.type)} / {asset.status}</span>
@@ -2413,8 +2413,8 @@ function assetMediaUrl(asset: ProductionAsset): string {
   return resolveProductionAssetMediaUrl(asset);
 }
 
-function assetThumbUrl(asset: ProductionAsset): string {
-  return resolveProductionAssetPreviewUrl(asset);
+function assetThumbUrls(asset: ProductionAsset): string[] {
+  return resolveProductionAssetPreviewUrls(asset);
 }
 
 function isOpenableMediaUrl(value: string | null | undefined): boolean {

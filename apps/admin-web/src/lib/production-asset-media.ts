@@ -1,5 +1,5 @@
 import type { ProductionAsset, ProductionAssetType } from "@ai-content-factory/shared-types";
-import { isImageMediaUrl, resolveFirstMediaUrl } from "./media-url.js";
+import { isImageMediaUrl, resolveFirstMediaUrl, resolveMediaUrl } from "./media-url.js";
 
 const visualProductionAssetTypes = new Set<ProductionAssetType>([
   "character_design",
@@ -17,18 +17,36 @@ export function resolveProductionAssetMediaUrl(asset: ProductionAsset): string {
   return resolveFirstMediaUrl([asset.storagePath, asset.url]);
 }
 
+export function resolveProductionAssetMediaUrls(asset: ProductionAsset): string[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  for (const value of [asset.storagePath, asset.url]) {
+    const resolved = resolveMediaUrl(value);
+
+    if (!resolved || seen.has(resolved)) {
+      continue;
+    }
+
+    seen.add(resolved);
+    urls.push(resolved);
+  }
+
+  return urls;
+}
+
 export function resolveProductionAssetPreviewUrl(asset: ProductionAsset): string {
-  const mediaUrl = resolveProductionAssetMediaUrl(asset);
+  return resolveProductionAssetPreviewUrls(asset)[0] ?? "";
+}
 
-  if (!mediaUrl) {
-    return "";
-  }
+export function resolveProductionAssetPreviewUrls(asset: ProductionAsset): string[] {
+  return resolveProductionAssetMediaUrls(asset).filter((mediaUrl) => {
+    if (isKnownNonImageMediaUrl(mediaUrl)) {
+      return false;
+    }
 
-  if (isKnownNonImageMediaUrl(mediaUrl)) {
-    return "";
-  }
-
-  return isVisualProductionAssetType(asset.type) || isImageMediaUrl(mediaUrl) ? mediaUrl : "";
+    return isVisualProductionAssetType(asset.type) || isImageMediaUrl(mediaUrl);
+  });
 }
 
 function isKnownNonImageMediaUrl(value: string): boolean {
