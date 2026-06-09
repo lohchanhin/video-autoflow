@@ -535,9 +535,11 @@ function AssetBindingPicker(props: {
 }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<ProductionAsset["type"] | "all">("all");
+  const [libraryOpen, setLibraryOpen] = useState(props.selectedIds.length === 0);
   const selectedAssets = props.selectedIds
     .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
     .filter((asset): asset is ProductionAsset => Boolean(asset));
+  const bindingSummary = getAssetBindingSummary(selectedAssets);
   const availableTypes = assetPickerTypeOrder.filter((type) => props.assets.some((asset) => asset.type === type));
   const normalizedQuery = query.trim().toLowerCase();
   const filteredAssets = props.assets.filter((asset) => {
@@ -546,6 +548,12 @@ function AssetBindingPicker(props: {
 
     return matchesType && (!normalizedQuery || searchable.includes(normalizedQuery));
   });
+
+  useEffect(() => {
+    if (selectedAssets.length === 0) {
+      setLibraryOpen(true);
+    }
+  }, [selectedAssets.length]);
 
   function toggle(id: string) {
     props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
@@ -562,60 +570,109 @@ function AssetBindingPicker(props: {
           <strong>{props.label}</strong>
           <span>{props.description}</span>
         </div>
-        <em>{selectedAssets.length} 已选</em>
+        <div className="asset-binding-actions">
+          <em>{selectedAssets.length} 已选</em>
+          <button className="secondary-button compact-button" type="button" onClick={() => setLibraryOpen((isOpen) => !isOpen)}>
+            {libraryOpen ? "收起资产库" : "选择资产"}
+          </button>
+        </div>
       </div>
 
-      {selectedAssets.length > 0 ? (
-        <div className="asset-selected-strip" aria-label="已选资产">
-          {selectedAssets.map((asset) => (
-            <button key={asset._id} type="button" onClick={() => remove(asset._id)} title={`移除 ${asset.label}`}>
-              {assetBindingThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetBindingThumbUrl(asset)} fallbackLabel="预览不可用" /> : <ImageIcon size={16} />}
-              <span>{asset.label}</span>
-              <X size={14} />
-            </button>
-          ))}
+      <div className="asset-binding-summary-grid" aria-label="绑定资产分类统计">
+        {bindingSummary.map((item) => (
+          <button
+            className={typeFilter === item.filter ? "active" : ""}
+            key={item.label}
+            type="button"
+            onClick={() => {
+              setTypeFilter(item.filter);
+              setLibraryOpen(true);
+            }}
+          >
+            <span>{item.label}</span>
+            <strong>{item.count}</strong>
+          </button>
+        ))}
+      </div>
+
+      <div className="asset-selected-gallery" aria-label="已绑定资产">
+        {selectedAssets.length > 0 ? (
+          selectedAssets.map((asset) => (
+            <article className="asset-selected-card" key={asset._id}>
+              <button className="asset-selected-remove" type="button" onClick={() => remove(asset._id)} title={`移除 ${asset.label}`}>
+                <X size={14} />
+              </button>
+              <span className="asset-selected-thumb">
+                {assetBindingThumbUrl(asset) ? <MediaImage alt={asset.label} src={assetBindingThumbUrl(asset)} fallbackLabel="预览不可用" /> : <ImageIcon size={18} />}
+              </span>
+              <strong>{asset.label}</strong>
+              <small>{assetTypeLabel(asset.type)} / {asset.folderName || "未分类"}</small>
+            </article>
+          ))
+        ) : (
+          <div className="asset-selected-empty">
+            <ImageIcon size={18} />
+            <span>还没有绑定资产。可以保持为空让 AI 自动设计，或展开资产库选择固定角色、场景、风格参考。</span>
+          </div>
+        )}
+      </div>
+
+      {libraryOpen ? (
+        <div className="asset-picker-library">
+          <div className="asset-picker-controls">
+            <label className="asset-picker-search">
+              <Search size={16} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、文件夹、prompt" />
+            </label>
+            <div className="asset-type-filter">
+              <button className={typeFilter === "all" ? "active" : ""} type="button" onClick={() => setTypeFilter("all")}>
+                全部
+              </button>
+              {availableTypes.map((type) => (
+                <button key={type} className={typeFilter === type ? "active" : ""} type="button" onClick={() => setTypeFilter(type)}>
+                  {assetTypeLabel(type)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredAssets.length === 0 ? (
+            <EmptyState title="没有符合筛选的资产" body="换一个类型或搜索关键词。" />
+          ) : (
+            <div className="asset-picker-grid">
+              {filteredAssets.map((asset) => {
+                const selected = props.selectedIds.includes(asset._id);
+
+                return (
+                  <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
+                    <span className="asset-picker-thumb">
+                      {assetBindingThumbUrl(asset) ? <MediaImage src={assetBindingThumbUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <ImageIcon size={22} />}
+                      <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
+                    </span>
+                    <strong>{asset.label}</strong>
+                    <small>{assetTypeLabel(asset.type)} · {asset.folderName || "未分类"}</small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : null}
-
-      <div className="asset-picker-controls">
-        <label className="asset-picker-search">
-          <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、文件夹、prompt" />
-        </label>
-        <div className="asset-type-filter">
-          <button className={typeFilter === "all" ? "active" : ""} type="button" onClick={() => setTypeFilter("all")}>
-            全部
-          </button>
-          {availableTypes.map((type) => (
-            <button key={type} className={typeFilter === type ? "active" : ""} type="button" onClick={() => setTypeFilter(type)}>
-              {assetTypeLabel(type)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {filteredAssets.length === 0 ? (
-        <EmptyState title="没有符合筛选的资产" body="换一个类型或搜索关键词。" />
-      ) : (
-        <div className="asset-picker-grid">
-          {filteredAssets.map((asset) => {
-            const selected = props.selectedIds.includes(asset._id);
-
-            return (
-              <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
-                <span className="asset-picker-thumb">
-                  {assetBindingThumbUrl(asset) ? <MediaImage src={assetBindingThumbUrl(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <ImageIcon size={22} />}
-                  <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
-                </span>
-                <strong>{asset.label}</strong>
-                <small>{assetTypeLabel(asset.type)} · {asset.folderName || "未分类"}</small>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
+}
+
+function getAssetBindingSummary(assets: ProductionAsset[]): Array<{ count: number; filter: ProductionAsset["type"] | "all"; label: string }> {
+  const characters = assets.filter((asset) => asset.type === "character_design").length;
+  const scenes = assets.filter((asset) => asset.type === "scene_design" || asset.type === "first_frame" || asset.type === "last_frame").length;
+  const style = assets.filter((asset) => asset.type === "style_reference").length;
+
+  return [
+    { count: assets.length, filter: "all", label: "全部" },
+    { count: characters, filter: "character_design", label: "角色" },
+    { count: scenes, filter: "scene_design", label: "场景" },
+    { count: style, filter: "style_reference", label: "风格" }
+  ];
 }
 
 function seriesStatusLabel(status: ContentSeriesStatus): string {
