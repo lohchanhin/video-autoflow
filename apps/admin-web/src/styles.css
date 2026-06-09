@@ -895,6 +895,16 @@ textarea {
   align-self: start;
 }
 
+.budget-rescue-panel {
+  align-self: start;
+  border-color: #fecaca;
+  background: #fffafa;
+}
+
+.budget-rescue-panel .secondary-button {
+  width: fit-content;
+}
+
 .budget-scope-list {
   display: grid;
   gap: 10px;
@@ -5405,7 +5415,8 @@ textarea {
 }
 
 .cost-case-row {
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto auto auto;
+  overflow-x: auto;
 }
 
 .key-settings-row {

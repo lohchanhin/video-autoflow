@@ -4952,6 +4952,7 @@ export function App() {
             reportDirtyState={reportDirtyDraft}
             storedVideos={storedVideos}
             summary={summary}
+            updateCaseDetails={updateCaseDetails}
             updateBudgetSettings={updateBudgetSettings}
           />
         ) : null}

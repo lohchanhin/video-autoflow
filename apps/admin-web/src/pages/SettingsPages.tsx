@@ -4,6 +4,7 @@ import type { CostLog, CostSummaryResponse } from "@ai-content-factory/shared-ty
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import { getCostSummary, listCostLogs } from "../lib/api.js";
 import type { BudgetSettings, ProviderKeyRecord, PublishingTarget, StorageSettings, StoredVideo, YouTubeAccount } from "../lib/admin-data.js";
+import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
 import { createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import {
   createLocalDataSnapshot,
@@ -669,6 +670,7 @@ export function CostPage(props: {
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   storedVideos: StoredVideo[];
   summary: { totalCost: number; activeCases: number };
+  updateCaseDetails: (id: string, patch: Partial<Pick<AdminJob, "costLimitRM">>) => void;
   updateBudgetSettings: (settings: BudgetSettings) => void;
 }) {
   const overLimitJobs = props.jobs.filter((job) => job.actualCostRM >= job.costLimitRM);
@@ -701,6 +703,16 @@ export function CostPage(props: {
 
     props.updateBudgetSettings(nextSettings);
     budgetEditor.markSaved(nextSettings);
+  }
+
+  function raiseCaseBudget(job: AdminJob, nextLimit: number) {
+    props.updateCaseDetails(job.id, { costLimitRM: Math.max(0.1, Number(nextLimit) || job.costLimitRM) });
+  }
+
+  function raiseAllOverLimitCases() {
+    for (const job of overLimitJobs) {
+      raiseCaseBudget(job, getCaseBudgetRecoveryAmount(job.actualCostRM, job.costLimitRM));
+    }
   }
 
   async function refreshLedger() {
@@ -827,6 +839,21 @@ export function CostPage(props: {
         </div>
       </div>
 
+      {overLimitJobs.length > 0 ? (
+        <div className="panel budget-rescue-panel">
+          <SectionHeader
+            eyebrow="当前阻塞"
+            title={`${overLimitJobs.length} 个 Case 已超预算`}
+            action={<StatusPill tone="danger">需要处理</StatusPill>}
+          />
+          <p className="muted-copy">这些是已经存在的 Case。调高全局默认预算不会自动覆盖它们；可以在这里直接把它们提高到建议预算，或打开 Case 精细调整。</p>
+          <button className="secondary-button" type="button" onClick={raiseAllOverLimitCases}>
+            <RefreshCw size={15} />
+            全部调到建议预算
+          </button>
+        </div>
+      ) : null}
+
       <div className="panel">
         <SectionHeader eyebrow="成本控制" title="真实成本记录" action={<StatusPill tone={ledgerSummary?.pricingMissingCount ? "warning" : overLimitJobs.length > 0 ? "danger" : "success"}>{ledgerSummary?.pricingMissingCount ? "有待补价" : overLimitJobs.length > 0 ? "超预算" : "正常"}</StatusPill>} />
         <div className="budget-stack">
@@ -874,6 +901,11 @@ export function CostPage(props: {
               <span>RM {job.actualCostRM.toFixed(2)}</span>
               <span>上限 RM {job.costLimitRM.toFixed(2)}</span>
               <StatusPill tone={job.actualCostRM >= job.costLimitRM ? "danger" : "success"}>{job.actualCostRM >= job.costLimitRM ? "停止" : "OK"}</StatusPill>
+              {job.actualCostRM >= job.costLimitRM ? (
+                <button className="secondary-button compact-button" type="button" onClick={() => raiseCaseBudget(job, getCaseBudgetRecoveryAmount(job.actualCostRM, job.costLimitRM))}>
+                  调到 RM {getCaseBudgetRecoveryAmount(job.actualCostRM, job.costLimitRM).toFixed(2)}
+                </button>
+              ) : null}
               <button className="secondary-button compact-button" type="button" onClick={() => props.openCase(job.id)}>
                 打开 Case
               </button>
