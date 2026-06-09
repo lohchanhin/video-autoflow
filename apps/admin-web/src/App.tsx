@@ -183,7 +183,7 @@ const viewTitles: Record<ActiveView, { eyebrow: string; title: string }> = {
   dashboard: { eyebrow: "运营总览", title: "内容工厂控制台" },
   automation: { eyebrow: "自动排程", title: "自动化控制" },
   trends: { eyebrow: "市场信号", title: "趋势雷达" },
-  series: { eyebrow: "系列内容库", title: "Series 题库规划" },
+  series: { eyebrow: "系列内容库", title: "系列题库规划" },
   cases: { eyebrow: "生产案件", title: "影片 Case 历史" },
   assets: { eyebrow: "设计管理", title: "设计资产中心" },
   agents: { eyebrow: "主控 Agent", title: "AI 主控 Agent" },

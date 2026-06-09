@@ -247,7 +247,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 <Field label="语言">
                   <select value={seriesDraft.language} onChange={(event) => patchSeriesDraft({ language: event.target.value as ContentSeries["language"] })}>
                     <option value="zh-CN">中文</option>
-                    <option value="en-US">English</option>
+                    <option value="en-US">英文</option>
                   </select>
                 </Field>
                 <Field label="目标观众 / 市场">

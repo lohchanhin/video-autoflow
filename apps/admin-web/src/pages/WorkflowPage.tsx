@@ -304,7 +304,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
           <WorkflowStat label="硬阻塞" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
           <WorkflowStat label="提醒事项" value={String(readiness.attentionCount)} tone={readiness.attentionCount === 0 ? "success" : "warning"} />
         </div>
-        <div className="workflow-tabs" role="tablist" aria-label="Workflow sections">
+        <div className="workflow-tabs" role="tablist" aria-label="流程区块">
           <TabButton active={activeTab === "pipeline"} label="流程路由" onClick={() => openWorkflowTab("pipeline")} />
           <TabButton active={activeTab === "tools"} label="工具设置" onClick={() => openWorkflowTab("tools")} />
           <TabButton active={activeTab === "readiness"} label="就绪检查" onClick={() => openWorkflowTab("readiness")} />
@@ -314,7 +314,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       {activeTab === "pipeline" ? (
         <section className="workflow-tab-layout">
           <section className="panel workflow-list-panel">
-            <SectionHeader eyebrow="Stage routing" title="生产流程路由" />
+            <SectionHeader eyebrow="阶段路由" title="生产流程路由" />
             <div className="workflow-table-scroll">
               <div className="workflow-route-table">
                 <div className="workflow-table-header workflow-route-header">
@@ -332,7 +332,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                         <strong title={stage.label}>{stage.label}</strong>
                         <span title={stage.defaultOutput}>{stage.defaultOutput}</span>
                       </div>
-                      <span className="agent-controller-cell" title={producerAgent?.name ?? "No agent"}>{producerAgent?.name ?? "No agent"}</span>
+                      <span className="agent-controller-cell" title={producerAgent?.name ?? "未绑定 Agent"}>{producerAgent?.name ?? "未绑定 Agent"}</span>
                       <StatusPill tone={tone}>{label}</StatusPill>
                       <button
                         className="secondary-button compact-button"
@@ -366,7 +366,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       {activeTab === "tools" ? (
         <section className="workflow-tab-layout">
           <section className="panel workflow-list-panel">
-            <SectionHeader eyebrow="Tool registry" title="AI 工具端点" />
+            <SectionHeader eyebrow="工具注册表" title="AI 工具端点" />
             <div className="workflow-table-scroll">
               <div className="workflow-tools-table">
                 <div className="workflow-table-header workflow-tools-header">
