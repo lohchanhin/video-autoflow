@@ -44,14 +44,14 @@ export const apiBaseUrl = getApiBaseUrl().replace(/\/$/u, "");
 function getApiBaseUrl(): string {
   if (window.location.hostname && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
     if (isIpAddress(window.location.hostname)) {
-      return import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:4000`;
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
     }
 
     // Production domains must use the same-origin reverse proxy so HTTPS pages do not call an HTTP API base from VPS env.
     return `${window.location.origin}/api`;
   }
 
-  return import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:4000";
+  return "http://127.0.0.1:4000";
 }
 
 function isIpAddress(hostname: string): boolean {
