@@ -43,10 +43,19 @@ export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || getDefaultApiBas
 
 function getDefaultApiBaseUrl(): string {
   if (window.location.hostname && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
+    if (isIpAddress(window.location.hostname)) {
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
+    }
+
+    const rootHost = window.location.hostname.replace(/^www\./u, "");
+    return `${window.location.protocol}//api.${rootHost}`;
   }
 
   return "http://127.0.0.1:4000";
+}
+
+function isIpAddress(hostname: string): boolean {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(hostname) || hostname.includes(":");
 }
 
 async function fetchJson<T>(path: string, init: RequestInit | undefined, fallbackMessage: string): Promise<T> {
