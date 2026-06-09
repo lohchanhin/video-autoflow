@@ -252,12 +252,12 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
   const artifactByStage: Partial<Record<ProductionStageId, { artifactPath: string; output: string; status: JobProcessRecord["status"] }>> = {
     archive: {
       artifactPath: result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath,
-      output: result.storage.fallbackReason ?? `Stored with ${result.storage.driver}.`,
+      output: result.storage.fallbackReason ?? `已通过 ${result.storage.driver} 存储。`,
       status: "done"
     },
     compose: {
       artifactPath: result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath,
-      output: `Generated ${result.durationSeconds.toFixed(1)}s 1080x1920 MP4 from reviewed scene images and synced voiceover audio.`,
+      output: `已用审核后的场景画面和同步配音合成 ${result.durationSeconds.toFixed(1)}s 1080x1920 MP4。`,
       status: "done"
     },
     image: {
@@ -267,12 +267,12 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
     },
     prompt: {
       artifactPath: result.artifacts.storyboard.publicUrl ?? result.artifacts.storyboard.storagePath,
-      output: result.storyboard.map((scene) => `Scene ${scene.sceneId}: ${scene.imagePrompt}`).join("\n"),
+      output: result.storyboard.map((scene) => `场景 ${scene.sceneId}: ${scene.imagePrompt}`).join("\n"),
       status: "done"
     },
     qc: {
       artifactPath: result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath,
-      output: "Local smoke QC passed: final MP4 artifact was created and stored.",
+      output: "本地基础 QC 通过：最终 MP4 已创建并存储。",
       status: "done"
     },
     script: {
@@ -282,12 +282,12 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
     },
     storyboard: {
       artifactPath: result.artifacts.storyboard.publicUrl ?? result.artifacts.storyboard.storagePath,
-      output: result.storyboard.map((scene) => `Scene ${scene.sceneId} (${scene.durationSeconds.toFixed(1)}s): ${scene.visual}`).join("\n"),
+      output: result.storyboard.map((scene) => `场景 ${scene.sceneId} (${scene.durationSeconds.toFixed(1)}s): ${scene.visual}`).join("\n"),
       status: "done"
     },
     subtitle: {
       artifactPath: result.artifacts.subtitles.publicUrl ?? result.artifacts.subtitles.storagePath,
-      output: "SRT subtitles regenerated from the same storyboard voice text used for TTS and retimed to the generated audio duration.",
+      output: "SRT 字幕已根据分镜旁白重新生成，并按配音音频时长重新校时。",
       status: "done"
     },
     tts: {
@@ -295,7 +295,7 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
         result.artifacts.voiceover.publicUrl ?? result.artifacts.voiceover.storagePath,
         result.artifacts.soundEffects.publicUrl ?? result.artifacts.soundEffects.storagePath
       ].join("\n"),
-      output: "Voiceover audio and SFX cue manifest were attached for final composition. Video/subtitle timing is synced from this audio.",
+      output: "配音音频和音效 cue 清单已接入最终合成；影片和字幕时长会跟随这段音频同步。",
       status: "done"
     },
     video: {
@@ -358,7 +358,7 @@ function applyVideoClipGenerationResultsToRecords(
     ...results.flatMap((result) => [
       `场景 ${result.clip.sceneId}: ${result.clip.durationSeconds}s / ${result.clip.mode} / ${result.model}`,
       `任务: ${result.clip.taskId}`,
-      result.fallbackReason ? `Note: ${result.fallbackReason}` : "",
+      result.fallbackReason ? `备注: ${result.fallbackReason}` : "",
       result.clip.prompt,
       ""
     ])
@@ -387,10 +387,10 @@ function describeComposedSceneImages(images: GenerateVideoResponse["artifacts"][
   const rasterCount = paths.filter(isRasterImageArtifact).length;
 
   if (rasterCount > 0) {
-    return `${rasterCount} generated scene image(s) attached and used for MP4 composition. Review the thumbnails in Artifact Library before approval.`;
+    return `已接入 ${rasterCount} 张可审核场景图片，并用于 MP4 合成。批准前请在资产库检查缩略图。`;
   }
 
-  return `${images.length} non-raster scene image artifact(s) attached. Run Generate images first to create OpenAI PNG review assets before final approval.`;
+  return `已接入 ${images.length} 个非图片格式的场景资产。请先执行「生成图片」，建立可审核的 OpenAI PNG/JPG 场景图后再批准。`;
 }
 
 function isRasterImageArtifact(value: string | undefined): boolean {
@@ -867,7 +867,7 @@ function applyScriptStoryResultToRecords(
     if (record.stageId === "bgm") {
       return {
         ...record,
-        input: `Generate optional background music from this approved AI outline:\n${backgroundMusicOutput}`,
+        input: `根据已确认的大纲生成可选背景音乐：\n${backgroundMusicOutput}`,
         output: backgroundMusicOutput,
         status: "pending",
         updatedAt: now
@@ -883,7 +883,7 @@ function formatBackgroundMusicBrief(result: GenerateScriptStoryResponse): string
     enabled: true,
     instrumentation: "minimal cinematic pads, soft pulses, subtle percussion",
     mood: "cinematic, restrained, narration-friendly",
-    prompt: `Instrumental background music for "${result.script.title}". No vocals, no copyrighted melody, leave space for narration.`,
+    prompt: `为《${result.script.title}》生成无歌词背景音乐。不要使用版权旋律，给旁白留出空间。`,
     style: "cinematic underscore",
     tempo: "slow to medium"
   };
@@ -953,7 +953,7 @@ function applyImageGenerationResultToRecords(records: JobProcessRecord[], jobId:
       ...record,
       artifactPath: result.images.map((image) => image.asset.publicUrl ?? image.asset.storagePath).join("\n"),
       costRM: result.costRM,
-      notes: failedChecks.length > 0 ? `${failedChecks.length} scene image(s) failed visual QC. Review and regenerate before composing MP4.` : "",
+      notes: failedChecks.length > 0 ? `${failedChecks.length} 张场景图片未通过视觉 QC。请审核并重跑后再合成 MP4。` : "",
       output: result.images.map((image) => [
         `Scene ${image.sceneId}: ${image.prompt}`,
         image.qualityCheck ? `QC: ${image.qualityCheck.status} - ${image.qualityCheck.summary}` : "QC: not checked",
@@ -976,7 +976,7 @@ function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       return {
         ...record,
         artifactPath: "",
-        output: "Waiting for compose. Subtitles will be regenerated from the same storyboard voice text used for TTS and retimed to the voiceover audio.",
+        output: "等待合成阶段。字幕会使用与 TTS 相同的分镜旁白重新生成，并按配音音频校时。",
         status: "pending",
         updatedAt: now
       };
@@ -986,7 +986,7 @@ function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       return {
         ...record,
         artifactPath: "",
-        output: "Waiting for regenerated MP4 after the new voiceover audio.",
+        output: "新的配音音频已生成，等待重新合成 MP4。",
         status: "pending",
         updatedAt: now
       };
@@ -1001,8 +1001,8 @@ function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       artifactPath: result.audio.publicUrl ?? result.audio.storagePath,
       costRM: result.costRM,
       output: [
-        `Generated voiceover audio with ${result.provider} ${result.model} / ${result.voice}. Format: ${result.format}.`,
-        "Narration source is storyboard scene voice text, so subtitles and visual timing use the same text.",
+        `已使用 ${result.provider} ${result.model} / ${result.voice} 生成配音音频。格式：${result.format}。`,
+        "旁白来源是分镜场景文本，字幕和画面节奏会使用同一份文本。",
         "",
         result.voiceoverText
       ].join("\n"),
@@ -1023,7 +1023,7 @@ function applyBgmGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       return {
         ...record,
         artifactPath: "",
-        output: "Waiting for regenerated MP4 after the new background music.",
+        output: "新的背景音乐已生成，等待重新合成 MP4。",
         status: "pending",
         updatedAt: now
       };
@@ -1038,7 +1038,7 @@ function applyBgmGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       artifactPath: result.audio.publicUrl ?? result.audio.storagePath,
       costRM: result.costRM,
       output: [
-        `Generated instrumental background music with ${result.provider} ${result.model}. Format: ${result.format}. Duration: ${result.durationSeconds}s.`,
+        `已使用 ${result.provider} ${result.model} 生成无歌词背景音乐。格式：${result.format}，时长：${result.durationSeconds}s。`,
         result.songId ? `Song ID: ${result.songId}` : "",
         "",
         result.prompt
@@ -1981,7 +1981,7 @@ export function App() {
     setJobs((currentJobs) => [job, ...currentJobs]);
     setJobProcessRecords((currentRecords) => [...createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), ...currentRecords]);
     setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets]);
-    appendCaseActivity(job.id, "case_created", "Case created", "Case was created without a script preview.");
+    appendCaseActivity(job.id, "case_created", "Case 已建立", "这个 Case 是手动建立的，尚未生成脚本大纲。");
     void handleBootstrapProductionAssets(job);
     void attachSelectedAssetsToCase(job, selectedAssets.assets);
     setSelectedJobId(job.id);
@@ -2034,7 +2034,7 @@ export function App() {
     setIsGeneratingDraftPreview(true);
 
     if (apiState !== "online") {
-      setGenerationError(`API server is ${apiState}. Script preview needs ${apiBaseUrl}.`);
+      setGenerationError(`API 服务当前为 ${apiState}。生成大纲需要连接 ${apiBaseUrl}。`);
       setIsGeneratingDraftPreview(false);
       return;
     }
@@ -2063,8 +2063,8 @@ export function App() {
       appendCaseActivity(
         draftJobId,
         "script_preview_generated",
-        "Script preview generated",
-        `${result.provider} ${result.model} returned ${result.storyboard.length} storyboard scenes.`
+        "大纲预览已生成",
+        `${result.provider} ${result.model} 已返回 ${result.storyboard.length} 个分镜场景。`
       );
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Script preview generation failed.");
@@ -2101,8 +2101,8 @@ export function App() {
     setJobs((currentJobs) => [job, ...currentJobs.filter((currentJob) => currentJob.id !== job.id)]);
     setJobProcessRecords((currentRecords) => [...records, ...currentRecords.filter((record) => record.jobId !== job.id)]);
     setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets.filter((target) => target.jobId !== job.id)]);
-    appendCaseActivity(job.id, "script_preview_approved", "Script preview approved", "Generated script and storyboard were approved and converted into a production case.");
-    appendCaseActivity(job.id, "case_created", "Case created", "Case entered production with script, storyboard, and image prompts already recorded.");
+    appendCaseActivity(job.id, "script_preview_approved", "大纲已确认", "已确认标题、脚本、分镜和图片提示词，并转换为生产 Case。");
+    appendCaseActivity(job.id, "case_created", "Case 已建立", "这个 Case 已进入生产，脚本、分镜和图片提示词已写入记录。");
     void handleBootstrapProductionAssets(job);
     void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(
       caseDraftPreview.input.characterAssetIds ?? [],
@@ -2136,7 +2136,7 @@ export function App() {
     let workingRecords: JobProcessRecord[] = [];
 
     try {
-      setAutoGenerateStep(`${options.sourceLabel}: Writing script and storyboard`);
+      setAutoGenerateStep(`${options.sourceLabel}: 生成脚本与分镜`);
       const scriptResult = await requestDraftScriptStoryGeneration(
         {
           costLimitRM: pipelineInput.costLimitRM,
@@ -2172,15 +2172,15 @@ export function App() {
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(workingJob!.id, activeTargetIds), ...currentTargets.filter((target) => target.jobId !== workingJob!.id)]);
       addCaseActivities([
         createCaseActivity({
-          detail: `${options.sourceLabel} created this production case and started autopilot.`,
+          detail: `${options.sourceLabel}已建立生产 Case，并启动自动生产流程。`,
           jobId: workingJob.id,
-          title: "Case created",
+          title: "Case 已建立",
           type: "case_created"
         }),
         createCaseActivity({
-          detail: `${scriptResult.provider} ${scriptResult.model} generated script, storyboard, and image prompts.`,
+          detail: `${scriptResult.provider} ${scriptResult.model} 已生成脚本、分镜和图片提示词。`,
           jobId: workingJob.id,
-          title: "Script/story generated",
+          title: "脚本与分镜已生成",
           type: "script_generated"
         })
       ]);
@@ -2193,8 +2193,8 @@ export function App() {
         throw new Error(`大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`);
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
-      setAutoGenerateStep(`${options.sourceLabel}: Generating scene images`);
+      assertCaseBudgetAvailable(workingJob, "自动生成图片");
+      setAutoGenerateStep(`${options.sourceLabel}: 生成场景图片`);
       workingJob = {
         ...workingJob,
         status: "IMAGE_GENERATING",
@@ -2205,7 +2205,7 @@ export function App() {
         record.stageId === "image"
           ? {
               ...record,
-              output: "Autopilot is generating reviewable scene images...",
+              output: "自动生产正在生成可审核的场景图片...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2233,18 +2233,18 @@ export function App() {
       ]);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Images generated", `${imageResult.provider} ${imageResult.model} generated ${imageResult.images.length} scene image(s). Cost RM ${imageResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "图片已生成", `${imageResult.provider} ${imageResult.model} 已生成 ${imageResult.images.length} 张场景图片。成本 RM ${imageResult.costRM.toFixed(4)}。`);
 
       if (imageResult.requiresReview) {
-        throw new Error("Image visual QC found scene issues. Review the generated images, regenerate failed scenes, then continue to voiceover and MP4.");
+        throw new Error("图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。");
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot voiceover generation");
-      setAutoGenerateStep(`${options.sourceLabel}: Generating voiceover`);
+      assertCaseBudgetAvailable(workingJob, "自动生成配音");
+      setAutoGenerateStep(`${options.sourceLabel}: 生成配音`);
       const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, workingJob.id);
 
       if (!voiceoverText) {
-        throw new Error("Autopilot could not find storyboard voice text for TTS.");
+        throw new Error("自动生产找不到分镜旁白文本，无法生成 TTS 配音。");
       }
 
       workingJob = {
@@ -2257,7 +2257,7 @@ export function App() {
         record.stageId === "tts"
           ? {
               ...record,
-              output: "Autopilot is generating synced OpenAI TTS voiceover audio...",
+              output: "自动生产正在根据分镜旁白生成同步配音音频...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2276,10 +2276,10 @@ export function App() {
       workingRecords = applyTtsGenerationResultToRecords(workingRecords, workingJob.id, ttsResult, ttsNow);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} generated synced narration audio. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已生成同步旁白音频。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot MP4 composition");
-      setAutoGenerateStep(`${options.sourceLabel}: Composing MP4`);
+      assertCaseBudgetAvailable(workingJob, "自动合成 MP4");
+      setAutoGenerateStep(`${options.sourceLabel}: 合成 MP4`);
       workingJob = {
         ...workingJob,
         status: "COMPOSING",
@@ -2290,7 +2290,7 @@ export function App() {
         record.stageId === "compose"
           ? {
               ...record,
-              output: "Autopilot is composing MP4 from images, subtitles, and synced voiceover audio...",
+              output: "自动生产正在用图片、字幕和同步配音合成 MP4...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2323,7 +2323,7 @@ export function App() {
 
       return workingJob;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Autopilot generation failed.";
+      const message = error instanceof Error ? error.message : "自动生产失败。";
       setGenerationError(message);
 
       if (workingJob) {
@@ -2347,7 +2347,7 @@ export function App() {
               : record
           )
         );
-        appendCaseActivity(failedJob.id, "error", "Autopilot failed", message);
+        appendCaseActivity(failedJob.id, "error", "自动生产失败", message);
       }
 
       throw error;
@@ -2375,7 +2375,7 @@ export function App() {
     }
 
     if (apiState !== "online") {
-      setGenerationError(`API server is ${apiState}. Autopilot generation needs ${apiBaseUrl}.`);
+      setGenerationError(`API 服务当前为 ${apiState}。自动生产需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2406,7 +2406,7 @@ export function App() {
     setGenerationError(null);
     setCaseDraftPreview(null);
     setIsAutoGeneratingCase(true);
-    setAutoGenerateStep("Writing script and storyboard");
+    setAutoGenerateStep("生成脚本与分镜");
 
     try {
       const scriptResult = await requestDraftScriptStoryGeneration(
@@ -2444,15 +2444,15 @@ export function App() {
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(workingJob!.id, activeTargetIds), ...currentTargets.filter((target) => target.jobId !== workingJob!.id)]);
       addCaseActivities([
         createCaseActivity({
-          detail: "Autopilot created this production case from the AI outline.",
+          detail: "自动生产已根据 AI 大纲建立这个生产 Case。",
           jobId: workingJob.id,
-          title: "Case created",
+          title: "Case 已建立",
           type: "case_created"
         }),
         createCaseActivity({
-          detail: `${scriptResult.provider} ${scriptResult.model} generated script, storyboard, and image prompts.`,
+          detail: `${scriptResult.provider} ${scriptResult.model} 已生成脚本、分镜和图片提示词。`,
           jobId: workingJob.id,
-          title: "Script/story generated",
+          title: "脚本与分镜已生成",
           type: "script_generated"
         })
       ]);
@@ -2463,8 +2463,8 @@ export function App() {
         throw new Error(`大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`);
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
-      setAutoGenerateStep("Generating scene images");
+      assertCaseBudgetAvailable(workingJob, "自动生成图片");
+      setAutoGenerateStep("生成场景图片");
       workingJob = {
         ...workingJob,
         status: "IMAGE_GENERATING",
@@ -2475,7 +2475,7 @@ export function App() {
         record.stageId === "image"
           ? {
               ...record,
-              output: "Autopilot is generating reviewable scene images...",
+              output: "自动生产正在生成可审核的场景图片...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2503,18 +2503,18 @@ export function App() {
       ]);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Images generated", `${imageResult.provider} ${imageResult.model} generated ${imageResult.images.length} scene image(s). Cost RM ${imageResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "图片已生成", `${imageResult.provider} ${imageResult.model} 已生成 ${imageResult.images.length} 张场景图片。成本 RM ${imageResult.costRM.toFixed(4)}。`);
 
       if (imageResult.requiresReview) {
-        throw new Error("Image visual QC found scene issues. Review the generated images, regenerate failed scenes, then continue to voiceover and MP4.");
+        throw new Error("图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。");
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot voiceover generation");
-      setAutoGenerateStep("Generating voiceover");
+      assertCaseBudgetAvailable(workingJob, "自动生成配音");
+      setAutoGenerateStep("生成配音");
       const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, workingJob.id);
 
       if (!voiceoverText) {
-        throw new Error("Autopilot could not find storyboard voice text for TTS.");
+        throw new Error("自动生产找不到分镜旁白文本，无法生成 TTS 配音。");
       }
 
       workingJob = {
@@ -2527,7 +2527,7 @@ export function App() {
         record.stageId === "tts"
           ? {
               ...record,
-              output: "Autopilot is generating synced OpenAI TTS voiceover audio...",
+              output: "自动生产正在根据分镜旁白生成同步配音音频...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2546,10 +2546,10 @@ export function App() {
       workingRecords = applyTtsGenerationResultToRecords(workingRecords, workingJob.id, ttsResult, ttsNow);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} generated synced narration audio. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已生成同步旁白音频。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot MP4 composition");
-      setAutoGenerateStep("Composing MP4");
+      assertCaseBudgetAvailable(workingJob, "自动合成 MP4");
+      setAutoGenerateStep("合成 MP4");
       workingJob = {
         ...workingJob,
         status: "COMPOSING",
@@ -2560,7 +2560,7 @@ export function App() {
         record.stageId === "compose"
           ? {
               ...record,
-              output: "Autopilot is composing MP4 from images, subtitles, and synced voiceover audio...",
+              output: "自动生产正在用图片、字幕和同步配音合成 MP4...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2591,7 +2591,7 @@ export function App() {
           : `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Autopilot generation failed.";
+      const message = error instanceof Error ? error.message : "自动生产失败。";
       setGenerationError(message);
 
       if (workingJob) {
@@ -2615,7 +2615,7 @@ export function App() {
               : record
           )
         );
-        appendCaseActivity(failedJob.id, "error", "Autopilot failed", message);
+        appendCaseActivity(failedJob.id, "error", "自动生产失败", message);
       }
     } finally {
       setAutoGenerateStep(null);
@@ -2637,7 +2637,7 @@ export function App() {
     setJobProcessRecords((currentRecords) => syncProcessRecordsWithJob(updatedJob, currentRecords, staffAgents));
     if (updatedJob.status !== currentJob.status) {
       const type: CaseActivityType = updatedJob.status === "FAILED" ? "case_failed" : currentJob.status === "FAILED" ? "case_retried" : "case_advanced";
-      appendCaseActivity(id, type, "Case status changed", `${currentJob.status} -> ${updatedJob.status}`);
+      appendCaseActivity(id, type, "Case 状态已更新", `${currentJob.status} -> ${updatedJob.status}`);
     }
     setSelectedJobId(id);
   }
@@ -2692,7 +2692,7 @@ export function App() {
         return null;
       });
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production assets load failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产加载失败。");
     } finally {
       setIsLoadingProductionAssets(false);
     }
@@ -2752,7 +2752,7 @@ export function App() {
 
   async function handleCreateSeries() {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. Series library needs ${apiBaseUrl}.`);
+      setSeriesError(`API 服务当前为 ${apiState}。系列题库需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2826,7 +2826,7 @@ export function App() {
 
   async function handleGenerateSeriesIdeas(seriesId: string, count: number) {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. AI 题库需要 ${apiBaseUrl}。`);
+      setSeriesError(`API 服务当前为 ${apiState}。AI 题库需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2855,7 +2855,7 @@ export function App() {
 
   async function handleConvertSeriesEpisodeToCase(series: ContentSeries, episode: SeriesEpisodeIdea) {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. Episode convert needs ${apiBaseUrl}.`);
+      setSeriesError(`API 服务当前为 ${apiState}。单集转 Case 需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2895,7 +2895,7 @@ export function App() {
       setJobs((currentJobs) => [job, ...currentJobs]);
       setJobProcessRecords((currentRecords) => [...createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), ...currentRecords]);
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets]);
-      appendCaseActivity(job.id, "case_created", "Case created from Series", `Series: ${series.name}. Episode: ${episode.title}.`);
+      appendCaseActivity(job.id, "case_created", "已从系列题库建立 Case", `系列：${series.name}。单集：${episode.title}。`);
       void handleBootstrapProductionAssets(job);
       void attachSelectedAssetsToCase(job, referenceAssets);
       setSeriesEpisodes((currentEpisodes) => currentEpisodes.map((currentEpisode) => (currentEpisode._id === episode._id ? response.episode : currentEpisode)));
@@ -2909,7 +2909,7 @@ export function App() {
 
   async function handleBootstrapProductionAssets(job: AdminJob) {
     if (apiState !== "online") {
-      setAssetError(`API server is ${apiState}. Asset planning needs ${apiBaseUrl}.`);
+      setAssetError(`API 服务当前为 ${apiState}。资产规划需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -3026,16 +3026,16 @@ export function App() {
       setAssetFilterJobId(targetJob?.id ?? "");
       setAssetError(null);
       if (targetJob) {
-        appendCaseActivity(targetJob.id, "stage_updated", "Production asset row added", "A manual MongoDB asset planning row was created.");
+        appendCaseActivity(targetJob.id, "stage_updated", "生产资产行已新增", "已建立一条手动 MongoDB 资产规划记录。");
       }
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production asset create failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产创建失败。");
     }
   }
 
   async function handleCreateDesignProductionAsset(input: { folderName: string; jobId?: string | undefined; label: string; prompt: string; tags: string[]; type: ProductionAssetType }): Promise<ProductionAsset | null> {
     if (apiState !== "online") {
-      setAssetError(`API server is ${apiState}. 设计生成需要 ${apiBaseUrl}。`);
+      setAssetError(`API 服务当前为 ${apiState}。设计生成需要连接 ${apiBaseUrl}。`);
       return null;
     }
 
@@ -3070,7 +3070,7 @@ export function App() {
 
   async function handleCloneProductionAsset(asset: ProductionAsset): Promise<ProductionAsset | null> {
     if (apiState !== "online") {
-      setAssetError(`API server is ${apiState}. 复制资产版本需要 ${apiBaseUrl}。`);
+      setAssetError(`API 服务当前为 ${apiState}。复制资产版本需要连接 ${apiBaseUrl}。`);
       return null;
     }
 
@@ -3081,7 +3081,7 @@ export function App() {
       setSelectedProductionAssetId(response.asset._id);
       setAssetFilterJobId(response.asset.jobId === libraryJobId ? "" : response.asset.jobId);
       setAssetError(null);
-      appendCaseActivity(asset.jobId, "stage_updated", "Production asset version draft created", `${response.asset.label} was forked from ${asset.label}; the original approved asset was preserved.`);
+      appendCaseActivity(asset.jobId, "stage_updated", "资产版本草稿已建立", `${response.asset.label} 已从 ${asset.label} 复制；原本已批准的资产会保留。`);
       return response.asset;
     } catch (error) {
       setAssetError(error instanceof Error ? error.message : "资产版本草稿创建失败。");
@@ -3096,7 +3096,7 @@ export function App() {
       setProductionAssets((currentAssets) => currentAssets.map((asset) => (asset._id === id ? response.asset : asset)));
       setAssetError(null);
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production asset update failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产更新失败。");
     }
   }
 
@@ -3110,10 +3110,10 @@ export function App() {
       setAssetError(null);
 
       if (asset) {
-        appendCaseActivity(asset.jobId, "stage_updated", "Production asset deleted", `${asset.label} was removed from MongoDB production_assets.`);
+        appendCaseActivity(asset.jobId, "stage_updated", "生产资产已删除", `${asset.label} 已从 MongoDB production_assets 移除。`);
       }
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production asset delete failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产删除失败。");
     }
   }
 
@@ -3124,14 +3124,14 @@ export function App() {
 
     const job = jobs.find((candidate) => candidate.id === asset.jobId) ?? null;
 
-    if (job && blockIfCaseBudgetExceeded(job, "Production asset generation")) {
+    if (job && blockIfCaseBudgetExceeded(job, "生产资产生成")) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Production asset generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。生产资产生成需要连接 ${apiBaseUrl}。`;
       setAssetError(message);
-      appendCaseActivity(asset.jobId, "error", "Production asset generation blocked", message);
+      appendCaseActivity(asset.jobId, "error", "生产资产生成被阻止", message);
       return;
     }
 
@@ -3154,11 +3154,11 @@ export function App() {
         )
       );
       setAssetError(null);
-      appendCaseActivity(asset.jobId, "stage_updated", "Production asset generated", `${response.asset.type} generated and stored in MongoDB production_assets. Cost RM ${response.costRM.toFixed(4)}.`);
+      appendCaseActivity(asset.jobId, "stage_updated", "生产资产已生成", `${response.asset.type} 已生成并写入 MongoDB production_assets。成本 RM ${response.costRM.toFixed(4)}。`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Production asset generation failed.";
+      const message = error instanceof Error ? error.message : "生产资产生成失败。";
       setAssetError(message);
-      appendCaseActivity(asset.jobId, "error", "Production asset generation failed", message);
+      appendCaseActivity(asset.jobId, "error", "生产资产生成失败", message);
       await refreshProductionAssets();
     } finally {
       setGeneratingProductionAssetIds((currentIds) => currentIds.filter((id) => id !== asset._id));
@@ -3233,7 +3233,7 @@ export function App() {
 
       return [createStoredVideoFromJob(job, storageSettings), ...currentVideos];
     });
-    appendCaseActivity(job.id, "stored", "Video stored", `Video was registered in ${storageSettings.driver === "local" ? "local uploads" : storageSettings.driver.toUpperCase()} storage.`);
+    appendCaseActivity(job.id, "stored", "影片已登记入库", `影片已登记到 ${storageSettings.driver === "local" ? "本地 uploads" : storageSettings.driver.toUpperCase()} 存储。`);
     switchView("storage");
   }
 
@@ -3248,14 +3248,14 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Script/story generation")) {
+    if (blockIfCaseBudgetExceeded(job, "脚本/分镜生成")) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Script generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。脚本生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Script generation blocked", message);
+      appendCaseActivity(job.id, "error", "脚本生成被阻止", message);
       return;
     }
 
@@ -3301,12 +3301,12 @@ export function App() {
         setSceneReviews((currentReviews) => currentReviews.filter((review) => review.jobId !== job.id));
         setCaseQcReports((currentReports) => currentReports.filter((report) => report.jobId !== job.id));
         setStoredVideos((currentVideos) => currentVideos.filter((video) => video.jobId !== job.id));
-        appendCaseActivity(job.id, "stage_updated", "Script/story overwritten", "脚本和分镜已被重新生成；下游图片、音频、字幕、MP4 和 QC 已标记为需要重跑。");
+        appendCaseActivity(job.id, "stage_updated", "脚本与分镜已覆盖", "脚本和分镜已被重新生成；下游图片、音频、字幕、MP4 和 QC 已标记为需要重跑。");
       }
-      appendCaseActivity(job.id, "script_generated", isOverwritingExistingScript ? "Script/story overwritten" : "Script/story generated", `${result.provider} ${result.model} generated script, storyboard, and image prompts. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "script_generated", isOverwritingExistingScript ? "脚本与分镜已覆盖" : "脚本与分镜已生成", `${result.provider} ${result.model} 已生成脚本、分镜和图片提示词。成本 RM ${result.costRM.toFixed(4)}。`);
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Script generation failed.";
+      const message = error instanceof Error ? error.message : "脚本生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3332,7 +3332,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Script generation failed", message);
+      appendCaseActivity(job.id, "error", "脚本生成失败", message);
     } finally {
       setGeneratingScriptCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3343,21 +3343,21 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Image generation")) {
+    if (blockIfCaseBudgetExceeded(job, "图片生成")) {
       return;
     }
 
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
-      const message = "Generate script/story first. Image generation uses the approved storyboard image prompts; it will not invent missing prompts from a blank case.";
+      const message = "请先生成脚本/分镜。图片生成只会读取已确认的分镜图片提示词，不会从空白 Case 重新编故事。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Image generation blocked", message);
+      appendCaseActivity(job.id, "error", "图片生成被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Image generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。图片生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Image generation blocked", message);
+      appendCaseActivity(job.id, "error", "图片生成被阻止", message);
       return;
     }
 
@@ -3380,7 +3380,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Generating inspectable scene images...",
+              output: "正在生成可审核的场景图片...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3414,14 +3414,14 @@ export function App() {
       appendCaseActivity(
         job.id,
         result.requiresReview ? "error" : "stage_updated",
-        result.requiresReview ? "Image QC needs review" : "Images generated",
+        result.requiresReview ? "图片 QC 需要人工审核" : "图片已生成",
         result.requiresReview
-          ? `${result.provider} ${result.model} generated images, but visual QC blocked compose. Review and regenerate failed scenes.`
-          : `${result.provider} ${result.model} generated ${result.images.length} inspectable scene image(s). Cost RM ${result.costRM.toFixed(4)}.`
+          ? `${result.provider} ${result.model} 已生成图片，但视觉 QC 阻止合成。请检查并重跑失败场景。`
+          : `${result.provider} ${result.model} 已生成 ${result.images.length} 张可审核场景图片。成本 RM ${result.costRM.toFixed(4)}。`
       );
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Image generation failed.";
+      const message = error instanceof Error ? error.message : "图片生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3447,7 +3447,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Image generation failed", message);
+      appendCaseActivity(job.id, "error", "图片生成失败", message);
     } finally {
       setGeneratingImageCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3460,14 +3460,14 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, `Scene ${scene.sceneId} image regeneration`)) {
+    if (blockIfCaseBudgetExceeded(job, `场景 ${scene.sceneId} 图片重生`)) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Scene image generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。单场景图片生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Scene image generation blocked", message);
+      appendCaseActivity(job.id, "error", "单场景图片生成被阻止", message);
       return;
     }
 
@@ -3526,13 +3526,13 @@ export function App() {
               ...record,
               artifactPath: nextArtifacts.join("\n"),
               costRM: Number((record.costRM + result.costRM).toFixed(4)),
-              output: `${record.output}\n\nRegenerated scene ${scene.sceneId}: ${result.image.prompt}`,
+              output: `${record.output}\n\n场景 ${scene.sceneId} 已重生: ${result.image.prompt}`,
               provider: result.provider === "openai" ? `OpenAI ${result.model}` : result.model,
               status: result.requiresReview || hasOtherBlockedScenes ? "failed" : "done",
               notes: result.requiresReview
-                ? `Scene ${scene.sceneId} failed visual QC. Regenerate it before composing MP4.`
+                ? `场景 ${scene.sceneId} 未通过视觉 QC。请重生后再合成 MP4。`
                 : hasOtherBlockedScenes
-                  ? "Other scene images still need review before composing MP4."
+                  ? "还有其他场景图片需要审核，完成后才能合成 MP4。"
                   : "",
               updatedAt: now
             };
@@ -3542,7 +3542,7 @@ export function App() {
             return {
               ...record,
               artifactPath: "",
-              output: `Waiting for regenerated MP4 after scene ${scene.sceneId} image changed.`,
+              output: `场景 ${scene.sceneId} 图片已更新，等待重新合成 MP4。`,
               status: "pending",
               updatedAt: now
             };
@@ -3553,9 +3553,9 @@ export function App() {
       );
       setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
       setCaseQcReports((currentReports) => currentReports.filter((report) => report.jobId !== job.id));
-      appendCaseActivity(job.id, "stage_updated", `Scene ${scene.sceneId} image regenerated`, `${result.provider} ${result.model} regenerated one scene image. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "stage_updated", `场景 ${scene.sceneId} 图片已重生`, `${result.provider} ${result.model} 已重生一张场景图片。成本 RM ${result.costRM.toFixed(4)}。`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : `Scene ${scene.sceneId} image generation failed.`;
+      const message = error instanceof Error ? error.message : `场景 ${scene.sceneId} 图片生成失败。`;
       setGenerationError(message);
       setSceneReviews((currentReviews) =>
         currentReviews.map((review) =>
@@ -3569,7 +3569,7 @@ export function App() {
             : review
         )
       );
-      appendCaseActivity(job.id, "error", `Scene ${scene.sceneId} image failed`, message);
+      appendCaseActivity(job.id, "error", `场景 ${scene.sceneId} 图片失败`, message);
     } finally {
       setGeneratingSceneImageIds((currentIds) => currentIds.filter((id) => id !== operationId));
     }
@@ -3580,30 +3580,30 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Voiceover generation")) {
+    if (blockIfCaseBudgetExceeded(job, "配音生成")) {
       return;
     }
 
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
-      const message = "Generate script/story first. Voiceover generation uses the approved storyboard scene voice text; it will not invent narration from a blank case.";
+      const message = "请先生成脚本/分镜。配音只会读取已确认的分镜旁白，不会从空白 Case 编旁白。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Voiceover generation blocked", message);
+      appendCaseActivity(job.id, "error", "配音生成被阻止", message);
       return;
     }
 
     const voiceoverText = extractVoiceoverTextFromRecords(jobProcessRecords, job.id);
 
     if (!voiceoverText) {
-      const message = "Voiceover text is missing from the Storyboard or Script stage. Regenerate or edit the story before producing TTS audio.";
+      const message = "分镜或脚本阶段缺少旁白文本。请重新生成或编辑故事后再产出 TTS 音频。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Voiceover generation blocked", message);
+      appendCaseActivity(job.id, "error", "配音生成被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Voiceover generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。配音生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Voiceover generation blocked", message);
+      appendCaseActivity(job.id, "error", "配音生成被阻止", message);
       return;
     }
 
@@ -3626,7 +3626,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Generating OpenAI TTS voiceover audio from storyboard scene voice text...",
+              output: "正在根据分镜旁白生成 TTS 配音音频...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3653,10 +3653,10 @@ export function App() {
       );
       setJobProcessRecords((currentRecords) => applyTtsGenerationResultToRecords(currentRecords, job.id, result, now));
       setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
-      appendCaseActivity(job.id, "stage_updated", "Voiceover generated", `${result.provider} ${result.model} generated narration audio. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "stage_updated", "配音已生成", `${result.provider} ${result.model} 已生成旁白音频。成本 RM ${result.costRM.toFixed(4)}。`);
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Voiceover generation failed.";
+      const message = error instanceof Error ? error.message : "配音生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3682,7 +3682,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Voiceover generation failed", message);
+      appendCaseActivity(job.id, "error", "配音生成失败", message);
     } finally {
       setGeneratingTtsCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3693,14 +3693,14 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Background music generation")) {
+    if (blockIfCaseBudgetExceeded(job, "背景音乐生成")) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Background music generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。背景音乐生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "BGM generation blocked", message);
+      appendCaseActivity(job.id, "error", "BGM 生成被阻止", message);
       return;
     }
 
@@ -3723,7 +3723,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Generating instrumental background music with ElevenLabs Music...",
+              output: "正在使用 ElevenLabs Music 生成无歌词背景音乐...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3750,10 +3750,10 @@ export function App() {
       );
       setJobProcessRecords((currentRecords) => applyBgmGenerationResultToRecords(currentRecords, job.id, result, now));
       setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
-      appendCaseActivity(job.id, "stage_updated", "Background music generated", `${result.provider} ${result.model} generated instrumental BGM. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "stage_updated", "背景音乐已生成", `${result.provider} ${result.model} 已生成无歌词 BGM。成本 RM ${result.costRM.toFixed(4)}。`);
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Background music generation failed.";
+      const message = error instanceof Error ? error.message : "背景音乐生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3779,7 +3779,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "BGM generation failed", message);
+      appendCaseActivity(job.id, "error", "BGM 生成失败", message);
     } finally {
       setGeneratingBgmCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3789,7 +3789,7 @@ export function App() {
     const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, productionAssets, job);
 
     if (clipInputs.length === 0) {
-      throw new Error("No storyboard scenes were found for Seedance clip generation. Regenerate the script/storyboard first.");
+      throw new Error("找不到可用于 Seedance 的分镜场景。请先重新生成或确认脚本/分镜。");
     }
 
     const results: GenerateVideoClipResponse[] = [];
@@ -3800,7 +3800,7 @@ export function App() {
           record.jobId === job.id && record.stageId === "video"
             ? {
                 ...record,
-                output: `Generating Seedance scene clip ${index + 1}/${clipInputs.length}: scene ${clipInput.sceneId}, ${clipInput.durationSeconds}s...`,
+                output: `正在生成 Seedance 场景片段 ${index + 1}/${clipInputs.length}：场景 ${clipInput.sceneId}，${clipInput.durationSeconds}s...`,
                 status: "working",
                 updatedAt: new Date().toISOString()
               }
@@ -3834,21 +3834,21 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Seedance video clip generation")) {
+    if (blockIfCaseBudgetExceeded(job, "Seedance 视频片段生成")) {
       return;
     }
 
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
-      const message = "Generate script/story first. Seedance needs the approved scene prompt before creating a motion clip.";
+      const message = "请先生成脚本/分镜。Seedance 需要已确认的场景提示词才能生成动态片段。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Seedance video clip blocked", message);
+      appendCaseActivity(job.id, "error", "Seedance 视频片段被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Seedance video clip generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。Seedance 视频片段生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Seedance video clip blocked", message);
+      appendCaseActivity(job.id, "error", "Seedance 视频片段被阻止", message);
       return;
     }
 
@@ -3871,7 +3871,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Preparing storyboard scene clips for Seedance 2.0...",
+              output: "正在准备分镜场景，准备交给 Seedance 2.0 生成视频片段...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3909,7 +3909,7 @@ export function App() {
       );
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Seedance video clip generation failed.";
+      const message = error instanceof Error ? error.message : "Seedance 视频片段生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3936,7 +3936,7 @@ export function App() {
                 : record
             )
       );
-      appendCaseActivity(job.id, "error", "Seedance video clip failed", message);
+      appendCaseActivity(job.id, "error", "Seedance 视频片段失败", message);
     } finally {
       setGeneratingVideoClipCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3947,28 +3947,28 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Final MP4 generation")) {
+    if (blockIfCaseBudgetExceeded(job, "最终 MP4 生成")) {
       return;
     }
 
     if (!hasGeneratedRasterImages(jobProcessRecords, job.id)) {
-      const message = "Generate and review scene images first. Video compose uses those PNG/JPG assets, so it is blocked until Image stage has real reviewable images.";
+      const message = "请先生成并审核场景图片。影片合成会使用这些 PNG/JPG 图片，因此必须等图片阶段有真实可审核资产后才能继续。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Video generation blocked", message);
+      appendCaseActivity(job.id, "error", "影片生成被阻止", message);
       return;
     }
 
     if (hasBlockedSceneReviews(sceneReviews, job.id)) {
-      const message = "Scene image QC is still blocking this case. Regenerate or approve the failed scene images before composing MP4.";
+      const message = "场景图片 QC 仍在阻止这个 Case。请重生或批准失败场景图后再合成 MP4。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Video generation blocked", message);
+      appendCaseActivity(job.id, "error", "影片生成被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Video generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。影片生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Video generation blocked", message);
+      appendCaseActivity(job.id, "error", "影片生成被阻止", message);
       return;
     }
 
@@ -3991,7 +3991,7 @@ export function App() {
             ? {
                 ...record,
                 notes: "",
-                output: "Preparing missing voiceover / scene clips, then rendering MP4 with subtitles...",
+                output: "正在补齐缺少的配音/场景片段，然后渲染带字幕 MP4...",
                 status: "working",
                 updatedAt: new Date().toISOString()
             }
@@ -4007,7 +4007,7 @@ export function App() {
         const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, job.id);
 
         if (!voiceoverText) {
-          throw new Error("Voiceover text is missing from the Storyboard or Script stage. Regenerate or edit the story before producing TTS audio.");
+          throw new Error("分镜或脚本阶段缺少旁白文本。请重新生成或编辑故事后再产出 TTS 音频。");
         }
 
         setJobProcessRecords((currentRecords) =>
@@ -4015,7 +4015,7 @@ export function App() {
             record.jobId === job.id && record.stageId === "tts"
               ? {
                   ...record,
-                  output: "Auto-generating configured TTS voiceover before MP4 compose...",
+                  output: "合成 MP4 前，正在自动生成已配置的 TTS 配音...",
                   status: "working",
                   updatedAt: new Date().toISOString()
                 }
@@ -4027,7 +4027,7 @@ export function App() {
         pipelineCostRM += ttsResult.costRM;
         workingRecords = applyTtsGenerationResultToRecords(workingRecords, job.id, ttsResult, ttsNow);
         setJobProcessRecords((currentRecords) => applyTtsGenerationResultToRecords(currentRecords, job.id, ttsResult, ttsNow));
-        appendCaseActivity(job.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} auto-generated narration before MP4. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+        appendCaseActivity(job.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已在合成 MP4 前自动生成旁白。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
       }
 
       const expectedClipCount = getSeedanceClipInputs(workingRecords, sceneReviews, productionAssets, job).length;
@@ -4048,7 +4048,7 @@ export function App() {
           record.jobId === job.id && record.stageId === "compose"
             ? {
                 ...record,
-                output: "Rendering MP4 from scene clips/images, synced voiceover audio, BGM if available, and burned-in subtitles...",
+                output: "正在用场景片段/图片、同步配音、可用 BGM 和烧录字幕渲染 MP4...",
                 status: "working",
                 updatedAt: new Date().toISOString()
               }
@@ -4099,7 +4099,7 @@ export function App() {
         voiceover: result.artifacts.voiceover.publicUrl ?? result.artifacts.voiceover.storagePath
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Video generation failed.";
+      const message = error instanceof Error ? error.message : "影片生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -4125,7 +4125,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Video generation failed", message);
+      appendCaseActivity(job.id, "error", "影片生成失败", message);
     } finally {
       setGeneratingCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -4137,9 +4137,9 @@ export function App() {
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. QC needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。QC 检查需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "QC blocked", message);
+      appendCaseActivity(job.id, "error", "QC 被阻止", message);
       return;
     }
 
@@ -4150,7 +4150,7 @@ export function App() {
         record.jobId === job.id && record.stageId === "qc"
           ? {
               ...record,
-              output: "Running media, asset, audio, subtitle, and budget QC checks...",
+              output: "正在检查媒体、资产、音频、字幕和预算...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -4189,9 +4189,9 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, report.passed ? "stage_updated" : "error", report.passed ? "QC passed" : "QC failed", report.summary);
+      appendCaseActivity(job.id, report.passed ? "stage_updated" : "error", report.passed ? "QC 通过" : "QC 失败", report.summary);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "QC report failed.";
+      const message = error instanceof Error ? error.message : "QC 报告生成失败。";
       setGenerationError(message);
       setJobProcessRecords((currentRecords) =>
         currentRecords.map((record) =>
@@ -4206,7 +4206,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "QC failed", message);
+      appendCaseActivity(job.id, "error", "QC 失败", message);
     } finally {
       setGeneratingQcCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -4305,7 +4305,7 @@ export function App() {
           record.jobId === job.id && record.stageId === "publish"
             ? {
                 ...record,
-                output: "No YouTube targets configured. MP4 was approved locally and upload remains skipped.",
+                output: "未配置 YouTube 目标。MP4 已在本地审核通过，上传阶段保持跳过。",
                 status: "skipped",
                 updatedAt: now
               }

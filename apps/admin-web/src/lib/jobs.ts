@@ -386,8 +386,8 @@ export function syncCaseReferenceAssets(
       upsertGeneratedReferenceAsset(nextAssets, assetsById, {
         id: `${job.id}_character_reference`,
         jobId: job.id,
-        label: character ? `${character.name} character design` : "Generated character design",
-        notes: "Used as Seedance reference_image for character identity continuity.",
+        label: character ? `${character.name} 角色设计` : "已生成角色设计",
+        notes: "作为 Seedance reference_image 使用，用来保持角色身份一致。",
         role: "reference_image",
         sceneId: null,
         type: "character_design",
@@ -401,8 +401,8 @@ export function syncCaseReferenceAssets(
         upsertGeneratedReferenceAsset(nextAssets, assetsById, {
           id: `${job.id}_scene_${review.sceneId}_first_frame`,
           jobId: job.id,
-          label: `Scene ${review.sceneId} first frame`,
-          notes: "Generated scene still. Seedance uses this as first_frame for image-to-video.",
+          label: `场景 ${review.sceneId} 首帧`,
+          notes: "已生成场景静帧。Seedance 会把它作为 image-to-video 的 first_frame。",
           role: "first_frame",
           sceneId: review.sceneId,
           type: "first_frame",
@@ -668,7 +668,7 @@ function normalizeProcessRecord(job: AdminJob, record: JobProcessRecord, agents:
 
 function normalizeLegacyStageOutput(stageId: ProductionStageId, output: string, artifactPath: string): string {
   if (stageId === "tts" && output.includes("Local voiceover text artifact")) {
-    return "Voiceover text and SFX cue manifest are ready, but spoken TTS audio has not been generated. Configure OpenAI TTS or ElevenLabs; no mock narration audio was created.";
+    return "旁白文本和音效 cue 清单已准备好，但还没有生成真正的 TTS 配音音频。请配置 OpenAI TTS 或 ElevenLabs；系统不会创建 mock 旁白音频。";
   }
 
   if (stageId !== "image" || !output.includes("local SVG scene placeholders")) {
@@ -682,10 +682,10 @@ function normalizeLegacyStageOutput(stageId: ProductionStageId, output: string, 
   const rasterCount = artifactPaths.filter((artifact) => /\.(png|jpe?g|webp|bmp)(\?|$)/iu.test(artifact)).length;
 
   if (rasterCount > 0) {
-    return `${rasterCount} generated scene image(s) are ready for review. These PNG/JPG assets are the images used by video compose.`;
+    return `${rasterCount} 张生成的场景图片已可审核。这些 PNG/JPG 资产会用于影片合成。`;
   }
 
-  return "Required OpenAI scene images are missing. Click Generate images to create reviewable PNG scene assets.";
+  return "缺少必要的 OpenAI 场景图片。请点击「生成图片」，建立可审核的 PNG/JPG 场景资产。";
 }
 
 function normalizeLegacyStageCost(stageId: ProductionStageId, provider: string, costRM: number, artifactPath: string): number {
@@ -707,11 +707,11 @@ function getDefaultStageInput(job: AdminJob, stageId: ProductionStageId, fallbac
   }
 
   if (stageId === "script") {
-    return `Write the voiceover and hook from this prompt:\n${job.prompt}`;
+    return `根据这个 prompt 写 hook 和旁白：\n${job.prompt}`;
   }
 
   if (stageId === "storyboard") {
-    return `Split the script into ${job.sceneCount} scenes for a ${job.durationSeconds}s Short.`;
+    return `把脚本拆成 ${job.sceneCount} 个场景，用于 ${job.durationSeconds}s 短视频。`;
   }
 
   return fallback;
@@ -719,7 +719,7 @@ function getDefaultStageInput(job: AdminJob, stageId: ProductionStageId, fallbac
 
 function getDefaultStageOutput(job: AdminJob, stageId: ProductionStageId, fallback: string): string {
   if (stageId === "brief") {
-    return `Case created for topic: ${job.topic}`;
+    return `已为主题「${job.topic}」建立 Case。`;
   }
 
   return fallback;

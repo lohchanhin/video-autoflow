@@ -415,18 +415,18 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
             </button>
             <button className="secondary-button" disabled={!canAutoGenerate} type="button" onClick={props.autoGenerateCase}>
               {props.isAutoGeneratingCase ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-              {props.isAutoGeneratingCase ? props.autoGenerateStep ?? "Generating" : "直接生成 MP4"}
+              {props.isAutoGeneratingCase ? props.autoGenerateStep ?? "生成中" : "直接生成 MP4"}
             </button>
           </div>
         </div>
       </form>
       </div>
 
-      {apiUnavailable ? <ServiceIssueBanner apiState={props.apiState} action="Autopilot generation" /> : null}
+      {apiUnavailable ? <ServiceIssueBanner apiState={props.apiState} action="自动生产" /> : null}
       {props.isAutoGeneratingCase ? (
         <div className="pipeline-gate-note autopilot-progress">
           <Loader2 size={16} className="spin" />
-          <span>{props.autoGenerateStep ?? "Autopilot is running the production pipeline."}</span>
+          <span>{props.autoGenerateStep ?? "自动生产流程执行中。"}</span>
         </div>
       ) : null}
       {props.generationError ? <div className="inline-error">{props.generationError}</div> : null}
@@ -492,11 +492,21 @@ function AssetMultiSelect(props: {
 }) {
   const [query, setQuery] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(props.selectedIds.length === 0);
+  const [unavailableAssetIds, setUnavailableAssetIds] = useState<string[]>([]);
+  const unavailableAssetIdSet = new Set(unavailableAssetIds);
+  const assetMediaKey = props.assets.map((asset) => `${asset._id}:${assetThumbUrls(asset).join("|")}`).join("\n");
+  const selectedIdsKey = props.selectedIds.join("\n");
+  const unavailableAssetIdsKey = unavailableAssetIds.join("\n");
   const selectedAssets = props.selectedIds
     .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
-    .filter((asset): asset is ProductionAsset => Boolean(asset));
+    .filter((asset): asset is ProductionAsset => Boolean(asset))
+    .filter((asset) => !unavailableAssetIdSet.has(asset._id));
   const normalizedQuery = query.trim().toLowerCase();
   const filteredAssets = props.assets.filter((asset) => {
+    if (unavailableAssetIdSet.has(asset._id)) {
+      return false;
+    }
+
     if (!normalizedQuery) return true;
 
     return [asset.label, asset.folderName, asset.type, asset.prompt, asset.notes, asset.tags.join(" ")]
@@ -504,6 +514,27 @@ function AssetMultiSelect(props: {
       .toLowerCase()
       .includes(normalizedQuery);
   });
+  const hiddenUnavailableCount = unavailableAssetIds.filter((id) => props.assets.some((asset) => asset._id === id)).length;
+
+  useEffect(() => {
+    setUnavailableAssetIds([]);
+  }, [assetMediaKey]);
+
+  useEffect(() => {
+    if (unavailableAssetIds.length === 0) {
+      return;
+    }
+
+    const nextSelectedIds = props.selectedIds.filter((id) => !unavailableAssetIdSet.has(id));
+
+    if (nextSelectedIds.length !== props.selectedIds.length) {
+      props.onChange(nextSelectedIds);
+    }
+  }, [props.onChange, selectedIdsKey, unavailableAssetIdsKey]);
+
+  function markAssetUnavailable(id: string) {
+    setUnavailableAssetIds((currentIds) => (currentIds.includes(id) ? currentIds : [...currentIds, id]));
+  }
 
   function toggleAsset(id: string) {
     props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
@@ -521,14 +552,14 @@ function AssetMultiSelect(props: {
     <div className="draft-reference-card asset-multi-select">
       <div className="asset-multi-header">
         <span>{props.icon}{props.label}</span>
-        <small>{selectedAssets.length > 0 ? `${selectedAssets.length} 已选` : props.emptyText}</small>
+        <small>{selectedAssets.length > 0 ? `${selectedAssets.length} 已选` : hiddenUnavailableCount > 0 ? `${props.emptyText}，已隐藏 ${hiddenUnavailableCount} 个失效预览` : props.emptyText}</small>
       </div>
       {selectedAssets.length > 0 ? (
         <div className="asset-selected-mini-grid">
           {selectedAssets.map((asset) => (
             <article className="asset-selected-mini-card" key={asset._id}>
               <span className="asset-selected-mini-thumb">
-                {assetThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetThumbUrls(asset)} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
+                {assetThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetThumbUrls(asset)} fallbackLabel="预览失效" onUnavailable={() => markAssetUnavailable(asset._id)} /> : <MediaFallback label="无预览" />}
               </span>
               <span className="asset-selected-mini-copy">
                 <strong title={asset.label}>{asset.label}</strong>
@@ -560,7 +591,9 @@ function AssetMultiSelect(props: {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资产名称、文件夹、标签" />
           </label>
           {filteredAssets.length === 0 ? (
-            <div className="draft-reference-empty">没有符合搜索的资产。</div>
+            <div className="draft-reference-empty">
+              {hiddenUnavailableCount > 0 ? `没有可用预览资产；已隐藏 ${hiddenUnavailableCount} 个预览失效资产，请到设计资产重新生成。` : "没有符合搜索的资产。"}
+            </div>
           ) : (
             <div className="asset-multi-options">
               {filteredAssets.map((asset) => {
@@ -578,7 +611,7 @@ function AssetMultiSelect(props: {
                   >
                     <span className="asset-multi-check">{selected ? <CheckCircle2 size={16} /> : null}</span>
                     <span className="asset-multi-thumb">
-                      {thumbUrls.length > 0 ? <MediaImage alt={asset.label} src={thumbUrls} fallbackLabel="预览失效" /> : <MediaFallback label="无预览" />}
+                      {thumbUrls.length > 0 ? <MediaImage alt={asset.label} src={thumbUrls} fallbackLabel="预览失效" onUnavailable={() => markAssetUnavailable(asset._id)} /> : <MediaFallback label="无预览" />}
                     </span>
                     <span className="asset-multi-copy">
                       <strong>{asset.label}</strong>

@@ -1298,6 +1298,11 @@ textarea {
   object-fit: cover;
 }
 
+.asset-selected-mini-thumb img {
+  color: transparent;
+  font-size: 0;
+}
+
 .asset-selected-mini-thumb .media-fallback span {
   display: none;
 }
@@ -1447,6 +1452,11 @@ textarea {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.asset-multi-thumb img {
+  color: transparent;
+  font-size: 0;
 }
 
 .asset-multi-thumb .media-fallback {
@@ -1918,6 +1928,11 @@ textarea {
   object-fit: cover;
 }
 
+.asset-selected-thumb img {
+  color: transparent;
+  font-size: 0;
+}
+
 .asset-selected-thumb .media-fallback {
   min-height: 100%;
   place-content: center;
@@ -2145,6 +2160,11 @@ textarea {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.asset-picker-thumb img {
+  color: transparent;
+  font-size: 0;
 }
 
 .asset-picker-thumb .media-fallback {
@@ -3492,6 +3512,11 @@ textarea {
   height: 100%;
   object-fit: cover;
   width: 100%;
+}
+
+.asset-gallery-thumb img {
+  color: transparent;
+  font-size: 0;
 }
 
 .asset-gallery-thumb .media-fallback {

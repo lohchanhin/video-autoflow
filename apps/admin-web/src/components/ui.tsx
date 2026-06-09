@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image as ImageIcon } from "lucide-react";
 
 export type MediaImageLoadState = {
@@ -112,6 +112,7 @@ export function MediaImage(props: {
   alt: string;
   className?: string;
   fallbackLabel?: string;
+  onUnavailable?: () => void;
   src: string | string[] | null | undefined;
 }) {
   const sources = normalizeMediaImageSources(props.src);
@@ -120,11 +121,19 @@ export function MediaImage(props: {
     src: sources[0] ?? "",
     status: sources.length > 0 ? "loading" : "empty"
   });
+  const onUnavailableRef = useRef(props.onUnavailable);
+  const notifiedUnavailableSourceKey = useRef("");
+
+  useEffect(() => {
+    onUnavailableRef.current = props.onUnavailable;
+  }, [props.onUnavailable]);
   const currentStatus = getMediaImageSourcesStatus(sources, state);
   const isLoadedCurrentSrc = canRenderMediaImageFromSources(sources, state);
   const loadedSrc = isLoadedCurrentSrc ? state.src : "";
 
   useEffect(() => {
+    notifiedUnavailableSourceKey.current = "";
+
     if (sources.length === 0) {
       setState({ src: "", status: "empty" });
       return;
@@ -138,6 +147,10 @@ export function MediaImage(props: {
 
       if (!candidate) {
         setState({ src: sources[sources.length - 1] ?? "", status: "failed" });
+        if (sourceKey && notifiedUnavailableSourceKey.current !== sourceKey) {
+          notifiedUnavailableSourceKey.current = sourceKey;
+          onUnavailableRef.current?.();
+        }
         return;
       }
 
@@ -170,6 +183,14 @@ export function MediaImage(props: {
     };
   }, [sourceKey]);
 
+  function markRenderedImageUnavailable() {
+    setState({ src: loadedSrc, status: "failed" });
+    if (sourceKey && notifiedUnavailableSourceKey.current !== sourceKey) {
+      notifiedUnavailableSourceKey.current = sourceKey;
+      onUnavailableRef.current?.();
+    }
+  }
+
   if (!isLoadedCurrentSrc) {
     return (
       <MediaFallback
@@ -187,7 +208,10 @@ export function MediaImage(props: {
       decoding="async"
       loading="lazy"
       src={loadedSrc}
-      onError={() => setState({ src: loadedSrc, status: "failed" })}
+      onError={(event) => {
+        event.currentTarget.removeAttribute("src");
+        markRenderedImageUnavailable();
+      }}
     />
   );
 }
