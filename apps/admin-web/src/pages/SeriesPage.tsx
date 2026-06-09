@@ -4,7 +4,7 @@ import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisode
 import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
-import { isImageMediaUrl, resolveFirstMediaUrl } from "../lib/media-url.js";
+import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface SeriesPageProps {
@@ -798,12 +798,11 @@ function episodeStatusLabel(status: SeriesEpisodeIdeaStatus): string {
 }
 
 function assetBindingUrl(asset: ProductionAsset): string {
-  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
+  return resolveProductionAssetMediaUrl(asset);
 }
 
 function assetBindingThumbUrl(asset: ProductionAsset): string {
-  const mediaUrl = assetBindingUrl(asset);
-  return isImageMediaUrl(mediaUrl) ? mediaUrl : "";
+  return resolveProductionAssetPreviewUrl(asset);
 }
 
 function assetTypeLabel(type: ProductionAsset["type"]): string {

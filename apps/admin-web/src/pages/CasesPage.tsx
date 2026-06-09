@@ -10,7 +10,8 @@ import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEdi
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
 import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
-import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveFirstMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
+import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
+import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
 import type { ProductionStageId } from "../lib/production.js";
 import type { CaseDraftPreview } from "../App.js";
 
@@ -2342,12 +2343,11 @@ function isAudioPath(value: string): boolean {
 }
 
 function assetMediaUrl(asset: ProductionAsset): string {
-  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
+  return resolveProductionAssetMediaUrl(asset);
 }
 
 function assetThumbUrl(asset: ProductionAsset): string {
-  const mediaUrl = assetMediaUrl(asset);
-  return isImageMediaUrl(mediaUrl) ? mediaUrl : "";
+  return resolveProductionAssetPreviewUrl(asset);
 }
 
 function isOpenableMediaUrl(value: string | null | undefined): boolean {

@@ -92,13 +92,20 @@ export function WorkflowPage(props: WorkflowPageProps) {
       return { stage, endpoint, setting, ...state };
     });
     const requiredRows = rows.filter((row) => row.required);
+    const blockingIssues = rows.filter((row) => row.required && !row.ready);
+    const attentionItems = rows.filter((row) => row.tone === "warning" && row.ready);
+    const optionalIssues = rows.filter((row) => !row.required && !row.ready);
+    const attentionCount = attentionItems.length + optionalIssues.length;
 
     return {
       rows,
       readyRequiredCount: requiredRows.filter((row) => row.ready).length,
       requiredCount: requiredRows.length,
-      issues: rows.filter((row) => row.tone === "danger" || row.tone === "warning"),
-      issueCount: rows.filter((row) => row.tone === "danger").length
+      attentionItems,
+      blockingIssues,
+      attentionCount,
+      issueCount: blockingIssues.length,
+      optionalIssues
     };
   }, [producerAgent, props.endpoints, props.providerKeys, props.settings]);
 
@@ -294,7 +301,8 @@ export function WorkflowPage(props: WorkflowPageProps) {
         <div className="workflow-command-row">
           <WorkflowStat label="必要阶段就绪" value={`${readiness.readyRequiredCount}/${readiness.requiredCount}`} tone={readiness.issueCount === 0 ? "success" : "warning"} />
           <WorkflowStat label="允许自动调用" value={`${props.settings.filter((setting) => setting.allowAutopilot && setting.enabled).length}/${props.settings.length}`} tone="active" />
-          <WorkflowStat label="阻塞问题" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
+          <WorkflowStat label="硬阻塞" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
+          <WorkflowStat label="提醒事项" value={String(readiness.attentionCount)} tone={readiness.attentionCount === 0 ? "success" : "warning"} />
         </div>
         <div className="workflow-tabs" role="tablist" aria-label="Workflow sections">
           <TabButton active={activeTab === "pipeline"} label="流程路由" onClick={() => openWorkflowTab("pipeline")} />
@@ -419,34 +427,79 @@ export function WorkflowPage(props: WorkflowPageProps) {
 
       {activeTab === "readiness" ? (
         <section className="panel workflow-readiness-panel">
-          <SectionHeader eyebrow="Operational checks" title="就绪检查清单" />
-          <div className="readiness-issue-strip">
-            {readiness.issues.length === 0 ? (
-              <StatusPill tone="success">没有阻塞问题</StatusPill>
-            ) : (
-              readiness.issues.map(({ stage, endpoint, label, setting, tone }) => (
-                <div className="readiness-issue" key={stage.id}>
-                  <strong>{stage.label}</strong>
-                  <StatusPill tone={tone}>{tone === "danger" ? "阻塞" : "需检查"}</StatusPill>
-                  <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
-                  <button
-                    className="secondary-button compact-button readiness-action-button"
-                    type="button"
-                    onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
-                  >
-                    {getReadinessActionLabel(label, setting, endpoint)}
-                  </button>
+          <SectionHeader eyebrow="Operational checks" title="就绪检查清单" action={<StatusPill tone={readiness.issueCount === 0 ? "success" : "danger"}>{readiness.issueCount === 0 ? "MP4 链路可执行" : `${readiness.issueCount} 个硬阻塞`}</StatusPill>} />
+          <div className="workflow-readiness-groups">
+            <section className="readiness-group">
+              <div className="readiness-group-header">
+                <div>
+                  <strong>MP4 必需链路</strong>
+                  <span>脚本、分镜、图片、配音、字幕、合成与 QC。这里没有阻塞时，可以先做到影片完成。</span>
                 </div>
-              ))
-            )}
+                <StatusPill tone={readiness.issueCount === 0 ? "success" : "danger"}>{readiness.issueCount === 0 ? "可执行" : "阻塞"}</StatusPill>
+              </div>
+              <div className="readiness-issue-strip">
+                {readiness.blockingIssues.length === 0 ? (
+                  <StatusPill tone="success">没有 MP4 必需阻塞</StatusPill>
+                ) : (
+                  readiness.blockingIssues.map(({ stage, endpoint, label, setting, tone }) => (
+                    <div className="readiness-issue" key={stage.id}>
+                      <strong>{stage.label}</strong>
+                      <StatusPill tone={tone}>阻塞</StatusPill>
+                      <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
+                      <button
+                        className="secondary-button compact-button readiness-action-button"
+                        type="button"
+                        onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                      >
+                        {getReadinessActionLabel(label, setting, endpoint)}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="readiness-group optional">
+              <div className="readiness-group-header">
+                <div>
+                  <strong>提醒事项 / 可选增强</strong>
+                  <span>BGM、Seedance 影片片段、YouTube 私密上传、GCS 归档不会阻止先生成 MP4；成本单价缺失也只影响成本精度。</span>
+                </div>
+                <StatusPill tone={readiness.attentionCount === 0 ? "success" : "warning"}>{readiness.attentionCount === 0 ? "无提醒" : `${readiness.attentionCount} 项提醒`}</StatusPill>
+              </div>
+              <div className="readiness-issue-strip optional">
+                {readiness.attentionCount === 0 ? (
+                  <StatusPill tone="success">没有低风险提醒</StatusPill>
+                ) : (
+                  [...readiness.optionalIssues, ...readiness.attentionItems].map(({ stage, endpoint, label, setting, tone }) => (
+                    <div className="readiness-issue" key={stage.id}>
+                      <strong>{stage.label}</strong>
+                      <StatusPill tone={tone}>{stage.id === "publish" || stage.id === "archive" || stage.id === "video" || stage.id === "bgm" ? "可选" : "需检查"}</StatusPill>
+                      <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
+                      <button
+                        className="secondary-button compact-button readiness-action-button"
+                        type="button"
+                        onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                      >
+                        {getReadinessActionLabel(label, setting, endpoint)}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
           </div>
           <div className="workflow-readiness-list">
-            {readiness.rows.map(({ stage, endpoint, label, setting, tone }) => (
+            {readiness.rows.map(({ stage, endpoint, label, setting, tone, required }) => (
               <article className="workflow-readiness-row" key={stage.id}>
                 <span className="step-index">{stage.order}</span>
                 <div>
                   <strong>{stage.label}</strong>
                   <span>{stage.defaultInput}</span>
+                </div>
+                <div>
+                  <span className="column-label">类型</span>
+                  <strong>{required ? "MP4 必需" : "可选增强"}</strong>
                 </div>
                 <div>
                   <span className="column-label">负责人</span>

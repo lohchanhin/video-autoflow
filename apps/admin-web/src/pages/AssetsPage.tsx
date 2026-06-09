@@ -17,7 +17,7 @@ import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from 
 import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
-import { isImageMediaUrl, resolveFirstMediaUrl } from "../lib/media-url.js";
+import { resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
 
 type AssetStudioTab = "generate" | "library" | "case-plan";
 
@@ -832,8 +832,7 @@ function assetStatusTone(status: ProductionAssetStatus): "active" | "danger" | "
 }
 
 function assetPreviewUrl(asset: ProductionAsset): string {
-  const resolved = resolveFirstMediaUrl([asset.url, asset.storagePath]);
-  return isImageMediaUrl(resolved) ? resolved : "";
+  return resolveProductionAssetPreviewUrl(asset);
 }
 
 function isGeneratedDesignAsset(asset: ProductionAsset): boolean {

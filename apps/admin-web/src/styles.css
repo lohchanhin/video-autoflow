@@ -4808,6 +4808,12 @@ textarea {
   gap: 8px;
 }
 
+.workflow-readiness-list {
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
 .workflow-table-scroll {
   max-width: 100%;
   overflow-x: auto;
@@ -4912,11 +4918,62 @@ textarea {
   white-space: nowrap;
 }
 
+.workflow-readiness-groups {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.readiness-group {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.readiness-group.optional {
+  border-color: #fedf89;
+  background: #fffbeb;
+}
+
+.readiness-group-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.readiness-group-header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.readiness-group-header strong {
+  color: #182230;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.readiness-group-header span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .readiness-issue-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
-  margin-bottom: 12px;
+}
+
+.readiness-issue-strip.optional .readiness-issue {
+  border-color: #fedf89;
+  background: #ffffff;
 }
 
 .readiness-issue {
@@ -4958,9 +5015,10 @@ textarea {
 
 .workflow-readiness-row {
   display: grid;
-  grid-template-columns: 34px minmax(190px, 1fr) minmax(130px, 0.5fr) minmax(160px, 0.62fr) minmax(140px, 0.55fr) 112px auto;
+  grid-template-columns: 34px minmax(190px, 1fr) minmax(92px, 0.34fr) minmax(130px, 0.5fr) minmax(160px, 0.62fr) minmax(140px, 0.55fr) 112px auto;
   gap: 10px;
   align-items: center;
+  min-width: 1080px;
   min-height: 64px;
   padding: 10px;
   border: 1px solid #e1e8f0;
