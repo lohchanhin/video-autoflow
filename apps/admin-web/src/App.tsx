@@ -167,10 +167,10 @@ import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
 import { countDirtyDrafts, updateDirtyDraftMap } from "./lib/editable-draft.js";
 import { importLocalDataSnapshot, isLocalDataMigrationMessage } from "./lib/local-data-portability.js";
+import { resolveViewFromHash, type ActiveView } from "./lib/view-routing.js";
 
 type ApiState = "checking" | "online" | "offline";
 type ServiceState = "checking" | "online" | "offline" | "warning";
-type ActiveView = "dashboard" | "automation" | "trends" | "series" | "cases" | "assets" | "agents" | "workflow" | "keys" | "youtube" | "storage" | "cost";
 
 export interface CaseDraftPreview {
   input: NewJobInput;
@@ -194,23 +194,13 @@ const viewTitles: Record<ActiveView, { eyebrow: string; title: string }> = {
   cost: { eyebrow: "预算控制", title: "成本管理" }
 };
 function getInitialView(): ActiveView {
-  const hash = window.location.hash.replace("#", "");
+  const resolvedView = resolveViewFromHash(window.location.hash);
 
-  if (hash === "jobs") {
-    window.history.replaceState(null, "", "#cases");
-    return "cases";
+  if (resolvedView.canonicalHash) {
+    window.history.replaceState(null, "", resolvedView.canonicalHash);
   }
 
-  if (hash === "characters") {
-    window.history.replaceState(null, "", "#assets");
-    return "assets";
-  }
-
-  if (hash === "dashboard" || hash === "automation" || hash === "trends" || hash === "series" || hash === "cases" || hash === "assets" || hash === "agents" || hash === "workflow" || hash === "keys" || hash === "youtube" || hash === "storage" || hash === "cost") {
-    return hash;
-  }
-
-  return "dashboard";
+  return resolvedView.view;
 }
 
 function buildGcsPath(settings: StorageSettings, job: AdminJob): string {
