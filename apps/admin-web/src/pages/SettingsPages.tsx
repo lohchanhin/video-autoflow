@@ -677,8 +677,75 @@ export function CostPage(props: {
     void refreshLedger();
   }, []);
 
+  const todayKey = new Date().toDateString();
+  const todayCaseCostRM = props.jobs
+    .filter((job) => new Date(job.createdAt).toDateString() === todayKey)
+    .reduce((sum, job) => sum + job.actualCostRM, 0);
+  const recordedCostRM = ledgerSummary?.totalCostRM ?? props.summary.totalCost;
+  const dailyBudgetPct = getBudgetUsagePercent(todayCaseCostRM, budgetDraft.dailyBudgetRM);
+  const monthlyBudgetPct = getBudgetUsagePercent(recordedCostRM, budgetDraft.monthlyBudgetRM);
+
   return (
     <section className="settings-grid">
+      <div className="panel budget-command-panel">
+        <SectionHeader
+          eyebrow="预算入口"
+          title="全局预算与付费生成护栏"
+          action={<StatusPill tone={budgetEditor.isDirty ? "warning" : "success"}>{budgetEditor.isDirty ? "未保存修改" : "当前已生效"}</StatusPill>}
+        />
+        <p className="muted-copy">这里就是调高预算的地方。默认单支预算会影响之后新建的 Case、自动排程和主控 Agent 成本护栏；已经存在的 Case 请在该 Case 的「总览 / 预算」里单独调整。</p>
+        <div className="budget-control-hero">
+          <div className="budget-control-card primary">
+            <span>默认单支 Case 预算</span>
+            <strong>RM {Number(budgetDraft.defaultCaseBudgetRM).toFixed(2)}</strong>
+            <small>新 Case 默认上限；旧 Case 不会被静默覆盖。</small>
+          </div>
+          <div className="budget-control-card">
+            <span>今日已用 / 每日预算</span>
+            <strong>RM {todayCaseCostRM.toFixed(2)} / {Number(budgetDraft.dailyBudgetRM).toFixed(2)}</strong>
+            <div className="budget-meter"><span style={{ width: `${dailyBudgetPct}%` }} /></div>
+          </div>
+          <div className="budget-control-card">
+            <span>账本累计 / 每月预算</span>
+            <strong>RM {recordedCostRM.toFixed(2)} / {Number(budgetDraft.monthlyBudgetRM).toFixed(2)}</strong>
+            <div className="budget-meter"><span style={{ width: `${monthlyBudgetPct}%` }} /></div>
+          </div>
+          <div className="budget-control-card">
+            <span>自动生成策略</span>
+            <strong>{budgetDraft.stopWhenBudgetExceeded ? "超预算即停止" : "允许人工继续"}</strong>
+            <small>{budgetDraft.maxVideosPerDay} 支 / 天，单次排程 {budgetDraft.maxCasesPerRun} 个 Case。</small>
+          </div>
+        </div>
+        <div className="budget-preset-row" aria-label="快速调高默认 Case 预算">
+          {[7.5, 25, 50, 100, 200].map((amount) => (
+            <button
+              className={Number(budgetDraft.defaultCaseBudgetRM) === amount ? "active" : ""}
+              key={amount}
+              type="button"
+              onClick={() => patchBudgetDraft({ defaultCaseBudgetRM: amount })}
+            >
+              默认 Case RM {amount.toFixed(amount % 1 === 0 ? 0 : 1)}
+            </button>
+          ))}
+        </div>
+        <div className="budget-fast-edit">
+          <Field label="默认单支 Case 预算 RM">
+            <input min={0.1} step={0.1} type="number" value={budgetDraft.defaultCaseBudgetRM} onChange={(event) => patchBudgetDraft({ defaultCaseBudgetRM: Number(event.target.value) })} />
+          </Field>
+          <Field label="每日预算 RM">
+            <input min={1} step={1} type="number" value={budgetDraft.dailyBudgetRM} onChange={(event) => patchBudgetDraft({ dailyBudgetRM: Number(event.target.value) })} />
+          </Field>
+          <Field label="每月预算 RM">
+            <input min={1} step={10} type="number" value={budgetDraft.monthlyBudgetRM} onChange={(event) => patchBudgetDraft({ monthlyBudgetRM: Number(event.target.value) })} />
+          </Field>
+        </div>
+        <EditableActionBar
+          isDirty={budgetEditor.isDirty}
+          onCancel={budgetEditor.resetDraft}
+          onSave={saveBudgetDraft}
+          saveLabel="保存预算设置"
+        />
+      </div>
       <div className="panel">
         <SectionHeader eyebrow="全局预算设置" title="预算控制中心" action={<StatusPill tone={budgetEditor.isDirty ? "warning" : "success"}>{budgetEditor.isDirty ? "未保存" : "已保存"}</StatusPill>} />
         <p className="muted-copy">这里是全系统预算默认来源。保存后会同步新建 Case 默认预算、自动排程预算、每日产量上限，以及主控 Agent 的单 Case 成本护栏。</p>
@@ -815,4 +882,13 @@ function BudgetLine(props: { label: string; value: string }) {
       <strong>{props.value}</strong>
     </div>
   );
+}
+
+function getBudgetUsagePercent(usedRM: number, limitRM: number): number {
+  const limit = Number(limitRM) || 0;
+  if (limit <= 0) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(((Number(usedRM) || 0) / limit) * 100)));
 }

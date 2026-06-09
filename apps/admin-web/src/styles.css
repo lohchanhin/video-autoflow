@@ -798,6 +798,76 @@ textarea {
   background: #eef5ff;
 }
 
+.budget-command-panel {
+  grid-column: 1 / -1;
+}
+
+.budget-control-hero {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) repeat(3, minmax(180px, 0.8fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.budget-control-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  min-height: 122px;
+  padding: 14px;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.budget-control-card.primary {
+  border-color: #9ec5fe;
+  background: #f4f8ff;
+}
+
+.budget-control-card span,
+.budget-control-card small {
+  min-width: 0;
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.budget-control-card strong {
+  overflow: hidden;
+  color: #101828;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-meter {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef6;
+}
+
+.budget-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2f6fed;
+}
+
+.budget-fast-edit {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
 .case-table-row,
 .settings-row,
 .agent-row,
@@ -5104,6 +5174,7 @@ textarea {
   .automation-guard-panel,
   .automation-form-grid,
   .automation-stat-grid,
+  .budget-control-hero,
   .asset-board-metrics,
   .reference-asset-field-grid,
   .stage-editor-grid,
@@ -5158,6 +5229,8 @@ textarea {
   .settings-grid,
   .youtube-console,
   .metric-grid,
+  .budget-control-hero,
+  .budget-fast-edit,
   .two-column-fields,
   .stage-checkbox-grid {
     grid-template-columns: 1fr;
