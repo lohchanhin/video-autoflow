@@ -30,6 +30,8 @@ import {
 interface WorkflowPageProps {
   agents: StaffAgent[];
   endpoints: AiToolEndpoint[];
+  openAgentSettings: () => void;
+  openKeySettings: () => void;
   providerKeys: ProviderKeyRecord[];
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   resetSettings: () => void;
@@ -215,6 +217,53 @@ export function WorkflowPage(props: WorkflowPageProps) {
     setActiveTab("tools");
   }
 
+  function openToolSetting(settingId: string) {
+    if (!canLeaveWorkflowDrafts()) {
+      return;
+    }
+
+    setSelectedToolSettingId(settingId);
+    setActiveTab("tools");
+  }
+
+  function openRouteForStage(stageId: ProductionStageId) {
+    if (!canLeaveWorkflowDrafts()) {
+      return;
+    }
+
+    setSelectedStageId(stageId);
+    setActiveTab("pipeline");
+  }
+
+  function handleReadinessAction(input: {
+    endpoint: AiToolEndpoint | null;
+    label: string;
+    setting: ToolProviderSettings | null;
+    stageId: ProductionStageId;
+  }) {
+    if (input.label.includes("密钥")) {
+      if (canLeaveWorkflowDrafts()) props.openKeySettings();
+      return;
+    }
+
+    if (input.label.includes("Agent")) {
+      if (canLeaveWorkflowDrafts()) props.openAgentSettings();
+      return;
+    }
+
+    if (input.setting) {
+      openToolSetting(input.setting.id);
+      return;
+    }
+
+    if (input.endpoint) {
+      openToolsForEndpoint(input.endpoint.id);
+      return;
+    }
+
+    openRouteForStage(input.stageId);
+  }
+
   return (
     <section className="workflow-shell">
       <section className="panel workflow-command-panel">
@@ -378,8 +427,15 @@ export function WorkflowPage(props: WorkflowPageProps) {
               readiness.issues.map(({ stage, endpoint, label, setting, tone }) => (
                 <div className="readiness-issue" key={stage.id}>
                   <strong>{stage.label}</strong>
-                  <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
                   <StatusPill tone={tone}>{tone === "danger" ? "阻塞" : "需检查"}</StatusPill>
+                  <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
+                  <button
+                    className="secondary-button compact-button readiness-action-button"
+                    type="button"
+                    onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                  >
+                    {getReadinessActionLabel(label, setting, endpoint)}
+                  </button>
                 </div>
               ))
             )}
@@ -405,6 +461,13 @@ export function WorkflowPage(props: WorkflowPageProps) {
                   <strong>{endpoint?.queueName ?? stage.queueName}</strong>
                 </div>
                 <StatusPill tone={tone}>{label}</StatusPill>
+                <button
+                  className="secondary-button compact-button readiness-row-action"
+                  type="button"
+                  onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                >
+                  {getReadinessActionLabel(label, setting, endpoint)}
+                </button>
               </article>
             ))}
           </div>
@@ -707,6 +770,13 @@ function coerceParamValue(value: string): boolean | number | string {
 
   const numericValue = Number(value);
   return value.trim() !== "" && Number.isFinite(numericValue) ? numericValue : value;
+}
+
+function getReadinessActionLabel(label: string, setting: ToolProviderSettings | null, endpoint: AiToolEndpoint | null): string {
+  if (label.includes("密钥")) return "打开密钥";
+  if (label.includes("Agent")) return "打开 Agent";
+  if (label.includes("路由") || (!setting && !endpoint)) return "检查路由";
+  return "打开工具";
 }
 
 function WorkflowStat(props: { label: string; value: string; tone: PillTone }) {

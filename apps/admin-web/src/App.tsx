@@ -4875,6 +4875,8 @@ export function App() {
           <WorkflowPage
             agents={staffAgents}
             endpoints={aiToolEndpoints}
+            openAgentSettings={() => switchView("agents")}
+            openKeySettings={() => switchView("keys")}
             providerKeys={providerKeys}
             reportDirtyState={reportDirtyDraft}
             resetEndpoints={() => setAiToolEndpoints(resetAiToolEndpoints())}

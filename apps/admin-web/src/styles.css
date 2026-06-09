@@ -4464,9 +4464,14 @@ textarea {
   font-weight: 800;
 }
 
+.readiness-action-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
 .workflow-readiness-row {
   display: grid;
-  grid-template-columns: 34px minmax(220px, 1fr) minmax(150px, 0.55fr) minmax(170px, 0.65fr) minmax(160px, 0.65fr) 118px;
+  grid-template-columns: 34px minmax(190px, 1fr) minmax(130px, 0.5fr) minmax(160px, 0.62fr) minmax(140px, 0.55fr) 112px auto;
   gap: 10px;
   align-items: center;
   min-height: 64px;
@@ -4474,6 +4479,10 @@ textarea {
   border: 1px solid #e1e8f0;
   border-radius: 8px;
   background: #fbfcfe;
+}
+
+.readiness-row-action {
+  justify-self: end;
 }
 
 .mono-cell {
