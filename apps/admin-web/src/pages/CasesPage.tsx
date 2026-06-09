@@ -9,6 +9,7 @@ import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, typ
 import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEditableDraft } from "../lib/editable-draft.js";
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
 import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
+import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset, shouldHideFromNewCaseReferencePicker } from "../lib/draft-reference-assets.js";
 import { formatDateTime, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
 import { resolveProductionAssetMediaUrl, resolveProductionAssetPreviewUrl } from "../lib/production-asset-media.js";
@@ -127,10 +128,6 @@ const productionTabGroups: Array<{ label: string; tabs: ProductionWorkbenchTab[]
 
 const processStatusOptions: ProcessRecordStatus[] = ["pending", "working", "done", "failed", "skipped"];
 
-function isSelectableDraftAsset(asset: ProductionAsset): boolean {
-  return Boolean(assetMediaUrl(asset)) && (asset.status === "approved" || asset.status === "ready");
-}
-
 export function CasesPage(props: CasesPageProps) {
   const [activeTab, setActiveTab] = useState<CaseTab>(props.selectedJob ? "production" : "new");
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(props.selectedRecords[0]?.id ?? null);
@@ -248,11 +245,12 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
   const canGeneratePreview = hasTopic && !props.isGeneratingDraftPreview && !apiUnavailable;
   const canAutoGenerate = hasTopic && !props.isAutoGeneratingCase && !props.isGeneratingDraftPreview && !apiUnavailable;
   const characterAssets = props.draftReferenceAssets
-    .filter((asset) => isSelectableDraftAsset(asset) && asset.type === "character_design")
+    .filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset) && asset.type === "character_design")
     .sort((left, right) => left.label.localeCompare(right.label));
   const backgroundAssets = props.draftReferenceAssets
-    .filter((asset) => isSelectableDraftAsset(asset) && (asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame"))
+    .filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset) && (asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame"))
     .sort((left, right) => left.label.localeCompare(right.label));
+  const hiddenDraftAssetCount = props.draftReferenceAssets.filter(shouldHideFromNewCaseReferencePicker).length;
   const effectiveEpisodes = props.draftSeriesId
     ? props.seriesEpisodes.filter((episode) => episode.seriesId === props.draftSeriesId)
     : props.seriesEpisodes;
@@ -402,6 +400,11 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
             {characterAssets.length === 0 && backgroundAssets.length === 0 ? (
               <div className="draft-reference-help">
                 还没有可用的已批准设计资产。可以先在「设计资产」生成角色三视图或场景设定表；这里不选择也能继续生成。
+              </div>
+            ) : null}
+            {hiddenDraftAssetCount > 0 ? (
+              <div className="draft-reference-help subtle">
+                已隐藏 {hiddenDraftAssetCount} 个 Case 规划占位或缺少预览的资产。新建 Case 只显示「资产库」中已入库、可预览的角色和场景参考。
               </div>
             ) : null}
           </details>

@@ -6,7 +6,7 @@ export function isReadyReferenceAsset(asset: ProductionAsset): boolean {
 }
 
 export function getProductionAssetMediaUrl(asset: ProductionAsset): string {
-  return resolveFirstMediaUrl([asset.url, asset.storagePath]);
+  return resolveFirstMediaUrl([asset.storagePath, asset.url]);
 }
 
 export function isCharacterDesignAsset(asset: ProductionAsset): boolean {

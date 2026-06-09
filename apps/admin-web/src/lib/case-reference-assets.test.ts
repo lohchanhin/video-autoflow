@@ -65,6 +65,7 @@ describe("case reference asset routing", () => {
         "Do not create UI or readable text."
       ].join("\n"),
       role: "reference_image",
+      storagePath: "",
       type: "scene_design",
       url: "https://cdn.test/cathedral.png"
     });

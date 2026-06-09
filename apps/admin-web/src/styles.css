@@ -2223,6 +2223,13 @@ textarea {
   background: #f8fbff;
 }
 
+.draft-reference-help.subtle {
+  border-style: solid;
+  border-color: #d7e3f2;
+  background: #fbfcfe;
+  color: #4e5f78;
+}
+
 .case-form-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
