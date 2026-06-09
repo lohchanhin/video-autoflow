@@ -834,7 +834,7 @@ export function CostPage(props: {
       </div>
 
       <div className="panel table-panel">
-        <SectionHeader eyebrow="Provider ledger" title="每次 API 调用记录" />
+        <SectionHeader eyebrow="供应商账本" title="每次 API 调用记录" />
         <div className="settings-table">
           {ledgerLogs.length === 0 ? (
             <EmptyState title="暂无 MongoDB 成本记录" body="之后脚本、图片、配音、BGM、Seedance 影片生成成功后，会自动写入 cost_logs collection。" />
@@ -853,7 +853,7 @@ export function CostPage(props: {
       </div>
 
       <div className="panel table-panel">
-        <SectionHeader eyebrow="Case guard" title="每支影片预算" />
+        <SectionHeader eyebrow="预算护栏" title="每支影片预算" />
         <div className="settings-table">
           {props.jobs.map((job) => (
             <article className="settings-row cost-case-row" key={job.id}>

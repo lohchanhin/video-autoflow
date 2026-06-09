@@ -275,7 +275,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
     <section className="workflow-shell">
       <section className="panel workflow-command-panel">
         <SectionHeader
-          eyebrow="Workflow manager"
+          eyebrow="流程管理"
           title="路由、工具、就绪检查"
           action={
             <div className="workflow-header-actions">
@@ -427,7 +427,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
 
       {activeTab === "readiness" ? (
         <section className="panel workflow-readiness-panel">
-          <SectionHeader eyebrow="Operational checks" title="就绪检查清单" action={<StatusPill tone={readiness.issueCount === 0 ? "success" : "danger"}>{readiness.issueCount === 0 ? "MP4 链路可执行" : `${readiness.issueCount} 个硬阻塞`}</StatusPill>} />
+          <SectionHeader eyebrow="运行检查" title="就绪检查清单" action={<StatusPill tone={readiness.issueCount === 0 ? "success" : "danger"}>{readiness.issueCount === 0 ? "MP4 链路可执行" : `${readiness.issueCount} 个硬阻塞`}</StatusPill>} />
           <div className="workflow-readiness-groups">
             <section className="readiness-group">
               <div className="readiness-group-header">

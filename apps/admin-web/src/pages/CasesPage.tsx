@@ -290,7 +290,7 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
           props.generateDraftScriptStory();
         }}
       >
-        <SectionHeader eyebrow="Create case" title="输入一句话，AI 自动产出大纲" />
+        <SectionHeader eyebrow="创建 Case" title="输入一句话，AI 自动产出大纲" />
         <div className="simple-case-form">
           <Field label="你想做什么影片？">
             <textarea
@@ -334,7 +334,7 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
                     ))}
                   </select>
                 </Field>
-                <Field label="背景故事 / Story World">
+                <Field label="背景故事 / 世界观">
                   <select value={props.draftStoryWorldId} onChange={(event) => props.setDraftStoryWorldId(event.target.value)}>
                     <option value="">不指定，或继承系列绑定</option>
                     {props.storyWorlds.map((storyWorld) => <option key={storyWorld._id} value={storyWorld._id}>{storyWorld.name}</option>)}
@@ -623,7 +623,7 @@ function DraftPreviewPanel(props: {
     <section className="case-preview-panel panel">
       <SectionHeader
         eyebrow={`${props.draftPreview.result.provider} / ${props.draftPreview.result.model}`}
-        title="Review AI Outline"
+        title="审核 AI 大纲"
         action={
           <>
             <button className="secondary-button" disabled={props.isGeneratingDraftPreview} type="button" onClick={props.generateDraftScriptStory}>
@@ -647,7 +647,7 @@ function DraftPreviewPanel(props: {
           <strong>RM {props.draftPreview.result.costRM.toFixed(4)}</strong>
         </div>
         <div>
-          <span>Scenes</span>
+          <span>场景数</span>
           <strong>{props.draftPreview.result.storyboard.length}</strong>
         </div>
         <div>
@@ -679,7 +679,7 @@ function DraftPreviewPanel(props: {
         {props.draftPreview.result.storyboard.map((scene) => (
           <article className="draft-scene-card" key={scene.sceneId}>
             <div>
-              <strong>Scene {scene.sceneId}</strong>
+                <strong>场景 {scene.sceneId}</strong>
               <span>{scene.durationSeconds}s / {scene.camera}</span>
             </div>
             <span>场景内容</span>
@@ -702,12 +702,12 @@ function InterpretedIdeaCard(props: { draftPreview: CaseDraftPreview }) {
 
   return (
     <div className="draft-script-card">
-      <span>AI interpreted idea</span>
+      <span>AI 理解的故事方向</span>
       <strong>{idea.expandedPremise}</strong>
       <p>{idea.logline}</p>
-      <span>Story engine</span>
+      <span>故事引擎</span>
       <p>{idea.protagonist} / {idea.setting} / {idea.centralObject}</p>
-      <span>Conflict / rule / twist</span>
+      <span>冲突 / 规则 / 反转</span>
       <p>{idea.conflict} / {idea.ruleOrConstraint} / {idea.twist}</p>
       <span>Ending hook</span>
       <p>{idea.endingHook}</p>
@@ -720,7 +720,7 @@ function OutlineQcCard(props: { draftPreview: CaseDraftPreview }) {
 
   return (
     <div className="draft-script-card">
-      <span>Outline QC</span>
+      <span>大纲质检</span>
       <div className="qc-summary-strip">
         <StatusPill tone={qc.status === "pass" ? "success" : "danger"}>{qc.status}</StatusPill>
         <strong>{qc.summary}</strong>
@@ -737,14 +737,14 @@ function OutlineQcCard(props: { draftPreview: CaseDraftPreview }) {
 function VisualBibleCard(props: { visualBible: CaseDraftPreview["result"]["visualBible"] }) {
   return (
     <div className="draft-script-card visual-bible-card">
-      <span>Visual Bible / role consistency</span>
+      <span>视觉设定 / 角色一致性</span>
       <strong>{props.visualBible.character.name} / {props.visualBible.character.role}</strong>
       <p>{props.visualBible.character.ageRange} / {props.visualBible.character.bodyType} / {props.visualBible.character.hair}</p>
-      <span>Wardrobe lock</span>
+      <span>服装锁定</span>
       <p>{props.visualBible.character.wardrobe}</p>
-      <span>Identity lock</span>
+      <span>身份锁定</span>
       <p>{props.visualBible.character.signatureDetails}</p>
-      <span>Environment</span>
+      <span>环境设定</span>
       <p>{props.visualBible.environment.location} / {props.visualBible.environment.lighting} / {props.visualBible.environment.palette}</p>
       <span>Negative prompt</span>
       <p>{props.visualBible.negativePrompt}</p>
@@ -767,7 +767,7 @@ function CaseQueueTab(props: {
         action={
           <button className="secondary-button" type="button" onClick={props.clearCases}>
             <Square size={15} />
-            Clear
+            清空
           </button>
         }
       />
@@ -961,10 +961,10 @@ function ProductionTab(
           <div className="case-meta-strip">
             <span>{props.selectedJob.id}</span>
             <span>{props.selectedJob.source}</span>
-            <span>{schedule?.name ?? "Manual case"}</span>
+            <span>{schedule?.name ?? "手动 Case"}</span>
             <span>{props.selectedJob.reviewStatus}</span>
-            <span>{props.selectedCharacter ? `Character: ${props.selectedCharacter.name}` : "No character lock"}</span>
-            <span>{props.selectedJob.sceneCount} scenes</span>
+            <span>{props.selectedCharacter ? `角色：${props.selectedCharacter.name}` : "未锁定角色"}</span>
+            <span>{props.selectedJob.sceneCount} 个场景</span>
             <span>RM {props.selectedJob.actualCostRM.toFixed(2)} / {props.selectedJob.costLimitRM.toFixed(2)}</span>
             <span>{formatDateTime(props.selectedJob.updatedAt)}</span>
           </div>
@@ -974,7 +974,7 @@ function ProductionTab(
 
       {sourceSeries || sourceEpisode ? (
         <section className="case-source-panel panel">
-          <SectionHeader eyebrow="Series source" title={sourceSeries?.name ?? "系列来源"} action={<StatusPill tone="active">Series</StatusPill>} />
+          <SectionHeader eyebrow="系列来源" title={sourceSeries?.name ?? "系列来源"} action={<StatusPill tone="active">系列</StatusPill>} />
           <div className="case-source-grid">
             <div>
               <span>系列</span>
@@ -1667,7 +1667,7 @@ function SceneImageWorkbench(props: {
       {props.sceneReviews.length === 0 ? (
         <EmptyState
           title="还没有场景图片审核记录"
-          body={storyboardReady ? `已确认 ${props.job.sceneCount} 个分镜。点击「生成场景图片」后，每个 Scene 会显示图片、prompt、参考资产和审核状态。` : "先确认大纲；确认后的分镜会成为图片生成的唯一来源。"}
+          body={storyboardReady ? `已确认 ${props.job.sceneCount} 个分镜。点击「生成场景图片」后，每个场景会显示图片、prompt、参考资产和审核状态。` : "先确认大纲；确认后的分镜会成为图片生成的唯一来源。"}
         />
       ) : (
         <SceneReviewPanel
@@ -1926,7 +1926,7 @@ function SceneReviewPanel(props: {
     <div className="scene-review-section">
       <div className="section-heading-row">
         <div>
-          <span>Scene Review</span>
+          <span>场景图片审核</span>
           <strong>Inspect and fix each generated image</strong>
         </div>
         <small>{props.sceneReviews.length} scene(s)</small>
@@ -1980,16 +1980,16 @@ function SceneReviewCard(props: {
   return (
     <article className={`scene-review-card ${draft.status}`}>
       <div className="scene-review-media">
-        {isImagePath(draft.artifactPath) ? <MediaImage src={resolveMediaUrl(draft.artifactPath)} alt={`Scene ${draft.sceneId}`} fallbackLabel="场景图不可用" /> : <div className="scene-placeholder">Scene {draft.sceneId}</div>}
+        {isImagePath(draft.artifactPath) ? <MediaImage src={resolveMediaUrl(draft.artifactPath)} alt={`场景 ${draft.sceneId}`} fallbackLabel="场景图不可用" /> : <div className="scene-placeholder">场景 {draft.sceneId}</div>}
       </div>
       <div className="scene-review-body">
         <div className="scene-review-title">
-          <strong>Scene {draft.sceneId}</strong>
+          <strong>场景 {draft.sceneId}</strong>
           <StatusPill tone={draft.status === "approved" ? "success" : draft.status === "rejected" ? "danger" : "warning"}>{draft.status}</StatusPill>
         </div>
         <div className={`scene-qc-strip ${draft.qcStatus}`}>
           <strong>QC: {draft.qcStatus}</strong>
-          <span>{draft.qcSummary || "No visual QC result recorded yet."}</span>
+          <span>{draft.qcSummary || "还没有视觉 QC 结果。"}</span>
         </div>
         {draft.qcIssues.length > 0 ? (
           <div className="scene-qc-issues">
@@ -2083,7 +2083,7 @@ function PublishTargetMatrix(props: {
 }) {
   return (
     <section className="publish-target-panel panel">
-      <SectionHeader eyebrow="Private upload matrix" title="YouTube Targets" />
+      <SectionHeader eyebrow="私密上传矩阵" title="YouTube 发布目标" />
       {props.caseTargets.length === 0 ? <EmptyState title="还没有 YouTube 目标" body="这个 Case 会停在 MP4/QC。准备好 private upload 后，再新增 YouTube 发布目标。" /> : null}
       <div className="publish-target-list">
         {props.caseTargets.map((caseTarget) => {
@@ -2101,7 +2101,7 @@ function PublishTargetMatrix(props: {
               </StatusPill>
               <span>{caseTarget.privacyStatus}</span>
               <button className="secondary-button compact-button" disabled={!canUpload} type="button" onClick={() => props.uploadPrivateTarget(props.job, caseTarget.targetId)}>
-                Upload private
+                私密上传
               </button>
               {caseTarget.youtubeVideoId ? <small>{caseTarget.youtubeVideoId}</small> : null}
             </article>
@@ -2195,18 +2195,18 @@ function StageEditorPanel(props: {
 
   return (
     <section className="stage-editor-panel panel">
-      <SectionHeader eyebrow="Case file" title="Stage Editor" />
+      <SectionHeader eyebrow="Case 档案" title="阶段编辑器" />
       <div className="inspector-summary">
         <div>
           <span>Case ID</span>
           <strong>{props.job.id}</strong>
         </div>
         <div>
-          <span>Created</span>
+          <span>创建时间</span>
           <strong>{formatDateTime(props.job.createdAt)}</strong>
         </div>
         <div>
-          <span>Privacy</span>
+          <span>隐私状态</span>
           <strong>{props.job.privacy}</strong>
         </div>
         <div>
@@ -2216,10 +2216,10 @@ function StageEditorPanel(props: {
       </div>
 
       <div className="stage-editor-grid">
-        <Field label="Case topic">
+        <Field label="Case 主题">
           <input value={caseDraft?.topic ?? ""} onChange={(event) => caseEditor.setDraftPatch({ topic: event.target.value })} />
         </Field>
-        <Field label="Character lock">
+        <Field label="角色锁定">
           <select value={caseDraft?.characterId ?? ""} onChange={(event) => caseEditor.setDraftPatch({ characterId: event.target.value || null })}>
             <option value="">No fixed character</option>
             {props.characters.map((character) => (
@@ -2229,13 +2229,13 @@ function StageEditorPanel(props: {
             ))}
           </select>
         </Field>
-        <Field label="Scene count">
+        <Field label="场景数量">
           <input min={1} max={30} type="number" value={caseDraft?.sceneCount ?? 1} onChange={(event) => caseEditor.setDraftPatch({ sceneCount: Number(event.target.value) })} />
         </Field>
-        <Field label="Budget limit RM">
+        <Field label="预算上限 RM">
           <input min={0.1} step={0.1} type="number" value={caseDraft?.costLimitRM ?? 0} onChange={(event) => caseEditor.setDraftPatch({ costLimitRM: Number(event.target.value) })} />
         </Field>
-        <Field label="Main prompt / production brief">
+        <Field label="主 prompt / 生产 brief">
           <textarea rows={4} value={caseDraft?.prompt ?? ""} onChange={(event) => caseEditor.setDraftPatch({ prompt: event.target.value })} />
         </Field>
       </div>
@@ -2253,7 +2253,7 @@ function StageEditorPanel(props: {
             action={<StatusPill tone={getRecordTone(props.record.status)}>{props.record.status}</StatusPill>}
           />
           <div className="stage-editor-grid">
-            <Field label="Status">
+            <Field label="状态">
               <select
                 value={recordDraft.status}
                 onChange={(event) => recordEditor.setDraftPatch({ status: event.target.value as ProcessRecordStatus })}
@@ -2286,7 +2286,7 @@ function StageEditorPanel(props: {
                 ))}
               </select>
             </Field>
-            <Field label="Provider / tool">
+            <Field label="供应商 / 工具">
               <input
                 value={recordDraft.provider}
                 onChange={(event) => recordEditor.setDraftPatch({ provider: event.target.value })}
@@ -2326,7 +2326,7 @@ function StageEditorPanel(props: {
             />
           </Field>
           <ArtifactPreview artifactPath={props.record.artifactPath} />
-          <Field label="Internal notes">
+          <Field label="内部备注">
             <textarea
               rows={4}
               value={recordDraft.notes}
@@ -2372,7 +2372,7 @@ function ArtifactPreview(props: { artifactPath: string }) {
       {artifacts.map((artifact) =>
         isOpenableMediaUrl(artifact) ? (
           <a href={artifact} target="_blank" rel="noreferrer" key={artifact}>
-            Open artifact
+            打开产物
           </a>
         ) : (
           <code key={artifact}>{artifact}</code>
@@ -2473,7 +2473,7 @@ function CaseCostLedgerPanel(props: {
       </section>
 
       <section className="panel table-panel">
-        <SectionHeader eyebrow="Provider calls" title="本 Case API / 合成记录" />
+        <SectionHeader eyebrow="供应商调用" title="本 Case API / 合成记录" />
         <div className="settings-table">
           {props.logs.length === 0 ? (
             <EmptyState title="暂无成本记录" body="生成脚本、图片、配音、BGM、Seedance clips 或最终 MP4 后，这里会显示 MongoDB cost_logs 明细。" />

@@ -2179,7 +2179,7 @@ export function App() {
       }
 
       if (scriptResult.requiresReview) {
-        throw new Error(`Outline QC needs review before image generation. ${scriptResult.outlineQc.summary}`);
+        throw new Error(`大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`);
       }
 
       assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
@@ -2449,7 +2449,7 @@ export function App() {
       switchView("cases");
 
       if (scriptResult.requiresReview) {
-        throw new Error(`Outline QC needs review before image generation. ${scriptResult.outlineQc.summary}`);
+        throw new Error(`大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`);
       }
 
       assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
@@ -2774,7 +2774,7 @@ export function App() {
 
   async function handleCreateStoryWorld(input: Omit<StoryWorld, "_id" | "createdAt" | "updatedAt">) {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. Story World library needs ${apiBaseUrl}.`);
+      setSeriesError(`API 服务当前为 ${apiState}，背景故事库需要连接 ${apiBaseUrl}。`);
       return null;
     }
 
@@ -2784,7 +2784,7 @@ export function App() {
       setSeriesError(null);
       return response.storyWorld;
     } catch (error) {
-      setSeriesError(error instanceof Error ? error.message : "Story World create failed.");
+      setSeriesError(error instanceof Error ? error.message : "背景故事创建失败。");
       return null;
     }
   }

@@ -158,7 +158,7 @@ export function SeriesPage(props: SeriesPageProps) {
       <section className="series-toolbar panel">
         <div>
           <p className="eyebrow">系列内容库</p>
-          <h2>Series Library / 内容产品线</h2>
+          <h2>系列内容库 / 内容产品线</h2>
           <span>先定义一个可持续生产的内容系列，再批量生成选题；人工批准后才转成影片 Case。</span>
         </div>
         <div className="asset-board-actions">
@@ -256,7 +256,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 <Field label="内容类型 / 影片类型">
                   <input value={seriesDraft.contentType} onChange={(event) => patchSeriesDraft({ contentType: event.target.value })} />
                 </Field>
-                <Field label="背景故事 / Story World">
+                <Field label="背景故事 / 世界观">
                   <select value={seriesDraft.storyWorldId ?? ""} onChange={(event) => patchSeriesDraft({ storyWorldId: event.target.value || null })}>
                     <option value="">不绑定世界观</option>
                     {props.storyWorlds.map((storyWorld) => <option key={storyWorld._id} value={storyWorld._id}>{storyWorld.name}</option>)}
@@ -293,7 +293,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 onSave={saveSeriesDraft}
               />
                   <section className="series-story-world-card">
-                    <SectionHeader eyebrow="背景故事" title="新增 Story World" />
+                    <SectionHeader eyebrow="背景故事" title="新增背景故事" />
                     <div className="series-form-grid">
                       <Field label="世界观名称">
                         <input value={storyWorldDraft.name} onChange={(event) => patchStoryWorldDraft({ name: event.target.value })} placeholder="例如：彩虹森林、森林小学、未来便利店" />
