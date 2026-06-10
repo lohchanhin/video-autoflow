@@ -1622,6 +1622,20 @@ textarea {
   min-width: 0;
 }
 
+@media (max-width: 1500px) and (min-width: 1201px) {
+  .series-layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .series-insight-panel {
+    grid-column: 1 / -1;
+  }
+
+  .series-insight-panel .inspector-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .series-list {
   display: grid;
   gap: 8px;
