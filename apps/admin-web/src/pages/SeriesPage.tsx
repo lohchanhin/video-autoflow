@@ -659,7 +659,7 @@ function AssetBindingPicker(props: {
   const selectedAssets = props.selectedIds
     .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
     .filter((asset): asset is ProductionAsset => Boolean(asset));
-  const bindingSummary = getAssetBindingSummary(selectedAssets);
+  const bindingBreakdown = formatAssetBindingBreakdown(selectedAssets);
   const availableTypes = assetPickerTypeOrder.filter((type) => props.assets.some((asset) => asset.type === type));
   const normalizedQuery = query.trim().toLowerCase();
   const filteredAssets = props.assets.filter((asset) => {
@@ -691,28 +691,16 @@ function AssetBindingPicker(props: {
           <span>{props.description}</span>
         </div>
         <div className="asset-binding-actions">
-          <em>{selectedAssets.length} 已选</em>
+          <em>{selectedAssets.length} 已绑定</em>
           <button className="secondary-button compact-button" type="button" onClick={() => setLibraryOpen((isOpen) => !isOpen)}>
             {libraryOpen ? "收起资产库" : "选择资产"}
           </button>
         </div>
       </div>
 
-      <div className="asset-binding-summary-grid" aria-label="绑定资产分类统计">
-        {bindingSummary.map((item) => (
-          <button
-            className={typeFilter === item.filter ? "active" : ""}
-            key={item.label}
-            type="button"
-            onClick={() => {
-              setTypeFilter(item.filter);
-              setLibraryOpen(true);
-            }}
-          >
-            <span>{item.label}</span>
-            <strong>{item.count}</strong>
-          </button>
-        ))}
+      <div className="asset-binding-section-heading">
+        <strong>已绑定资产</strong>
+        <span>{bindingBreakdown || "尚未绑定，生成 Case 时可由 AI 自动设计。"}</span>
       </div>
 
       <div className="asset-selected-gallery" aria-label="已绑定资产">
@@ -739,6 +727,10 @@ function AssetBindingPicker(props: {
 
       {libraryOpen ? (
         <div className="asset-picker-library">
+          <div className="asset-binding-section-heading">
+            <strong>资产库</strong>
+            <span>从已保存的设计资产中逐张选择，保存系列后才会生效。</span>
+          </div>
           <div className="asset-picker-controls">
             <label className="asset-picker-search">
               <Search size={16} />
@@ -782,17 +774,19 @@ function AssetBindingPicker(props: {
   );
 }
 
-function getAssetBindingSummary(assets: ProductionAsset[]): Array<{ count: number; filter: ProductionAsset["type"] | "all"; label: string }> {
+function formatAssetBindingBreakdown(assets: ProductionAsset[]): string {
   const characters = assets.filter((asset) => asset.type === "character_design").length;
   const scenes = assets.filter((asset) => asset.type === "scene_design" || asset.type === "first_frame" || asset.type === "last_frame").length;
   const style = assets.filter((asset) => asset.type === "style_reference").length;
+  const bgm = assets.filter((asset) => asset.type === "bgm_reference").length;
+  const parts = [
+    characters > 0 ? `角色 ${characters}` : "",
+    scenes > 0 ? `场景 ${scenes}` : "",
+    style > 0 ? `风格 ${style}` : "",
+    bgm > 0 ? `BGM ${bgm}` : ""
+  ].filter(Boolean);
 
-  return [
-    { count: assets.length, filter: "all", label: "全部" },
-    { count: characters, filter: "character_design", label: "角色" },
-    { count: scenes, filter: "scene_design", label: "场景" },
-    { count: style, filter: "style_reference", label: "风格" }
-  ];
+  return parts.join(" · ");
 }
 
 function seriesWorkspaceTabLabel(tab: SeriesWorkspaceTab): string {
