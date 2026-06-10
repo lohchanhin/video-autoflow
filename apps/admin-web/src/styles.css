@@ -665,6 +665,44 @@ textarea {
   color: #344054;
 }
 
+.case-action-empty-state {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px;
+  border: 1px dashed #b8c7da;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.case-action-empty-state > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 760px;
+}
+
+.case-action-empty-state strong {
+  color: #182230;
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.case-action-empty-state span {
+  color: #526173;
+  font-size: 14px;
+  font-weight: 780;
+  line-height: 1.5;
+}
+
+.case-action-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .dashboard-empty-focus {
   display: grid;
   gap: 12px;
@@ -6061,6 +6099,14 @@ textarea {
 
   .case-production-header {
     flex-direction: column;
+  }
+
+  .case-action-empty-state {
+    flex-direction: column;
+  }
+
+  .case-action-empty-actions {
+    justify-content: flex-start;
   }
 
   .workflow-table-header,

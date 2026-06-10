@@ -201,16 +201,16 @@ export function CasesPage(props: CasesPageProps) {
       <div className="case-tabs" role="tablist" aria-label="Case workspace tabs">
         <CaseTabButton active={activeTab === "new"} label="新建 Case" meta="输入需求" onClick={() => switchCaseTab("new")} />
         <CaseTabButton active={activeTab === "queue"} label="Case 队列" meta={`${props.jobs.length} 个 Case`} onClick={() => switchCaseTab("queue")} />
-        <CaseTabButton active={activeTab === "production"} disabled={!props.selectedJob} label="生产工作台" meta={props.selectedJob?.id ?? "选择 Case"} onClick={() => switchCaseTab("production")} />
+        <CaseTabButton active={activeTab === "production"} label="生产工作台" meta={props.selectedJob?.id ?? "选择 Case"} onClick={() => switchCaseTab("production")} />
       </div>
 
       {activeTab === "new" ? <CreateCaseTab {...props} createCase={createCase} /> : null}
 
       {activeTab === "queue" ? (
-        <CaseQueueTab blockedCases={blockedCases} clearCases={clearCases} jobs={props.jobs} openCase={openCase} selectedJob={props.selectedJob} />
+        <CaseQueueTab blockedCases={blockedCases} clearCases={clearCases} createNew={() => switchCaseTab("new")} jobs={props.jobs} openCase={openCase} selectedJob={props.selectedJob} />
       ) : null}
 
-      {activeTab === "production" ? (
+      {activeTab === "production" && props.selectedJob ? (
         <ProductionTab
           {...props}
           reportDirtyState={reportCaseDirtyState}
@@ -218,6 +218,7 @@ export function CasesPage(props: CasesPageProps) {
           setSelectedRecordId={setSelectedRecordId}
         />
       ) : null}
+      {activeTab === "production" && !props.selectedJob ? <ProductionEmptyState createNew={() => switchCaseTab("new")} hasCases={props.jobs.length > 0} openQueue={() => switchCaseTab("queue")} /> : null}
     </section>
   );
 }
@@ -788,6 +789,7 @@ function VisualBibleCard(props: { visualBible: CaseDraftPreview["result"]["visua
 function CaseQueueTab(props: {
   blockedCases: number;
   clearCases: () => void;
+  createNew: () => void;
   jobs: AdminJob[];
   openCase: (id: string) => void;
   selectedJob: AdminJob | null;
@@ -798,7 +800,7 @@ function CaseQueueTab(props: {
         eyebrow="Work queue"
         title="Video Cases"
         action={
-          <button className="secondary-button" type="button" onClick={props.clearCases}>
+          <button className="secondary-button" type="button" disabled={props.jobs.length === 0} onClick={props.clearCases}>
             <Square size={15} />
             清空
           </button>
@@ -808,7 +810,15 @@ function CaseQueueTab(props: {
         <span>{props.jobs.length} total</span>
         <span>{props.blockedCases} 个阻塞</span>
       </div>
-      {props.jobs.length === 0 ? <EmptyState title="还没有 Case" body="先建立一个影片 Case，系统会从脚本、分镜、图片、配音一路推进到 MP4。" /> : null}
+      {props.jobs.length === 0 ? (
+        <CaseActionEmptyState
+          title="还没有 Case"
+          body="先建立一个影片 Case。确认大纲后，系统会从脚本、分镜、图片、配音一路推进到 MP4。"
+          primaryLabel="新建 Case"
+          primaryIcon={<FilePenLine size={16} />}
+          onPrimary={props.createNew}
+        />
+      ) : null}
       <div className="case-queue-table">
         {props.jobs.map((job) => (
           <button
@@ -832,6 +842,73 @@ function CaseQueueTab(props: {
         ))}
       </div>
     </section>
+  );
+}
+
+function ProductionEmptyState(props: {
+  createNew: () => void;
+  hasCases: boolean;
+  openQueue: () => void;
+}) {
+  if (props.hasCases) {
+    return (
+      <section className="panel">
+        <CaseActionEmptyState
+          title="先选择一支 Case"
+          body="生产工作台会显示脚本、资产、配音、视频片段、最终 MP4、成本和发布状态。先从队列打开一支影片。"
+          primaryLabel="打开 Case 队列"
+          primaryIcon={<Search size={16} />}
+          secondaryLabel="新建 Case"
+          secondaryIcon={<FilePenLine size={16} />}
+          onPrimary={props.openQueue}
+          onSecondary={props.createNew}
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel">
+      <CaseActionEmptyState
+        title="先选择一支 Case"
+        body="当前还没有影片 Case。先新建 Case，生成并确认大纲后再进入生产工作台。"
+        primaryLabel="新建 Case"
+        primaryIcon={<FilePenLine size={16} />}
+        onPrimary={props.createNew}
+      />
+    </section>
+  );
+}
+
+function CaseActionEmptyState(props: {
+  body: string;
+  onPrimary: () => void;
+  onSecondary?: () => void;
+  primaryIcon: ReactNode;
+  primaryLabel: string;
+  secondaryIcon?: ReactNode;
+  secondaryLabel?: string;
+  title: string;
+}) {
+  return (
+    <div className="case-action-empty-state">
+      <div>
+        <strong>{props.title}</strong>
+        <span>{props.body}</span>
+      </div>
+      <div className="case-action-empty-actions">
+        <button className="primary-button compact-button" type="button" onClick={props.onPrimary}>
+          {props.primaryIcon}
+          {props.primaryLabel}
+        </button>
+        {props.secondaryLabel && props.onSecondary ? (
+          <button className="secondary-button compact-button" type="button" onClick={props.onSecondary}>
+            {props.secondaryIcon}
+            {props.secondaryLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
