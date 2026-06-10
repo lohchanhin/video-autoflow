@@ -656,6 +656,9 @@ function AssetBindingPicker(props: {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<ProductionAsset["type"] | "all">("all");
   const [libraryOpen, setLibraryOpen] = useState(props.selectedIds.length === 0);
+  const [unavailableAssetIds, setUnavailableAssetIds] = useState<string[]>([]);
+  const unavailableAssetIdSet = new Set(unavailableAssetIds);
+  const assetMediaKey = props.assets.map((asset) => `${asset._id}:${assetBindingThumbUrls(asset).join("|")}`).join("\n");
   const selectedAssets = props.selectedIds
     .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
     .filter((asset): asset is ProductionAsset => Boolean(asset));
@@ -663,11 +666,20 @@ function AssetBindingPicker(props: {
   const availableTypes = assetPickerTypeOrder.filter((type) => props.assets.some((asset) => asset.type === type));
   const normalizedQuery = query.trim().toLowerCase();
   const filteredAssets = props.assets.filter((asset) => {
+    if (unavailableAssetIdSet.has(asset._id)) {
+      return false;
+    }
+
     const matchesType = typeFilter === "all" || asset.type === typeFilter;
     const searchable = [asset.label, asset.folderName, asset.prompt, asset.notes, assetTypeLabel(asset.type)].join(" ").toLowerCase();
 
     return matchesType && (!normalizedQuery || searchable.includes(normalizedQuery));
   });
+  const hiddenUnavailableCount = unavailableAssetIds.filter((id) => props.assets.some((asset) => asset._id === id)).length;
+
+  useEffect(() => {
+    setUnavailableAssetIds([]);
+  }, [assetMediaKey]);
 
   useEffect(() => {
     if (selectedAssets.length === 0) {
@@ -681,6 +693,10 @@ function AssetBindingPicker(props: {
 
   function remove(id: string) {
     props.onChange(props.selectedIds.filter((currentId) => currentId !== id));
+  }
+
+  function markAssetUnavailable(id: string) {
+    setUnavailableAssetIds((currentIds) => (currentIds.includes(id) ? currentIds : [...currentIds, id]));
   }
 
   return (
@@ -711,7 +727,7 @@ function AssetBindingPicker(props: {
                 <X size={14} />
               </button>
               <span className="asset-selected-thumb">
-                {assetBindingThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetBindingThumbUrls(asset)} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={18} label="无预览" />}
+                {assetBindingThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetBindingThumbUrls(asset)} fallbackLabel="预览不可用" onUnavailable={() => markAssetUnavailable(asset._id)} /> : <MediaFallback iconSize={18} label="无预览" />}
               </span>
               <strong>{asset.label}</strong>
               <small>{assetTypeLabel(asset.type)} / {asset.folderName || "未分类"}</small>
@@ -749,7 +765,10 @@ function AssetBindingPicker(props: {
           </div>
 
           {filteredAssets.length === 0 ? (
-            <EmptyState title="没有符合筛选的资产" body="换一个类型或搜索关键词。" />
+            <EmptyState
+              title="没有符合筛选的资产"
+              body={hiddenUnavailableCount > 0 ? `已隐藏 ${hiddenUnavailableCount} 个预览失效资产，请到设计资产中心重新生成。` : "换一个类型或搜索关键词。"}
+            />
           ) : (
             <div className="asset-picker-grid">
               {filteredAssets.map((asset) => {
@@ -758,7 +777,7 @@ function AssetBindingPicker(props: {
                 return (
                   <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
                     <span className="asset-picker-thumb">
-                      {assetBindingThumbUrls(asset).length > 0 ? <MediaImage src={assetBindingThumbUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback label="无预览" />}
+                      {assetBindingThumbUrls(asset).length > 0 ? <MediaImage src={assetBindingThumbUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" onUnavailable={() => markAssetUnavailable(asset._id)} /> : <MediaFallback label="无预览" />}
                       <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
                     </span>
                     <strong>{asset.label}</strong>
