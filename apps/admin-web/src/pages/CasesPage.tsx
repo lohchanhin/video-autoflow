@@ -780,7 +780,7 @@ function VisualBibleCard(props: { visualBible: CaseDraftPreview["result"]["visua
       <p>{props.visualBible.character.signatureDetails}</p>
       <span>环境设定</span>
       <p>{props.visualBible.environment.location} / {props.visualBible.environment.lighting} / {props.visualBible.environment.palette}</p>
-      <span>Negative prompt</span>
+      <span>负向提示词</span>
       <p>{props.visualBible.negativePrompt}</p>
     </div>
   );
@@ -797,8 +797,8 @@ function CaseQueueTab(props: {
   return (
     <section className="case-queue-page panel">
       <SectionHeader
-        eyebrow="Work queue"
-        title="Video Cases"
+        eyebrow="工作队列"
+        title="影片 Case 队列"
         action={
           <button className="secondary-button" type="button" disabled={props.jobs.length === 0} onClick={props.clearCases}>
             <Square size={15} />
@@ -807,7 +807,7 @@ function CaseQueueTab(props: {
         }
       />
       <div className="queue-stats">
-        <span>{props.jobs.length} total</span>
+        <span>{props.jobs.length} 个 Case</span>
         <span>{props.blockedCases} 个阻塞</span>
       </div>
       {props.jobs.length === 0 ? (
@@ -829,10 +829,10 @@ function CaseQueueTab(props: {
           >
             <div>
               <strong>{job.topic}</strong>
-              <span>{job.id} / {job.source}</span>
+              <span>{job.id} / {formatCaseSourceLabel(job.source)}</span>
             </div>
             <StatusPill tone={getStatusTone(job.status)}>{statusLabels[job.status]}</StatusPill>
-            <span>{job.sceneCount} scenes</span>
+            <span>{job.sceneCount} 个场景</span>
             <span>RM {job.actualCostRM.toFixed(2)}</span>
             <span className="case-time-cell">
               <Clock3 size={13} />
@@ -878,6 +878,23 @@ function ProductionEmptyState(props: {
       />
     </section>
   );
+}
+
+function formatCaseSourceLabel(source: AdminJob["source"]): string {
+  const labels: Record<AdminJob["source"], string> = {
+    manual: "手动创建",
+    scheduled: "自动排程"
+  };
+  return labels[source] ?? source;
+}
+
+function formatCaseReviewStatusLabel(status: AdminJob["reviewStatus"]): string {
+  const labels: Record<AdminJob["reviewStatus"], string> = {
+    approved: "已审核",
+    draft: "草稿",
+    needs_review: "待人工审核"
+  };
+  return labels[status] ?? status;
 }
 
 function CaseActionEmptyState(props: {
@@ -1070,9 +1087,9 @@ function ProductionTab(
           <h2>{props.selectedJob.topic}</h2>
           <div className="case-meta-strip">
             <span>{props.selectedJob.id}</span>
-            <span>{props.selectedJob.source}</span>
+            <span>{formatCaseSourceLabel(props.selectedJob.source)}</span>
             <span>{schedule?.name ?? "手动 Case"}</span>
-            <span>{props.selectedJob.reviewStatus}</span>
+            <span>{formatCaseReviewStatusLabel(props.selectedJob.reviewStatus)}</span>
             <span>{props.selectedCharacter ? `角色：${props.selectedCharacter.name}` : "未锁定角色"}</span>
             <span>{props.selectedJob.sceneCount} 个场景</span>
             <span>RM {props.selectedJob.actualCostRM.toFixed(2)} / {props.selectedJob.costLimitRM.toFixed(2)}</span>
@@ -2694,7 +2711,7 @@ function ActivityLogPanel(props: { activities: CaseActivity[] }) {
   return (
     <section className="activity-log-panel panel">
       <SectionHeader eyebrow="审计记录" title="Case 活动" />
-      {props.activities.length === 0 ? <EmptyState title="No activity yet" body="Generation, approval, status changes, and storage actions will be recorded here." /> : null}
+      {props.activities.length === 0 ? <EmptyState title="还没有活动记录" body="生成、确认、状态变更、成本事件和存储动作都会记录在这里。" /> : null}
       <div className="activity-log-list">
         {props.activities.map((activity) => (
           <article className="activity-log-row" key={activity.id}>
