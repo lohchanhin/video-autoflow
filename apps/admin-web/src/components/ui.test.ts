@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRenderMediaImage,
   canRenderMediaImageFromSources,
+  createMediaImageBackgroundStyle,
   getMediaImageCurrentStatus,
   getMediaImageSourcesStatus,
   hasRenderableImageDimensions,
@@ -50,5 +51,11 @@ describe("MediaImage render guard", () => {
     ]);
     expect(getMediaImageSourcesStatus(sources, { src: "https://old.example.test/old.png", status: "loaded" })).toBe("loading");
     expect(canRenderMediaImageFromSources(sources, { src: "https://cdn.example.test/uploads/assets/current.png", status: "loaded" })).toBe(true);
+  });
+
+  it("escapes loaded media URLs for CSS background previews", () => {
+    expect(createMediaImageBackgroundStyle('https://cdn.example.test/a "quoted".png')).toEqual({
+      backgroundImage: 'url("https://cdn.example.test/a \\"quoted\\".png")'
+    });
   });
 });

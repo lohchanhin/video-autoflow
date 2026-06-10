@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Image as ImageIcon } from "lucide-react";
 
 export type MediaImageLoadState = {
@@ -28,6 +28,12 @@ export function canRenderMediaImage(src: string, state: MediaImageLoadState): bo
 
 export function canRenderMediaImageFromSources(sources: string[], state: MediaImageLoadState): boolean {
   return state.status === "loaded" && sources.includes(state.src);
+}
+
+export function createMediaImageBackgroundStyle(src: string): CSSProperties {
+  return {
+    backgroundImage: `url(${JSON.stringify(src)})`
+  };
 }
 
 export function hasRenderableImageDimensions(image: Pick<HTMLImageElement, "naturalHeight" | "naturalWidth">): boolean {
@@ -183,14 +189,6 @@ export function MediaImage(props: {
     };
   }, [sourceKey]);
 
-  function markRenderedImageUnavailable() {
-    setState({ src: loadedSrc, status: "failed" });
-    if (sourceKey && notifiedUnavailableSourceKey.current !== sourceKey) {
-      notifiedUnavailableSourceKey.current = sourceKey;
-      onUnavailableRef.current?.();
-    }
-  }
-
   if (!isLoadedCurrentSrc) {
     return (
       <MediaFallback
@@ -202,16 +200,12 @@ export function MediaImage(props: {
   }
 
   return (
-    <img
-      alt={props.alt}
-      className={props.className}
-      decoding="async"
-      loading="lazy"
-      src={loadedSrc}
-      onError={(event) => {
-        event.currentTarget.removeAttribute("src");
-        markRenderedImageUnavailable();
-      }}
+    <span
+      aria-label={props.alt}
+      className={`media-image-surface ${props.className ?? ""}`.trim()}
+      role="img"
+      style={createMediaImageBackgroundStyle(loadedSrc)}
+      title={props.alt}
     />
   );
 }
