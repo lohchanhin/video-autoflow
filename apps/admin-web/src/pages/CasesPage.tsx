@@ -8,7 +8,7 @@ import type { CasePublishTarget, CaseQcReport, CharacterProfile, ProductionSched
 import { advanceJob, markFailed, retryJob, type AdminJob, type CaseActivity, type JobProcessRecord, type ProcessRecordStatus, type SceneReviewItem } from "../lib/jobs.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, updateDirtyDraftMap, useEditableDraft } from "../lib/editable-draft.js";
 import { estimateNextCaseCost, type CaseNextCostEstimate } from "../lib/case-cost-estimates.js";
-import { getCaseBudgetRecoveryAmount } from "../lib/budget-ux.js";
+import { buildCaseBudgetRescuePlan, type CaseBudgetRescuePlan } from "../lib/budget-ux.js";
 import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset, shouldHideFromNewCaseReferencePicker } from "../lib/draft-reference-assets.js";
 import { formatDateTime, formatProcessRecordStatus, formatSceneQcStatus, formatSceneReviewStatus, formatTime, getRecordTone, getStatusTone, statusLabels } from "../lib/view-helpers.js";
 import { isAudioMediaUrl, isImageMediaUrl, isRasterImageMediaUrl, isVideoMediaUrl, resolveMediaUrl } from "../lib/media-url.js";
@@ -932,7 +932,7 @@ function ProductionTab(
   const finalMp4Ready = Boolean(composeRecord?.status === "done" && splitArtifactPaths(composeRecord.artifactPath).some(isVideoPath));
   const canApproveMp4 = finalMp4Ready && voiceoverReadyForCompose && ["QC_PASSED", "READY_TO_UPLOAD", "COMPOSED"].includes(props.selectedJob.status);
   const budgetExhausted = props.selectedJob.actualCostRM >= props.selectedJob.costLimitRM;
-  const budgetRecoveryAmount = getCaseBudgetRecoveryAmount(props.selectedJob.actualCostRM, props.selectedJob.costLimitRM);
+  const visibleBudgetPlan = buildCaseBudgetRescuePlan(props.selectedJob.actualCostRM, props.selectedJob.costLimitRM);
   const schedule = props.productionSchedules.find((candidate) => candidate.id === props.selectedJob?.scheduleId);
   const sourceSeries = props.selectedJob.seriesId ? props.series.find((series) => series._id === props.selectedJob?.seriesId) ?? null : null;
   const sourceEpisode = props.selectedJob.episodeId ? props.seriesEpisodes.find((episode) => episode._id === props.selectedJob?.episodeId) ?? null : null;
@@ -1127,14 +1127,13 @@ function ProductionTab(
             <p className="eyebrow">当前 Case 预算</p>
             <strong>这支影片已经超出 RM {props.selectedJob.costLimitRM.toFixed(2)}，请调高后保存。</strong>
             <span>这里只改当前 Case。以后新 Case 的默认预算在左侧「成本」页面调整。</span>
-            <div className="case-budget-alert-actions">
-              <button className="secondary-button compact-button" type="button" onClick={() => visibleBudgetEditor.setDraftPatch({ costLimitRM: budgetRecoveryAmount })}>
-                建议调到 RM {budgetRecoveryAmount.toFixed(2)}
-              </button>
-              <button className="secondary-button compact-button" type="button" onClick={props.openCostSettings}>
-                打开全局预算
-              </button>
-            </div>
+            <CaseBudgetRescueSummary plan={visibleBudgetPlan} />
+            <CaseBudgetQuickButtons
+              currentDraftLimitRM={visibleBudgetDraft.costLimitRM}
+              openCostSettings={props.openCostSettings}
+              plan={visibleBudgetPlan}
+              setDraftLimit={(costLimitRM) => visibleBudgetEditor.setDraftPatch({ costLimitRM })}
+            />
           </div>
           <Field label="新的 Case 预算 RM">
             <input
@@ -1449,9 +1448,10 @@ function CaseOverviewPanel(props: {
     settings: props.toolProviderSettings
   });
   const budgetNeedsAction = props.job.actualCostRM >= props.job.costLimitRM || nextCostEstimate.exceedsBudget;
-  const budgetTargetRM = getCaseBudgetRecoveryAmount(
-    props.job.actualCostRM + (nextCostEstimate.estimatedCostRM ?? 0),
-    props.job.costLimitRM
+  const budgetPlan = buildCaseBudgetRescuePlan(
+    props.job.actualCostRM,
+    props.job.costLimitRM,
+    nextCostEstimate.estimatedCostRM ?? 0
   );
   const blockers = [
     props.scriptStoryReady ? "" : "脚本、分镜或图片提示词还没完成。",
@@ -1511,11 +1511,15 @@ function CaseOverviewPanel(props: {
                 <strong>{props.job.actualCostRM >= props.job.costLimitRM ? "当前 Case 已超过预算" : "下一步预计会超过预算"}</strong>
                 <span>先调高当前 Case 预算并保存，再继续付费生成。</span>
               </div>
-              <button className="secondary-button compact-button" type="button" onClick={() => budgetEditor.setDraftPatch({ costLimitRM: budgetTargetRM })}>
-                建议调到 RM {budgetTargetRM.toFixed(2)}
-              </button>
+              <CaseBudgetQuickButtons
+                currentDraftLimitRM={budgetDraft.costLimitRM}
+                openCostSettings={props.openCostSettings}
+                plan={budgetPlan}
+                setDraftLimit={(costLimitRM) => budgetEditor.setDraftPatch({ costLimitRM })}
+              />
             </div>
           ) : null}
+          {budgetNeedsAction ? <CaseBudgetRescueSummary plan={budgetPlan} compact /> : null}
           <Field label="当前 Case 预算 RM">
             <input
               min={0.1}
@@ -1550,6 +1554,54 @@ function CaseOverviewPanel(props: {
         </div>
       </section>
     </section>
+  );
+}
+
+function CaseBudgetRescueSummary(props: {
+  compact?: boolean;
+  plan: CaseBudgetRescuePlan;
+}) {
+  return (
+    <div className={`case-budget-rescue-summary ${props.compact ? "compact" : ""}`.trim()}>
+      <div>
+        <span>当前暴露</span>
+        <strong>RM {props.plan.totalExposureRM.toFixed(4)}</strong>
+      </div>
+      <div>
+        <span>预算缺口</span>
+        <strong>RM {props.plan.shortfallRM.toFixed(4)}</strong>
+      </div>
+      <div>
+        <span>建议上限</span>
+        <strong>RM {props.plan.suggestedLimitRM.toFixed(2)}</strong>
+        <small>预留 RM {props.plan.headroomRM.toFixed(4)}</small>
+      </div>
+    </div>
+  );
+}
+
+function CaseBudgetQuickButtons(props: {
+  currentDraftLimitRM: number;
+  openCostSettings: () => void;
+  plan: CaseBudgetRescuePlan;
+  setDraftLimit: (costLimitRM: number) => void;
+}) {
+  return (
+    <div className="case-budget-alert-actions">
+      {props.plan.quickLimitsRM.map((limitRM) => (
+        <button
+          className={`secondary-button compact-button ${Number(props.currentDraftLimitRM) === limitRM ? "active" : ""}`.trim()}
+          key={limitRM}
+          type="button"
+          onClick={() => props.setDraftLimit(limitRM)}
+        >
+          套用 RM {limitRM.toFixed(2)}
+        </button>
+      ))}
+      <button className="secondary-button compact-button" type="button" onClick={props.openCostSettings}>
+        打开全局预算
+      </button>
+    </div>
   );
 }
 

@@ -2974,6 +2974,46 @@ textarea {
   line-height: 1.4;
 }
 
+.case-budget-rescue-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.case-budget-rescue-summary.compact {
+  margin-top: 0;
+}
+
+.case-budget-rescue-summary div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.case-budget-rescue-summary span,
+.case-budget-rescue-summary small {
+  overflow: hidden;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-budget-rescue-summary strong {
+  overflow: hidden;
+  color: #7c2d12;
+  font-size: 16px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .case-budget-alert-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
@@ -3006,6 +3046,12 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+}
+
+.case-budget-alert-actions .secondary-button.active {
+  border-color: #2f6fed;
+  color: #1849a9;
+  background: #eef5ff;
 }
 
 .case-budget-alert-editor .editable-action-bar {
@@ -6005,6 +6051,11 @@ textarea {
   .trend-summary-strip,
   .draft-reference-grid,
   .draft-scene-list {
+    grid-template-columns: 1fr;
+  }
+
+  .case-budget-alert-editor,
+  .case-budget-rescue-summary {
     grid-template-columns: 1fr;
   }
 
