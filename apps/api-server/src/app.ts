@@ -62,10 +62,14 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
         ? "PROVIDER_ERROR"
         : "INTERNAL_SERVER_ERROR";
 
+  const responseMessage = error instanceof ApiError || statusCode === 400 || statusCode === 409 || statusCode === 502
+    ? message
+    : "Unexpected server error.";
+
   res.status(statusCode).json({
     error: {
       code: errorCode,
-      message: statusCode === 400 || statusCode === 409 || statusCode === 502 ? message : "Unexpected server error."
+      message: responseMessage
     }
   });
 };
