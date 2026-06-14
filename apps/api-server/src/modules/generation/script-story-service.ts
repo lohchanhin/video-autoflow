@@ -306,6 +306,7 @@ function buildOpenAIPrompt(input: NormalizedScriptStoryInput, qualityFeedback = 
     "Every storyboard scene must be a visible action: who is in frame, what object changes, what the camera sees. Avoid abstract-only descriptions such as a feeling, mood, atmosphere, or sound entering a mind.",
     "Create one visualBible for the whole case. It must define one fictional adult protagonist, stable wardrobe, face/hair/body details, recurring props, environment, lighting, palette, and negative prompt rules.",
     "If productionBrief.selectedCharacters is present, treat them as the approved reusable cast library. Use the episode-relevant selected character assets, preserve their names/roles/identity notes/wardrobe/silhouette/props, and never replace a character or fruit/person identity that is named in the episode, continuity rules, or prompt.",
+    "Do not rename selected assets into unrelated generic names. If the episode names a role such as a fruit-person CEO or secret shop clerk, map it to the closest selected asset label/role and keep that identity visible in the title, voiceover, visualBible, and storyboard.",
     "If productionBrief.selectedScenes or storyWorldContext is present, treat them as the approved reusable location/style library. Use the episode-relevant selected scene assets, preserve their spatial rules/props/lighting/palette/world rules, and do not require every library location to appear in one episode.",
     "If productionBrief.lessonOrTheme is present, the story must make that theme visible through character choices and conflict, not a generic lecture.",
     "If productionBrief.seriesContext.narrativeMode is serialized, write this as one episode of an ongoing serial: preserve continuity rules, use the episode's continuityNote/serialHook when present, and end with a safe next-episode hook instead of fully resetting the premise.",
@@ -1062,8 +1063,18 @@ function collectProductionBriefTexts(brief: NonNullable<NormalizedScriptStoryInp
     brief.storyWorldContext?.visualStyle,
     brief.storyWorldContext?.safetyRules,
     ...(brief.requiredBeats ?? []),
-    ...(brief.visualContinuityRules ?? [])
+    ...(brief.visualContinuityRules ?? []).filter((rule) => !isReferenceAssetLibraryRule(rule))
   ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+function isReferenceAssetLibraryRule(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("approved design asset")
+    || normalized.includes("preserve character identity")
+    || normalized.includes("preserve environment layout")
+    || normalized.includes("角色参考：")
+    || normalized.includes("背景参考：");
 }
 
 function assetLabelAppearsInText(label: string | undefined, text: string): boolean {

@@ -356,7 +356,12 @@ describe("POST /generation/script", () => {
         visualContinuityRules: [
           "香蕉总裁必须保持香蕉拟人身份",
           "本集核心地点是水蜜桃甜品店",
-          "系列资产库中的角色不需要每集全部登场"
+          "系列资产库中的角色不需要每集全部登场",
+          "反派总裁: preserve character identity, silhouette, wardrobe, palette, and fixed props from the approved design asset.",
+          "白月光: preserve character identity, silhouette, wardrobe, palette, and fixed props from the approved design asset.",
+          "青苹果: preserve character identity, silhouette, wardrobe, palette, and fixed props from the approved design asset.",
+          "CEO办公室: preserve environment layout, key props, color palette, lighting direction, and reusable camera zones from the approved design asset.",
+          "豪宅外观: preserve environment layout, key props, color palette, lighting direction, and reusable camera zones from the approved design asset."
         ]
       },
       prompt: "第三集：甜品店秘密揭幕但留下更大反转。",
