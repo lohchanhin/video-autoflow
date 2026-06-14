@@ -18,7 +18,7 @@ import {
   Workflow,
   XCircle
 } from "lucide-react";
-import type { ContentSeries, DatabaseStatusResponse, GenerateBgmResponse, GenerateImagesResponse, GenerateQcReportResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoClipResponse, GenerateVideoResponse, GenerationReferenceAsset, HealthResponse, JobStatus, ProductionAsset, ProductionAssetStatus, ProductionAssetType, ProductionBrief, SeriesEpisodeIdea, StoryWorld, TrendIdeaSeed } from "@ai-content-factory/shared-types";
+import type { ContentSeries, DatabaseStatusResponse, GenerateBgmResponse, GeneratedImageAsset, GenerateImagesResponse, GenerateQcReportResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoClipResponse, GenerateVideoResponse, GenerationReferenceAsset, HealthResponse, JobStatus, ProductionAsset, ProductionAssetStatus, ProductionAssetType, ProductionBrief, SeriesEpisodeIdea, StoryWorld, ToolProviderOverride, TrendIdeaSeed } from "@ai-content-factory/shared-types";
 import { AgentsPage } from "./pages/AgentsPage.js";
 import { AssetsPage } from "./pages/AssetsPage.js";
 import { AutomationPage } from "./pages/AutomationPage.js";
@@ -90,7 +90,6 @@ import {
 import {
   generateScriptStory as requestScriptStoryGeneration,
   generateScriptStoryFromInput as requestDraftScriptStoryGeneration,
-  generateImages as requestImageGeneration,
   generateSceneImage as requestSceneImageGeneration,
   generateBgm as requestBgmGeneration,
   generateQcReport as requestQcReport,
@@ -965,6 +964,123 @@ function applyImageGenerationResultToRecords(records: JobProcessRecord[], jobId:
       updatedAt: now
     };
   });
+}
+
+interface SceneImageGenerationTarget {
+  prompt: string;
+  sceneId: number;
+}
+
+function getImageGenerationTargetsFromRecords(records: JobProcessRecord[], job: AdminJob): SceneImageGenerationTarget[] {
+  const promptRecord = records.find((record) => record.jobId === job.id && record.stageId === "prompt");
+  const promptMap = parseScenePromptMap(promptRecord?.output ?? "");
+  const timings = parseStoryboardSceneTimings(records, job.id);
+  const sceneIds = new Set<number>();
+
+  for (const sceneId of timings.keys()) {
+    sceneIds.add(sceneId);
+  }
+
+  for (const sceneId of promptMap.keys()) {
+    sceneIds.add(sceneId);
+  }
+
+  if (sceneIds.size === 0) {
+    for (let sceneId = 1; sceneId <= job.sceneCount; sceneId += 1) {
+      sceneIds.add(sceneId);
+    }
+  }
+
+  return [...sceneIds]
+    .filter((sceneId) => Number.isFinite(sceneId) && sceneId > 0)
+    .sort((left, right) => left - right)
+    .map((sceneId) => {
+      const timing = timings.get(sceneId);
+      const prompt = [
+        promptMap.get(sceneId),
+        timing?.visual ? `Visible scene: ${timing.visual}` : "",
+        timing?.voiceText ? `Voice/subtitle: ${timing.voiceText}` : ""
+      ].filter(Boolean).join("\n");
+
+      return {
+        prompt: prompt || `Scene ${sceneId} for ${job.topic}`,
+        sceneId
+      };
+    });
+}
+
+function replaceGeneratedImage(images: GeneratedImageAsset[], image: GeneratedImageAsset): GeneratedImageAsset[] {
+  return [
+    image,
+    ...images.filter((candidate) => candidate.sceneId !== image.sceneId)
+  ].sort((left, right) => left.sceneId - right.sceneId);
+}
+
+function applySceneImageProgressToRecords(
+  records: JobProcessRecord[],
+  jobId: string,
+  images: GeneratedImageAsset[],
+  totalScenes: number,
+  provider: string,
+  model: string,
+  now: string,
+  options: { errorMessage?: string | undefined; final?: boolean | undefined } = {}
+): JobProcessRecord[] {
+  const failedChecks = images.filter((image) => image.qualityCheck?.status === "fail");
+  const errorMessage = options.errorMessage?.trim() ?? "";
+  const generatedCount = images.length;
+  const providerLabel = provider === "openai" ? `OpenAI ${model}` : model || provider || "image provider";
+  const status: ProcessRecordStatus = errorMessage
+    ? "failed"
+    : options.final
+      ? failedChecks.length > 0
+        ? "failed"
+        : "done"
+      : "working";
+  const notes = errorMessage
+    ? buildReadableImageGenerationError(errorMessage, generatedCount, totalScenes)
+    : failedChecks.length > 0
+      ? `${failedChecks.length} 张场景图片未通过视觉 QC。请审核并重跑后再合成 MP4。`
+      : "";
+  const output = [
+    options.final
+      ? `逐场景图片生成完成：${generatedCount}/${totalScenes}。`
+      : `逐场景图片生成中：${generatedCount}/${totalScenes}。`,
+    "",
+    ...images.map((image) => [
+      `Scene ${image.sceneId}: ${image.prompt}`,
+      image.qualityCheck ? `QC: ${image.qualityCheck.status} - ${image.qualityCheck.summary}` : "QC: not checked",
+      image.qualityCheck?.issues.length ? `Issues: ${image.qualityCheck.issues.join("; ")}` : ""
+    ].filter(Boolean).join("\n")),
+    errorMessage ? `\n错误：${buildReadableImageGenerationError(errorMessage, generatedCount, totalScenes)}` : ""
+  ].filter(Boolean).join("\n\n");
+
+  return records.map((record) => {
+    if (record.jobId !== jobId || record.stageId !== "image") {
+      return record;
+    }
+
+    return {
+      ...record,
+      artifactPath: images.map((image) => image.asset.publicUrl ?? image.asset.storagePath).join("\n"),
+      costRM: Number(images.reduce((sum, image) => sum + image.costRM, 0).toFixed(4)),
+      notes,
+      output,
+      provider: providerLabel,
+      status,
+      updatedAt: now
+    };
+  });
+}
+
+function buildReadableImageGenerationError(message: string, generatedCount: number, totalScenes: number): string {
+  const progress = totalScenes > 0 ? `已保留 ${generatedCount}/${totalScenes} 张已成功图片。` : "";
+
+  if (/HTTP 504|Gateway Timeout/iu.test(message)) {
+    return `图片供应商或反向代理等待超时。系统现在按单个场景生成，${progress} 请在「资产」页签对失败场景单独重试。原始错误：${message}`;
+  }
+
+  return [message, progress].filter(Boolean).join(" ");
 }
 
 function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: string, result: GenerateTtsResponse, now: string): JobProcessRecord[] {
@@ -2226,11 +2342,12 @@ export function App() {
           : record
       );
       upsertJobRecords(workingJob.id, workingRecords);
-      const imageResult = await requestImageGeneration(
+      const imageResult = await requestSequentialSceneImages(
         workingJob,
         workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) ?? null : null,
         getGenerationReferencesForJob(workingJob, attachedAssets),
-        getToolOverride("image")
+        getToolOverride("image"),
+        workingRecords
       );
       const imageNow = new Date().toISOString();
       workingJob = {
@@ -2496,11 +2613,12 @@ export function App() {
           : record
       );
       upsertJobRecords(workingJob.id, workingRecords);
-      const imageResult = await requestImageGeneration(
+      const imageResult = await requestSequentialSceneImages(
         workingJob,
-        workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) : null,
+        workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) ?? null : null,
         getGenerationReferencesForJob(workingJob, attachedAssets),
-        getToolOverride("image")
+        getToolOverride("image"),
+        workingRecords
       );
       const imageNow = new Date().toISOString();
       workingJob = {
@@ -3365,6 +3483,95 @@ export function App() {
     }
   }
 
+  async function requestSequentialSceneImages(
+    job: AdminJob,
+    character: CharacterProfile | null,
+    references: GenerationReferenceAsset[],
+    toolOverride: ToolProviderOverride | undefined,
+    sourceRecords: JobProcessRecord[] = jobProcessRecords
+  ): Promise<GenerateImagesResponse> {
+    const targets = getImageGenerationTargetsFromRecords(sourceRecords, job);
+
+    if (targets.length === 0) {
+      throw new Error("缺少已确认分镜，不能生成图片。请先重新生成脚本 / 分镜。");
+    }
+
+    let generatedImages: GeneratedImageAsset[] = [];
+    let latestProvider = toolOverride?.provider ?? "openai";
+    let latestModel = toolOverride?.model ?? "";
+    let latestReferenceImage: GenerateImagesResponse["referenceImage"] | undefined;
+    let latestVisualBible: GenerateImagesResponse["visualBible"] | undefined;
+
+    setSceneReviews((currentReviews) => currentReviews.filter((review) => review.jobId !== job.id));
+
+    for (const [index, target] of targets.entries()) {
+      const operationId = `${job.id}_${target.sceneId}`;
+      const progressLabel = `Scene ${target.sceneId} (${index + 1}/${targets.length})`;
+
+      setGeneratingSceneImageIds((currentIds) => currentIds.includes(operationId) ? currentIds : [...currentIds, operationId]);
+      setJobProcessRecords((currentRecords) =>
+        currentRecords.map((record) =>
+          record.jobId === job.id && record.stageId === "image"
+            ? {
+                ...record,
+                notes: "",
+                output: `逐场景生成图片中：${progressLabel}。已成功 ${generatedImages.length}/${targets.length} 张。`,
+                status: "working",
+                updatedAt: new Date().toISOString()
+              }
+            : record
+        )
+      );
+
+      try {
+        const result = await requestSceneImageGeneration(job, target.sceneId, target.prompt, character, references, toolOverride);
+        const now = new Date().toISOString();
+        latestProvider = result.provider;
+        latestModel = result.model;
+        latestReferenceImage = result.referenceImage;
+        latestVisualBible = result.visualBible;
+        generatedImages = replaceGeneratedImage(generatedImages, result.image);
+
+        setSceneReviews((currentReviews) => [
+          ...createSceneReviewItems(job.id, [result.image], currentReviews),
+          ...currentReviews.filter((review) => review.jobId !== job.id || review.sceneId !== result.image.sceneId)
+        ]);
+        setJobProcessRecords((currentRecords) =>
+          applySceneImageProgressToRecords(currentRecords, job.id, generatedImages, targets.length, latestProvider, latestModel, now)
+        );
+        appendCaseActivity(job.id, "stage_updated", `场景 ${target.sceneId} 图片已生成`, `${result.provider} ${result.model} 已生成 ${progressLabel}。成本 RM ${result.costRM.toFixed(4)}。`);
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : `Scene ${target.sceneId} image generation failed.`;
+        const message = buildReadableImageGenerationError(rawMessage, generatedImages.length, targets.length);
+        const now = new Date().toISOString();
+
+        setJobProcessRecords((currentRecords) =>
+          applySceneImageProgressToRecords(currentRecords, job.id, generatedImages, targets.length, latestProvider, latestModel, now, { errorMessage: message })
+        );
+        appendCaseActivity(job.id, "error", `场景 ${target.sceneId} 图片失败`, message);
+        throw new Error(message);
+      } finally {
+        setGeneratingSceneImageIds((currentIds) => currentIds.filter((id) => id !== operationId));
+      }
+    }
+
+    if (!latestVisualBible) {
+      throw new Error("图片生成没有返回视觉圣经资料，请重新生成脚本 / 分镜后再试。");
+    }
+
+    return {
+      costRM: Number(generatedImages.reduce((sum, image) => sum + image.costRM, 0).toFixed(4)),
+      images: generatedImages,
+      jobId: job.id,
+      model: latestModel,
+      provider: latestProvider,
+      referenceImage: latestReferenceImage,
+      requiresReview: generatedImages.some((image) => image.qualityCheck?.status === "fail"),
+      status: "IMAGE_DONE",
+      visualBible: latestVisualBible
+    };
+  }
+
   async function handleGenerateImages(job: AdminJob) {
     if (generatingImageCaseIds.includes(job.id)) {
       return;
@@ -3417,7 +3624,7 @@ export function App() {
 
     try {
       const character = job.characterId ? characterProfiles.find((candidate) => candidate.id === job.characterId) ?? null : null;
-      const result = await requestImageGeneration(job, character, getGenerationReferencesForJob(job), getToolOverride("image"));
+      const result = await requestSequentialSceneImages(job, character, getGenerationReferencesForJob(job), getToolOverride("image"));
       const now = new Date().toISOString();
 
       setJobs((currentJobs) =>
