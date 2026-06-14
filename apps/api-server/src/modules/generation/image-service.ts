@@ -103,6 +103,14 @@ interface GeneratedOpenAIImage {
   usage?: Record<string, number | string> | undefined;
 }
 
+interface LoadedReferenceImage {
+  buffer?: Buffer | undefined;
+  isSelected: boolean;
+  label?: string | undefined;
+  mimeType?: string | undefined;
+  object: GeneratedStorageObject;
+}
+
 const maxImageQcRetries = 2;
 
 export function createImageGenerationService(options: ImageGenerationServiceOptions): ImageGenerationService {
@@ -333,9 +341,17 @@ function buildScenePrompt(
   const character = input.character
     ? `${input.character.name}. ${input.character.visualIdentity}. ${input.character.referenceNotes ?? ""}`.trim()
     : formatVisualBibleCharacter(visualBible);
+  const characterReferenceLock = formatReferencesByType(input.references, ["character_design"]);
+  const environmentReferenceLock = formatReferencesByType(input.references, ["scene_design", "style_reference", "first_frame", "last_frame"]);
 
   return [
     `Create one single vertical 9:16 cinematic still for scene ${scene.sceneId}.`,
+    characterReferenceLock
+      ? `MANDATORY CAST LOCK: The visible character identity, face, silhouette, species/body type, hairstyle, wardrobe, color palette, and fixed props must match these selected character reference assets exactly. Do not replace them with a new actor or a generic character. ${characterReferenceLock}`
+      : "",
+    environmentReferenceLock
+      ? `MANDATORY SET / STYLE LOCK: The location, layout, key props, lighting, palette, camera zones, and style must follow these selected scene/style reference assets. ${environmentReferenceLock}`
+      : "",
     `User topic: ${input.topic}.`,
     `Scene action: ${scene.visual}`,
     `Scene narration context: ${scene.voiceText}`,
@@ -345,7 +361,9 @@ function buildScenePrompt(
     input.references?.length ? `Selected production reference assets: ${formatGenerationReferences(input.references)}` : "",
     `Camera and motion intent: ${scene.camera}.`,
     `Visual style: ${visualBible.style || getTemplateVisualStyle(input.templateType)}.`,
-    `Continuity rule: keep the same protagonist face, hair, body type, wardrobe, props, location logic, palette, and lighting as the visual bible and reference image.`,
+    characterReferenceLock
+      ? "Continuity rule: selected character reference assets override the visual bible when there is any conflict."
+      : "Continuity rule: keep the same protagonist face, hair, body type, wardrobe, props, location logic, palette, and lighting as the visual bible and reference image.",
     "Composition rule: one coherent scene, one protagonist unless the scene explicitly requires another person, no split screen, no panel layout.",
     `Negative prompt: ${visualBible.negativePrompt}`,
     "Forbidden: text, captions, subtitles, letters with readable text, logos, watermarks, UI, tables, storyboard sheets, comic panels, contact sheets, collage, duplicated protagonist, different actor, different outfit, unrelated scene."
@@ -357,7 +375,7 @@ async function loadOrCreateReferenceImage(
   jobId: string,
   input: NormalizedImageInput,
   visualBible: GeneratedVisualBible
-): Promise<{ buffer?: Buffer | undefined; mimeType?: string | undefined; object: GeneratedStorageObject } | null> {
+): Promise<LoadedReferenceImage | null> {
   const selectedReference = await loadSelectedReferenceImage(input);
 
   if (selectedReference) {
@@ -371,6 +389,7 @@ async function loadOrCreateReferenceImage(
     const buffer = referencePath.endsWith(".png") ? await readFile(existingPath) : undefined;
     return {
       buffer,
+      isSelected: false,
       mimeType: buffer ? "image/png" : undefined,
       object: toGeneratedObject(options.storage.getFile(referencePath))
     };
@@ -385,6 +404,7 @@ async function loadOrCreateReferenceImage(
 
     const referenceObject = await options.storage.writeFile(referencePath, createLocalReferenceSvg(input.topic, visualBible));
     return {
+      isSelected: false,
       object: toGeneratedObject(referenceObject)
     };
   }
@@ -394,12 +414,13 @@ async function loadOrCreateReferenceImage(
 
   return {
     buffer: generated.buffer,
+    isSelected: false,
     mimeType: "image/png",
     object: toGeneratedObject(referenceObject)
   };
 }
 
-async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<{ buffer?: Buffer | undefined; mimeType?: string | undefined; object: GeneratedStorageObject } | null> {
+async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<LoadedReferenceImage | null> {
   const primaryReference = input.references
     ?.filter((reference) => reference.url.trim())
     .sort((left, right) => referencePriority(left.type) - referencePriority(right.type))[0];
@@ -413,6 +434,8 @@ async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<
 
     return {
       buffer,
+      isSelected: true,
+      label: primaryReference.label,
       mimeType: "image/png",
       object: {
         driver: "local",
@@ -420,8 +443,15 @@ async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<
         storagePath: primaryReference.url
       }
     };
-  } catch {
-    return null;
+  } catch (error) {
+    throw new MissingGenerationDependencyError(
+      [
+        `Selected reference image "${primaryReference.label}" could not be loaded, so image generation was stopped before the model could invent a different character.`,
+        `Reference URL: ${primaryReference.url}`,
+        `Original error: ${error instanceof Error ? error.message : "unknown fetch error"}`,
+        "Fix the asset URL/storage path or regenerate/save the character design asset, then retry this scene."
+      ].join(" ")
+    );
   }
 }
 
@@ -455,6 +485,25 @@ function formatGenerationReferences(references: NonNullable<GenerateImagesReques
       ].filter(Boolean).join("; ")
     )
     .join(" | ");
+}
+
+function formatReferencesByType(
+  references: GenerateImagesRequest["references"] | undefined,
+  types: Array<NonNullable<GenerateImagesRequest["references"]>[number]["type"]>
+): string {
+  const typeSet = new Set(types);
+  const selected = references?.filter((reference) => typeSet.has(reference.type)) ?? [];
+
+  if (selected.length === 0) {
+    return "";
+  }
+
+  return selected.map((reference) => [
+    `${reference.type}: ${reference.label}`,
+    reference.prompt ? `visual facts=${reference.prompt}` : "",
+    reference.notes ? `continuity contract=${reference.notes}` : "",
+    `reference URL=${reference.url}`
+  ].filter(Boolean).join("; ")).join(" | ");
 }
 
 function buildReferenceDesignPrompt(
@@ -516,7 +565,7 @@ async function generateSceneAssetWithRetries(
   input: NormalizedImageInput,
   scenePrompt: SceneImagePrompt,
   visualBible: GeneratedVisualBible,
-  reference: { buffer?: Buffer | undefined; mimeType?: string | undefined; object: GeneratedStorageObject } | null
+  reference: LoadedReferenceImage | null
 ): Promise<GeneratedImageAsset> {
   let totalCostRM = 0;
   let lastGenerated: { buffer: Buffer; extension: "png" | "svg"; revisedPrompt?: string | undefined; usage?: Record<string, number | string> | undefined } | null = null;
@@ -526,7 +575,7 @@ async function generateSceneAssetWithRetries(
   for (let retryCount = 0; retryCount <= maxImageQcRetries; retryCount += 1) {
     const prompt = retryCount === 0 ? scenePrompt.prompt : buildRepairPrompt(scenePrompt.prompt, lastCheck);
     const generated = options.openai.apiKey
-      ? await generateWithOpenAI(prompt, options.openai, reference?.buffer ? { buffer: reference.buffer, filename: "character_reference.png", mimeType: reference.mimeType ?? "image/png" } : undefined)
+      ? await generateWithOpenAI(prompt, options.openai, reference?.buffer ? { buffer: reference.buffer, filename: "character_reference.png", isSelected: reference.isSelected, label: reference.label, mimeType: reference.mimeType ?? "image/png" } : undefined)
       : options.allowLocalFallback
         ? {
           buffer: Buffer.from(createLocalSvg(scenePrompt.sceneId, input.topic, prompt, visualBible)),
@@ -579,14 +628,25 @@ function buildRepairPrompt(originalPrompt: string, qualityCheck: GeneratedImageQ
 async function generateWithOpenAI(
   prompt: string,
   options: OpenAIImageClientOptions,
-  reference?: { buffer: Buffer; filename: string; mimeType: string } | undefined
+  reference?: { buffer: Buffer; filename: string; isSelected?: boolean | undefined; label?: string | undefined; mimeType: string } | undefined
 ): Promise<GeneratedOpenAIImage> {
   if (reference) {
     try {
       const edited = await generateEditWithOpenAI(prompt, options, reference);
       return edited;
-    } catch {
-      // Fallback stays with a real OpenAI image call; it just cannot use the reference image endpoint.
+    } catch (error) {
+      if (reference.isSelected) {
+        throw new Error(
+          [
+            `Selected character reference "${reference.label ?? reference.filename}" could not be used by the current image model/API.`,
+            "Generation stopped to avoid producing a different character.",
+            `Original error: ${error instanceof Error ? error.message : "unknown reference edit error"}`,
+            "Use an image model/API style that supports reference image edits, or regenerate the reference as a reachable PNG/JPG/WebP asset."
+          ].join(" ")
+        );
+      }
+
+      // Auto-created internal references are helpful but not authoritative; plain generation is still acceptable when no user-selected asset is being enforced.
     }
   }
 
@@ -751,12 +811,13 @@ async function runImageQualityCheck(
 function buildImageQcPrompt(scenePrompt: SceneImagePrompt, visualBible: GeneratedVisualBible): string {
   return [
     "Evaluate whether this generated image is production-ready for the requested scene.",
-    "Return pass only if the image is a single coherent vertical cinematic still, has no visible text/UI/table/panel/collage, matches the scene action, and preserves the same protagonist identity.",
+    "Return pass only if the image is a single coherent vertical cinematic still, has no visible text/UI/table/panel/collage, matches the scene action, and preserves the same selected reference character identity.",
     `Scene ${scenePrompt.sceneId}: ${scenePrompt.scene.visual}`,
     `Narration: ${scenePrompt.scene.voiceText}`,
+    `Generation constraints: ${scenePrompt.prompt}`,
     `Expected protagonist: ${formatVisualBibleCharacter(visualBible)}`,
     `Expected environment: ${formatVisualBibleEnvironment(visualBible)}`,
-    "If the image contains storyboard sheets, readable text, multiple unrelated panels, wrong setting, wrong protagonist, or inconsistent wardrobe/face, return fail."
+    "If the image contains storyboard sheets, readable text, multiple unrelated panels, wrong setting, wrong selected character, wrong species/body type, wrong hair/wardrobe/color palette, or inconsistent face, return fail."
   ].join("\n");
 }
 

@@ -780,6 +780,15 @@ describe("POST /generation/images", () => {
         jobId: "job_visual_bible_image",
         language: "en-US",
         prompt: "Output title, full script, storyboard, and image prompts.",
+        references: [
+          {
+            label: "Mimi rabbit",
+            prompt: "white rabbit girl, pink dress, blue vest, warm smile, fixed pastel palette",
+            role: "reference_image",
+            type: "character_design",
+            url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          }
+        ],
         sceneCount: 1,
         templateType: "comedy_sketch",
         topic: "kitchen comedy"
@@ -787,13 +796,81 @@ describe("POST /generation/images", () => {
       .expect(201);
 
     expect(response.body.images).toHaveLength(1);
+    expect(response.body.images[0].prompt).toContain("MANDATORY CAST LOCK");
+    expect(response.body.images[0].prompt).toContain("Mimi rabbit");
+    expect(response.body.images[0].prompt).toContain("white rabbit girl");
     expect(response.body.images[0].prompt).toContain("Fixed protagonist identity");
     expect(response.body.images[0].prompt).toContain("Alex");
     expect(response.body.images[0].prompt).not.toContain("Production brief");
     expect(response.body.images[0].prompt).not.toContain("Output title");
-    expect(response.body.referenceImage.publicUrl).toBe("http://localhost:4000/uploads/jobs/job_visual_bible_image/references/character_reference.svg");
+    expect(response.body.referenceImage.publicUrl).toMatch(/^data:image\/png/u);
     expect(response.body.visualBible.character.name).toBe("Alex");
     expect(response.body.requiresReview).toBe(false);
+  });
+
+  it("blocks image generation when a selected character reference image cannot be loaded", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-selected-reference-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+
+    await storage.writeFile(
+      "jobs/job_selected_reference_block/storyboard.json",
+      JSON.stringify({
+        scenes: [
+          {
+            camera: "medium shot",
+            durationSeconds: 8,
+            imagePrompt: "The selected character opens the office door.",
+            sceneId: 1,
+            sfx: ["door"],
+            visual: "The selected character enters the office.",
+            voiceText: "The door opened."
+          }
+        ]
+      })
+    );
+
+    const imageGenerationService = createImageGenerationService({
+      allowLocalFallback: true,
+      openai: {
+        apiKey: undefined,
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-image-1",
+        quality: "medium",
+        size: "1024x1536",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await request(createApp({ imageGenerationService, storage }))
+      .post("/generation/images/scene")
+      .send({
+        costLimitRM: 7.5,
+        jobId: "job_selected_reference_block",
+        language: "en-US",
+        prompt: "Create a scene using the selected character.",
+        references: [
+          {
+            label: "Banana CEO",
+            prompt: "anthropomorphic banana CEO in a black suit, fixed face and wardrobe",
+            role: "reference_image",
+            type: "character_design",
+            url: "http://127.0.0.1:9/missing-reference.png"
+          }
+        ],
+        sceneCount: 1,
+        sceneId: 1,
+        templateType: "comedy_sketch",
+        topic: "office drama"
+      })
+      .expect(409);
+
+    expect(response.body.error.message).toContain("Selected reference image");
+    expect(response.body.error.message).toContain("Banana CEO");
+    expect(response.body.error.message).toContain("stopped before the model could invent a different character");
   });
 
   it("regenerates one scene image with an override prompt", async () => {

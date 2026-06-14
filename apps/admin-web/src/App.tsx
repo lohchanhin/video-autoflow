@@ -3102,6 +3102,23 @@ export function App() {
       .filter((reference): reference is GenerationReferenceAsset => Boolean(reference));
   }
 
+  function getReferenceGenerationBlocker(job: AdminJob, references: GenerationReferenceAsset[]): string | null {
+    const selectedCharacterIds = [job.characterAssetId, ...(job.characterAssetIds ?? [])].filter((id): id is string => Boolean(id));
+    const selectedSceneIds = [job.backgroundAssetId, ...(job.sceneAssetIds ?? [])].filter((id): id is string => Boolean(id));
+    const hasCharacterReference = references.some((reference) => reference.type === "character_design");
+    const hasSceneReference = references.some((reference) => reference.type === "scene_design" || reference.type === "style_reference" || reference.type === "first_frame" || reference.type === "last_frame");
+
+    if (selectedCharacterIds.length > 0 && !hasCharacterReference) {
+      return "这个 Case 有选定角色资产，但没有可用的角色参考图。请到「设计资产」确认角色设计已保存入库、状态为已保存/已批准，并且图片 URL 可打开后再生成图片。系统不会在缺少角色参考图时擅自换角色。";
+    }
+
+    if (selectedSceneIds.length > 0 && !hasSceneReference) {
+      return "这个 Case 有选定场景资产，但没有可用的场景/风格参考图。请到「设计资产」确认场景设计已保存入库、状态为已保存/已批准，并且图片 URL 可打开后再生成图片。";
+    }
+
+    return null;
+  }
+
   async function attachSelectedAssetsToCase(job: AdminJob, selectedAssets: ProductionAsset[]): Promise<ProductionAsset[]> {
     const uniqueAssets = selectedAssets
       .filter(isReadyReferenceAsset)
@@ -3490,6 +3507,12 @@ export function App() {
     toolOverride: ToolProviderOverride | undefined,
     sourceRecords: JobProcessRecord[] = jobProcessRecords
   ): Promise<GenerateImagesResponse> {
+    const referenceBlocker = getReferenceGenerationBlocker(job, references);
+
+    if (referenceBlocker) {
+      throw new Error(referenceBlocker);
+    }
+
     const targets = getImageGenerationTargetsFromRecords(sourceRecords, job);
 
     if (targets.length === 0) {
@@ -3710,7 +3733,14 @@ export function App() {
 
     try {
       const character = job.characterId ? characterProfiles.find((candidate) => candidate.id === job.characterId) ?? null : null;
-      const result = await requestSceneImageGeneration(job, scene.sceneId, scene.prompt, character, getGenerationReferencesForJob(job), getToolOverride("image"));
+      const references = getGenerationReferencesForJob(job);
+      const referenceBlocker = getReferenceGenerationBlocker(job, references);
+
+      if (referenceBlocker) {
+        throw new Error(referenceBlocker);
+      }
+
+      const result = await requestSceneImageGeneration(job, scene.sceneId, scene.prompt, character, references, getToolOverride("image"));
       const now = new Date().toISOString();
       const artifactPath = result.image.asset.publicUrl ?? result.image.asset.storagePath;
       const hasOtherBlockedScenes = sceneReviews.some((review) => review.jobId === job.id && review.id !== scene.id && (review.status === "needs_review" || review.status === "rejected"));
