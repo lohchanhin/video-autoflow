@@ -157,7 +157,13 @@ export function createApp(options: CreateAppOptions = {}): Express {
     })
   );
   app.use(createQcRouter({ qcReportService: options.qcReportService, storage }));
-  app.use(createSeriesRouter({ connectDatabase: options.connectDatabase, contentSeriesRepository: options.contentSeriesRepository, costRecorder, episodeIdeaService: options.seriesEpisodeIdeaService }));
+  app.use(createSeriesRouter({
+    connectDatabase: options.connectDatabase,
+    contentSeriesRepository: options.contentSeriesRepository,
+    costRecorder,
+    episodeIdeaService: options.seriesEpisodeIdeaService,
+    storyWorldsRepository: options.storyWorldsRepository
+  }));
   app.use(createStoryWorldsRouter({ connectDatabase: options.connectDatabase, storyWorldsRepository: options.storyWorldsRepository }));
   app.use(createTrendsRouter({ trendScanService: options.trendScanService }));
   app.use("/uploads", express.static(storage.rootDir, { fallthrough: false }));

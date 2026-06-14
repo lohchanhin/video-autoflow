@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import type { ContentSeries, SeriesEpisodeIdea } from "@ai-content-factory/shared-types";
-import type { ContentSeriesRepository, SeriesEpisodeIdeaCreateInput } from "@ai-content-factory/database";
+import type { ContentSeries, SeriesEpisodeIdea, StoryWorld } from "@ai-content-factory/shared-types";
+import type { ContentSeriesRepository, SeriesEpisodeIdeaCreateInput, StoryWorldsRepository } from "@ai-content-factory/database";
 import type { SeriesEpisodeIdeaService } from "../src/modules/series/episode-idea-service.js";
 import { createApp } from "../src/app.js";
 
@@ -77,6 +77,63 @@ describe("series API", () => {
     ]));
   });
 
+  it("passes the bound story world content into AI episode idea generation", async () => {
+    const series = createSeries({
+      contentType: "水果职场短剧",
+      description: "围绕香蕉总裁的办公室荒诞管理故事。",
+      name: "水果八点档",
+      storyWorldId: "world_banana_ceo"
+    });
+    const storyWorld = createStoryWorld({
+      _id: "world_banana_ceo",
+      description: "水果公司里，香蕉总裁每天处理员工误会和办公室冲突；主角必须是香蕉总裁。",
+      name: "香蕉总裁办公室",
+      relationshipMap: "香蕉总裁是公司老板，员工可以变化，但总裁身份不能改成其他水果。"
+    });
+    const repository = createSeriesRepositoryMock({
+      findSeriesById: vi.fn().mockResolvedValue(series)
+    });
+    const storyWorldsRepository = createStoryWorldsRepositoryMock(storyWorld);
+    const episodeIdeaService = {
+      generateEpisodeIdeas: vi.fn().mockResolvedValue({
+        costRM: 0.01,
+        ideas: [
+          {
+            ageRange: "泛娱乐观众",
+            moralLesson: "沟通要说清楚",
+            promptSeed: "香蕉总裁误会会议纪要，最后学会复述确认。",
+            riskNotes: "低风险",
+            sourceStory: "原创水果职场",
+            synopsis: "香蕉总裁因为一句话误会团队，最后建立会议复述规则。",
+            title: "香蕉总裁的会议误会"
+          }
+        ],
+        model: "gpt-4.1-mini",
+        provider: "openai",
+        usage: { inputTokens: 120, outputTokens: 220 }
+      })
+    } as unknown as SeriesEpisodeIdeaService;
+
+    await request(createApp({
+      contentSeriesRepository: repository,
+      seriesEpisodeIdeaService: episodeIdeaService,
+      storyWorldsRepository
+    }))
+      .post(`/series/${series._id}/episodes/generate`)
+      .send({ count: 10 })
+      .expect(201);
+
+    expect(storyWorldsRepository.findById).toHaveBeenCalledWith("world_banana_ceo");
+    expect(episodeIdeaService.generateEpisodeIdeas).toHaveBeenCalledWith(expect.objectContaining({
+      count: 10,
+      series,
+      storyWorld: expect.objectContaining({
+        description: expect.stringContaining("香蕉总裁"),
+        name: "香蕉总裁办公室"
+      })
+    }));
+  });
+
   it("blocks rejected episode ideas from converting to a case", async () => {
     const series = createSeries();
     const episode = createEpisode({ status: "rejected" });
@@ -107,13 +164,20 @@ describe("series API", () => {
       caseId: "job_abc123",
       status: "converted_to_case" as const
     };
+    const storyWorld = createStoryWorld({
+      _id: "world_001",
+      description: "彩虹森林里所有故事都发生在森林学校和蘑菇广场。",
+      name: "彩虹森林世界观",
+      relationshipMap: "米米兔和虎虎是同班同学。"
+    });
     const repository = createSeriesRepositoryMock({
       findEpisodeIdea: vi.fn().mockResolvedValue(episode),
       findSeriesById: vi.fn().mockResolvedValue(series),
       patchEpisodeIdea: vi.fn().mockResolvedValue(convertedEpisode)
     });
+    const storyWorldsRepository = createStoryWorldsRepositoryMock(storyWorld);
 
-    const response = await request(createApp({ contentSeriesRepository: repository }))
+    const response = await request(createApp({ contentSeriesRepository: repository, storyWorldsRepository }))
       .post(`/series/${series._id}/episodes/${episode._id}/convert-case`)
       .send({ caseId: "job_abc123" })
       .expect(201);
@@ -129,7 +193,12 @@ describe("series API", () => {
           lessonOrTheme: "è¯šå®ž",
           selectedCharacters: [expect.objectContaining({ assetId: "asset_character" })],
           selectedScenes: [expect.objectContaining({ assetId: "asset_scene" })],
-          storyWorldContext: expect.objectContaining({ storyWorldId: "world_001" })
+          storyWorldContext: expect.objectContaining({
+            description: expect.stringContaining("彩虹森林"),
+            name: "彩虹森林世界观",
+            relationshipMap: expect.stringContaining("米米兔"),
+            storyWorldId: "world_001"
+          })
         }),
         referenceAssetIds: ["asset_character", "asset_scene"],
         seriesId: series._id,
@@ -188,6 +257,36 @@ function createSeriesRepositoryMock(overrides: Partial<ContentSeriesRepository> 
     patchSeries: vi.fn(async (id, patch) => createSeries({ _id: id, ...patch })),
     ...overrides
   } as unknown as ContentSeriesRepository;
+}
+
+function createStoryWorldsRepositoryMock(storyWorld: StoryWorld | null = null): StoryWorldsRepository {
+  return {
+    create: vi.fn(),
+    delete: vi.fn(),
+    ensureIndexes: vi.fn(),
+    findById: vi.fn(async () => storyWorld),
+    list: vi.fn(async () => storyWorld ? [storyWorld] : []),
+    patch: vi.fn()
+  } as unknown as StoryWorldsRepository;
+}
+
+function createStoryWorld(overrides: Partial<StoryWorld> = {}): StoryWorld {
+  const now = "2026-05-31T00:00:00.000Z";
+
+  return {
+    _id: overrides._id ?? "world_001",
+    createdAt: overrides.createdAt ?? now,
+    defaultSceneAssetIds: overrides.defaultSceneAssetIds ?? [],
+    description: overrides.description ?? "一间原创办公室。",
+    name: overrides.name ?? "原创世界观",
+    recurringCharacterAssetIds: overrides.recurringCharacterAssetIds ?? [],
+    relationshipMap: overrides.relationshipMap ?? "",
+    safetyRules: overrides.safetyRules ?? "保持原创。",
+    seriesIds: overrides.seriesIds ?? [],
+    status: overrides.status ?? "active",
+    updatedAt: overrides.updatedAt ?? now,
+    visualStyle: overrides.visualStyle ?? "轻喜剧"
+  };
 }
 
 function createSeries(overrides: Partial<ContentSeries> = {}): ContentSeries {

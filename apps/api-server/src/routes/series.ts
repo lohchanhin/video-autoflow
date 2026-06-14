@@ -3,17 +3,20 @@ import { config } from "@ai-content-factory/config";
 import {
   connectMongoDatabase,
   createContentSeriesRepository,
+  createStoryWorldsRepository,
   type ContentSeriesCreateInput,
   type ContentSeriesPatchInput,
   type ContentSeriesRepository,
   type MongoDatabaseConnection,
-  type SeriesEpisodeIdeaPatchInput
+  type SeriesEpisodeIdeaPatchInput,
+  type StoryWorldsRepository
 } from "@ai-content-factory/database";
 import {
   contentSeriesStatuses,
   seriesEpisodeIdeaStatuses,
   type ContentSeries,
-  type ContentTemplateType
+  type ContentTemplateType,
+  type StoryWorld
 } from "@ai-content-factory/shared-types";
 import { randomUUID } from "node:crypto";
 import { ApiError } from "../errors.js";
@@ -26,6 +29,7 @@ export interface CreateSeriesRouterOptions {
   contentSeriesRepository?: ContentSeriesRepository | undefined;
   costRecorder?: CostRecorder | undefined;
   episodeIdeaService?: SeriesEpisodeIdeaService | undefined;
+  storyWorldsRepository?: StoryWorldsRepository | undefined;
 }
 
 export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
@@ -125,7 +129,8 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           throw new ApiError("Series not found.", 404, "SERIES_NOT_FOUND");
         }
 
-        const generated = await episodeIdeaService.generateEpisodeIdeas({ count, series });
+        const storyWorld = await findStoryWorldForSeries(options, series);
+        const generated = await episodeIdeaService.generateEpisodeIdeas({ count, series, storyWorld });
         const episodes = await repository.createEpisodeIdeas(series._id, generated.ideas);
 
         await options.costRecorder?.record({
@@ -146,7 +151,8 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
             inputTokens: generated.usage.inputTokens,
             outputTokens: generated.usage.outputTokens,
             pricingMode: generated.usage.pricingMode,
-            seriesId: series._id
+            seriesId: series._id,
+            storyWorldId: storyWorld?._id ?? null
           }
         });
 
@@ -217,8 +223,10 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           status: "converted_to_case"
         });
 
+        const storyWorld = await findStoryWorldForSeries(options, series);
+
         return {
-          caseSeed: buildCaseSeed(series, updatedEpisode ?? episode, caseId),
+          caseSeed: buildCaseSeed(series, updatedEpisode ?? episode, caseId, storyWorld),
           episode: updatedEpisode ?? episode,
           series,
           status: "EPISODE_CONVERTED_TO_CASE" as const
@@ -273,6 +281,26 @@ async function withContentSeriesRepository<T>(
   }
 }
 
+async function findStoryWorldForSeries(options: CreateSeriesRouterOptions, series: ContentSeries): Promise<StoryWorld | null> {
+  if (!series.storyWorldId) {
+    return null;
+  }
+
+  if (options.storyWorldsRepository) {
+    return options.storyWorldsRepository.findById(series.storyWorldId);
+  }
+
+  let connection: MongoDatabaseConnection | null = null;
+
+  try {
+    connection = await (options.connectDatabase ?? defaultConnectDatabase)();
+    const repository = createStoryWorldsRepository(connection);
+    return await repository.findById(series.storyWorldId);
+  } finally {
+    await connection?.close();
+  }
+}
+
 async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
   return connectMongoDatabase({
     dbName: config.mongoDbName,
@@ -281,7 +309,7 @@ async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
   });
 }
 
-function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesson: string; promptSeed: string; sourceStory: string; synopsis: string; title: string }, caseId: string) {
+function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesson: string; promptSeed: string; sourceStory: string; synopsis: string; title: string }, caseId: string, storyWorld: StoryWorld | null = null) {
   const episodeWithOptionalFields = episode as {
     episodeNo?: number | null;
     interactiveEnding?: string;
@@ -357,9 +385,18 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
         values: series.values,
         visualStyle: series.visualStyle
       },
-      storyWorldContext: series.storyWorldId ? { storyWorldId: series.storyWorldId } : undefined,
+      storyWorldContext: storyWorld ? {
+        description: storyWorld.description,
+        name: storyWorld.name,
+        relationshipMap: storyWorld.relationshipMap,
+        safetyRules: storyWorld.safetyRules,
+        storyWorldId: storyWorld._id,
+        visualStyle: storyWorld.visualStyle
+      } : series.storyWorldId ? { storyWorldId: series.storyWorldId } : undefined,
       tone: series.tone,
       visualContinuityRules: [
+        storyWorld?.description,
+        storyWorld?.relationshipMap,
         series.visualStyle,
         "Reuse selected recurring characters and scene assets when provided. Do not swap the story world, cast, or main setting unless the episode explicitly asks for it."
       ].filter(Boolean)
