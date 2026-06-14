@@ -311,9 +311,11 @@ async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
 
 function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesson: string; promptSeed: string; sourceStory: string; synopsis: string; title: string }, caseId: string, storyWorld: StoryWorld | null = null) {
   const episodeWithOptionalFields = episode as {
+    continuityNote?: string;
     episodeNo?: number | null;
     interactiveEnding?: string;
     lessonOrTheme?: string;
+    serialHook?: string;
     selectedCharacterAssetIds?: string[];
     selectedSceneAssetIds?: string[];
   };
@@ -337,7 +339,12 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
     `BGM 风格：${series.musicStyle}`,
     `安全规则：${series.safetyRules}`,
     "",
-    "请严格按照以上系列设定生成原创、可拍、可审核的短视频脚本和分镜。不要额外强加未在系列中指定的题材、受众、语气或限制。"
+    "请严格按照以上系列设定生成原创、可拍、可审核的短视频脚本和分镜。不要额外强加未在系列中指定的题材、受众、语气或限制。",
+    `Narrative mode: ${series.narrativeMode}`,
+    `Drama intensity: ${series.dramaIntensity}`,
+    series.continuityRules ? `Continuity rules: ${series.continuityRules}` : "",
+    episodeWithOptionalFields.continuityNote ? `Continuity note: ${episodeWithOptionalFields.continuityNote}` : "",
+    episodeWithOptionalFields.serialHook ? `Serial hook: ${episodeWithOptionalFields.serialHook}` : ""
   ].join("\n");
 
   return {
@@ -353,11 +360,13 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
     prompt,
     productionBrief: {
       episodeContext: {
+        continuityNote: episodeWithOptionalFields.continuityNote ?? "",
         episodeId: episode._id,
         episodeNo: episodeWithOptionalFields.episodeNo ?? null,
         interactiveEnding: episodeWithOptionalFields.interactiveEnding ?? "",
         lessonOrTheme: episodeWithOptionalFields.lessonOrTheme || episode.moralLesson,
         promptSeed: episode.promptSeed,
+        serialHook: episodeWithOptionalFields.serialHook ?? "",
         synopsis: episode.synopsis,
         title: episode.title
       },
@@ -375,10 +384,13 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
       })),
       seriesContext: {
         audience: series.audience,
+        continuityRules: series.continuityRules,
         contentType: series.contentType,
         description: series.description,
+        dramaIntensity: series.dramaIntensity,
         musicStyle: series.musicStyle,
         name: series.name,
+        narrativeMode: series.narrativeMode,
         safetyRules: series.safetyRules,
         seriesId: series._id,
         tone: series.tone,
@@ -397,6 +409,7 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
       visualContinuityRules: [
         storyWorld?.description,
         storyWorld?.relationshipMap,
+        series.continuityRules,
         series.visualStyle,
         "Reuse selected recurring characters and scene assets when provided. Do not swap the story world, cast, or main setting unless the episode explicitly asks for it."
       ].filter(Boolean)
@@ -424,13 +437,16 @@ function parseSeriesCreate(body: unknown): ContentSeriesCreateInput {
 
   return {
     audience: optionalString(body.audience),
+    continuityRules: optionalString(body.continuityRules),
     contentType: optionalString(body.contentType),
     description: optionalString(body.description),
+    dramaIntensity: parseDramaIntensity(body.dramaIntensity),
     durationSeconds: numberFromUnknown(body.durationSeconds, 45),
     id: optionalString(body.id),
     language: body.language === "en-US" ? "en-US" : "zh-CN",
     musicStyle: optionalString(body.musicStyle),
     name,
+    narrativeMode: parseNarrativeMode(body.narrativeMode),
     referenceAssetIds: stringArrayFromUnknown(body.referenceAssetIds),
     safetyRules: optionalString(body.safetyRules),
     sceneCount: numberFromUnknown(body.sceneCount, 5),
@@ -451,12 +467,15 @@ function parseSeriesPatch(body: unknown): ContentSeriesPatchInput {
   const status = parseSeriesStatus(body.status);
 
   if (body.audience !== undefined) patch.audience = stringFromUnknown(body.audience, "");
+  if (body.continuityRules !== undefined) patch.continuityRules = stringFromUnknown(body.continuityRules, "");
   if (body.contentType !== undefined) patch.contentType = stringFromUnknown(body.contentType, "");
   if (body.description !== undefined) patch.description = stringFromUnknown(body.description, "");
+  if (body.dramaIntensity !== undefined) patch.dramaIntensity = parseDramaIntensity(body.dramaIntensity);
   if (body.durationSeconds !== undefined) patch.durationSeconds = numberFromUnknown(body.durationSeconds, 45);
   if (body.language !== undefined) patch.language = body.language === "en-US" ? "en-US" : "zh-CN";
   if (body.musicStyle !== undefined) patch.musicStyle = stringFromUnknown(body.musicStyle, "");
   if (body.name !== undefined) patch.name = stringFromUnknown(body.name, "");
+  if (body.narrativeMode !== undefined) patch.narrativeMode = parseNarrativeMode(body.narrativeMode);
   if (body.referenceAssetIds !== undefined) patch.referenceAssetIds = stringArrayFromUnknown(body.referenceAssetIds);
   if (body.safetyRules !== undefined) patch.safetyRules = stringFromUnknown(body.safetyRules, "");
   if (body.sceneCount !== undefined) patch.sceneCount = numberFromUnknown(body.sceneCount, 5);
@@ -479,12 +498,14 @@ function parseEpisodePatch(body: unknown): SeriesEpisodeIdeaPatchInput {
 
   if (body.ageRange !== undefined) patch.ageRange = stringFromUnknown(body.ageRange, "");
   if (body.caseId !== undefined) patch.caseId = body.caseId === null ? null : stringFromUnknown(body.caseId, "");
+  if (body.continuityNote !== undefined) patch.continuityNote = stringFromUnknown(body.continuityNote, "");
   if (body.episodeNo !== undefined) patch.episodeNo = body.episodeNo === null ? null : numberFromUnknown(body.episodeNo, 1);
   if (body.interactiveEnding !== undefined) patch.interactiveEnding = stringFromUnknown(body.interactiveEnding, "");
   if (body.lessonOrTheme !== undefined) patch.lessonOrTheme = stringFromUnknown(body.lessonOrTheme, "");
   if (body.moralLesson !== undefined) patch.moralLesson = stringFromUnknown(body.moralLesson, "");
   if (body.promptSeed !== undefined) patch.promptSeed = stringFromUnknown(body.promptSeed, "");
   if (body.riskNotes !== undefined) patch.riskNotes = stringFromUnknown(body.riskNotes, "");
+  if (body.serialHook !== undefined) patch.serialHook = stringFromUnknown(body.serialHook, "");
   if (body.selectedCharacterAssetIds !== undefined) patch.selectedCharacterAssetIds = stringArrayFromUnknown(body.selectedCharacterAssetIds);
   if (body.selectedSceneAssetIds !== undefined) patch.selectedSceneAssetIds = stringArrayFromUnknown(body.selectedSceneAssetIds);
   if (body.sourceStory !== undefined) patch.sourceStory = stringFromUnknown(body.sourceStory, "");
@@ -523,6 +544,18 @@ function parseSeriesStatus(value: unknown) {
 
 function parseEpisodeStatus(value: unknown) {
   return typeof value === "string" && (seriesEpisodeIdeaStatuses as readonly string[]).includes(value) ? value as (typeof seriesEpisodeIdeaStatuses)[number] : undefined;
+}
+
+function parseNarrativeMode(value: unknown) {
+  return value === "serialized" ? "serialized" : "standalone";
+}
+
+function parseDramaIntensity(value: unknown) {
+  if (value === "low" || value === "high" || value === "melodrama") {
+    return value;
+  }
+
+  return "medium";
 }
 
 function paramString(value: string | string[] | undefined): string {

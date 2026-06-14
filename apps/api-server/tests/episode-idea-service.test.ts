@@ -10,6 +10,12 @@ describe("series episode idea service", () => {
   it("locks generated episode ideas to the bound story world", () => {
     const prompt = buildEpisodeIdeaPrompt(createSeries(), 10, createStoryWorld());
 
+    expect(prompt).toContain("Narrative mode: serialized");
+    expect(prompt).toContain("Drama intensity: melodrama");
+    expect(prompt).toContain("Continuity rules: Continue the banana CEO office misunderstanding across episodes and end with a new reversal.");
+    expect(prompt).toContain("Serialized series requirement");
+    expect(prompt).toContain("High melodrama requirement");
+
     expect(prompt).toContain("香蕉总裁");
     expect(prompt).toContain("水果公司");
     expect(prompt).toContain("不可替换的系列上下文");
@@ -28,12 +34,14 @@ describe("series episode idea service", () => {
           ideas: [
             {
               ageRange: "18-35",
+              continuityNote: "Episode 1 leaves the assistant suspecting another meeting note was swapped.",
               episodeNo: 1,
               interactiveEnding: "你会怎样帮香蕉总裁化解误会？",
               lessonOrTheme: "沟通确认",
               moralLesson: "开会后要复述确认。",
               promptSeed: "香蕉总裁误会会议纪要，团队用复述确认解决冲突。",
               riskNotes: "低风险",
+              serialHook: "The final shot reveals the orange CFO overheard everything.",
               selectedCharacterAssetIds: [],
               selectedSceneAssetIds: [],
               sourceStory: "原创水果职场",
@@ -58,10 +66,15 @@ describe("series episode idea service", () => {
       }
     });
 
-    await service.generateEpisodeIdeas({
+    const result = await service.generateEpisodeIdeas({
       count: 1,
       series: createSeries(),
       storyWorld: createStoryWorld()
+    });
+
+    expect(result.ideas[0]).toMatchObject({
+      continuityNote: "Episode 1 leaves the assistant suspecting another meeting note was swapped.",
+      serialHook: "The final shot reveals the orange CFO overheard everything."
     });
 
     expect(requestBody.input).toContain("香蕉总裁");
@@ -75,12 +88,15 @@ function createSeries(overrides: Partial<ContentSeries> = {}): ContentSeries {
 
   return {
     _id: overrides._id ?? "series_fruit",
+    continuityRules: overrides.continuityRules ?? "Continue the banana CEO office misunderstanding across episodes and end with a new reversal.",
     audience: overrides.audience ?? "喜欢办公室短剧的观众",
     contentType: overrides.contentType ?? "水果职场短剧",
     createdAt: overrides.createdAt ?? now,
+    dramaIntensity: overrides.dramaIntensity ?? "melodrama",
     description: overrides.description ?? "围绕香蕉总裁和水果公司员工的办公室八点档。",
     durationSeconds: overrides.durationSeconds ?? 45,
     language: overrides.language ?? "zh-CN",
+    narrativeMode: overrides.narrativeMode ?? "serialized",
     musicStyle: overrides.musicStyle ?? "轻快、戏剧化",
     name: overrides.name ?? "水果八点档",
     referenceAssetIds: overrides.referenceAssetIds ?? [],

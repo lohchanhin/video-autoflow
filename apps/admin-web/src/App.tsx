@@ -1855,11 +1855,13 @@ export function App() {
     return {
       conflict: caseConflict.trim() || undefined,
       episodeContext: selectedEpisode ? {
+        continuityNote: selectedEpisode.continuityNote,
         episodeId: selectedEpisode._id,
         episodeNo: selectedEpisode.episodeNo,
         interactiveEnding: selectedEpisode.interactiveEnding,
         lessonOrTheme: selectedEpisode.lessonOrTheme || selectedEpisode.moralLesson,
         promptSeed: selectedEpisode.promptSeed,
+        serialHook: selectedEpisode.serialHook,
         synopsis: selectedEpisode.synopsis,
         title: selectedEpisode.title
       } : undefined,
@@ -1868,7 +1870,10 @@ export function App() {
       requiredBeats: [
         selectedEpisode?.synopsis,
         selectedEpisode?.promptSeed,
+        selectedEpisode?.continuityNote,
+        selectedEpisode?.serialHook,
         selectedEpisode?.interactiveEnding,
+        selectedSeries?.continuityRules,
         caseGoal.trim(),
         caseConflict.trim()
       ].filter((value): value is string => Boolean(value && value.trim())),
@@ -1890,10 +1895,13 @@ export function App() {
       })),
       seriesContext: selectedSeries ? {
         audience: selectedSeries.audience,
+        continuityRules: selectedSeries.continuityRules,
         contentType: selectedSeries.contentType,
         description: selectedSeries.description,
+        dramaIntensity: selectedSeries.dramaIntensity,
         musicStyle: selectedSeries.musicStyle,
         name: selectedSeries.name,
+        narrativeMode: selectedSeries.narrativeMode,
         safetyRules: selectedSeries.safetyRules,
         seriesId: selectedSeries._id,
         tone: selectedSeries.tone,
@@ -1933,6 +1941,11 @@ export function App() {
     const assetContext = buildAssetContextBriefFromAssets(referenceAssets.assets) || buildAssetContextBrief(referenceAssets.character, referenceAssets.background);
     const productionBrief = buildProductionBriefFromDraft(referenceAssets);
     const structuredContext = [
+      productionBrief.seriesContext?.narrativeMode ? `Narrative mode: ${productionBrief.seriesContext.narrativeMode}` : "",
+      productionBrief.seriesContext?.dramaIntensity ? `Drama intensity: ${productionBrief.seriesContext.dramaIntensity}` : "",
+      productionBrief.seriesContext?.continuityRules ? `Continuity rules: ${productionBrief.seriesContext.continuityRules}` : "",
+      productionBrief.episodeContext?.continuityNote ? `Episode continuity: ${productionBrief.episodeContext.continuityNote}` : "",
+      productionBrief.episodeContext?.serialHook ? `Episode serial hook: ${productionBrief.episodeContext.serialHook}` : "",
       productionBrief.seriesContext ? `系列上下文：${productionBrief.seriesContext.name} / ${productionBrief.seriesContext.description} / ${productionBrief.seriesContext.values}` : "",
       productionBrief.episodeContext ? `单集上下文：${productionBrief.episodeContext.title} / ${productionBrief.episodeContext.lessonOrTheme} / ${productionBrief.episodeContext.synopsis}` : "",
       productionBrief.storyWorldContext ? `世界观：${productionBrief.storyWorldContext.name} / ${productionBrief.storyWorldContext.description} / ${productionBrief.storyWorldContext.relationshipMap}` : "",
@@ -2760,10 +2773,13 @@ export function App() {
       const response = await requestCreateContentSeries({
         audience: "未指定目标观众",
         contentType: "自定义影片类型",
+        continuityRules: "",
         description: "",
+        dramaIntensity: "medium",
         durationSeconds: 45,
         language: "zh-CN",
         musicStyle: "",
+        narrativeMode: "standalone",
         name: "未命名系列",
         referenceAssetIds: [],
         safetyRules: "原创、不抄袭、不使用版权角色、不伪造真实人物；具体禁忌按这个系列的定位补充。",

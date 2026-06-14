@@ -308,6 +308,9 @@ function buildOpenAIPrompt(input: NormalizedScriptStoryInput, qualityFeedback = 
     "If productionBrief.selectedCharacters is present, the protagonist/cast and visualBible character details must preserve those names, roles, identity notes, wardrobe, silhouette, and recurring props.",
     "If productionBrief.selectedScenes or storyWorldContext is present, the visualBible environment and storyboard scenes must preserve those locations, spatial rules, props, lighting, color palette, and world rules.",
     "If productionBrief.lessonOrTheme is present, the story must make that theme visible through character choices and conflict, not a generic lecture.",
+    "If productionBrief.seriesContext.narrativeMode is serialized, write this as one episode of an ongoing serial: preserve continuity rules, use the episode's continuityNote/serialHook when present, and end with a safe next-episode hook instead of fully resetting the premise.",
+    "If productionBrief.seriesContext.narrativeMode is standalone, resolve this episode's main conflict inside the short.",
+    "If productionBrief.seriesContext.dramaIntensity is high or melodrama, use safe but strong drama: misunderstanding, secret, betrayal, reversal, public confrontation, emotional choice, and cliffhanger. Do not use explicit sexual content, gore, real people, or targeted humiliation.",
     "The storyboard imagePrompt fields must describe single cinematic stills only. Do not ask for text, captions, comic panels, UI, table layouts, or storyboard sheets.",
     "Each storyboard scene must reuse the visualBible character and environment unless the user explicitly asks for a scene change.",
     "Also return a backgroundMusic brief for optional BGM generation: style, tempo, mood, instrumentation, and a provider-ready prompt.",
@@ -337,6 +340,9 @@ function formatProductionBriefForPrompt(input: NormalizedScriptStoryInput): stri
       brief.seriesContext.audience,
       brief.seriesContext.description,
       brief.seriesContext.values,
+      brief.seriesContext.narrativeMode ? `Narrative mode: ${brief.seriesContext.narrativeMode}` : "",
+      brief.seriesContext.dramaIntensity ? `Drama intensity: ${brief.seriesContext.dramaIntensity}` : "",
+      brief.seriesContext.continuityRules ? `Continuity rules: ${brief.seriesContext.continuityRules}` : "",
       brief.seriesContext.tone,
       brief.seriesContext.visualStyle,
       brief.seriesContext.musicStyle,
@@ -348,6 +354,8 @@ function formatProductionBriefForPrompt(input: NormalizedScriptStoryInput): stri
       brief.episodeContext.lessonOrTheme,
       brief.episodeContext.synopsis,
       brief.episodeContext.promptSeed,
+      brief.episodeContext.continuityNote,
+      brief.episodeContext.serialHook,
       brief.episodeContext.interactiveEnding
     ].filter(Boolean).join(" | ")}` : "",
     brief.storyWorldContext ? `Story world context: ${[

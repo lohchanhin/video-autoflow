@@ -243,6 +243,12 @@ export interface GenerateProductionAssetResponse {
 export const contentSeriesStatuses = ["draft", "active", "paused", "archived"] as const;
 export type ContentSeriesStatus = (typeof contentSeriesStatuses)[number];
 
+export const contentSeriesNarrativeModes = ["standalone", "serialized"] as const;
+export type ContentSeriesNarrativeMode = (typeof contentSeriesNarrativeModes)[number];
+
+export const contentSeriesDramaIntensities = ["low", "medium", "high", "melodrama"] as const;
+export type ContentSeriesDramaIntensity = (typeof contentSeriesDramaIntensities)[number];
+
 export const seriesEpisodeIdeaStatuses = ["draft", "approved", "converted_to_case", "rejected"] as const;
 export type SeriesEpisodeIdeaStatus = (typeof seriesEpisodeIdeaStatuses)[number];
 
@@ -253,9 +259,11 @@ export interface ContentSeries {
   createdAt: string;
   description: string;
   durationSeconds: number;
+  dramaIntensity: ContentSeriesDramaIntensity;
   language: "zh-CN" | "en-US";
   musicStyle: string;
   name: string;
+  narrativeMode: ContentSeriesNarrativeMode;
   referenceAssetIds: string[];
   safetyRules: string;
   sceneCount: number;
@@ -265,12 +273,14 @@ export interface ContentSeries {
   updatedAt: string;
   values: string;
   visualStyle: string;
+  continuityRules: string;
 }
 
 export interface SeriesEpisodeIdea {
   _id: string;
   ageRange: string;
   caseId: string | null;
+  continuityNote: string;
   createdAt: string;
   episodeNo: number | null;
   interactiveEnding: string;
@@ -278,6 +288,7 @@ export interface SeriesEpisodeIdea {
   moralLesson: string;
   promptSeed: string;
   riskNotes: string;
+  serialHook: string;
   selectedCharacterAssetIds: string[];
   selectedSceneAssetIds: string[];
   seriesId: string;
@@ -430,6 +441,8 @@ export interface ProductionBrief {
     interactiveEnding?: string | undefined;
     lessonOrTheme?: string | undefined;
     promptSeed?: string | undefined;
+    serialHook?: string | undefined;
+    continuityNote?: string | undefined;
     synopsis?: string | undefined;
     title?: string | undefined;
   } | undefined;
@@ -441,9 +454,12 @@ export interface ProductionBrief {
   seriesContext?: {
     audience?: string | undefined;
     contentType?: string | undefined;
+    continuityRules?: string | undefined;
     description?: string | undefined;
+    dramaIntensity?: ContentSeriesDramaIntensity | undefined;
     musicStyle?: string | undefined;
     name?: string | undefined;
+    narrativeMode?: ContentSeriesNarrativeMode | undefined;
     safetyRules?: string | undefined;
     seriesId?: string | undefined;
     tone?: string | undefined;

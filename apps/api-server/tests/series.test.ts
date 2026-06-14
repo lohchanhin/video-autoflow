@@ -150,13 +150,18 @@ describe("series API", () => {
 
   it("converts approved episode ideas into a case seed", async () => {
     const series = createSeries({
+      continuityRules: "Episode 2 must continue the unresolved apology conflict and end with a new classroom misunderstanding.",
+      dramaIntensity: "melodrama",
+      narrativeMode: "serialized",
       referenceAssetIds: ["asset_character", "asset_scene"],
       storyWorldId: "world_001"
     });
     const episode = createEpisode({
       lessonOrTheme: "è¯šå®ž",
+      continuityNote: "This episode follows the previous broken picture frame incident.",
       selectedCharacterAssetIds: ["asset_character"],
       selectedSceneAssetIds: ["asset_scene"],
+      serialHook: "The next episode reveals another friend saw the accident.",
       status: "approved"
     });
     const convertedEpisode = {
@@ -190,9 +195,18 @@ describe("series API", () => {
         sceneAssetIds: ["asset_scene"],
         storyWorldId: "world_001",
         productionBrief: expect.objectContaining({
+          episodeContext: expect.objectContaining({
+            continuityNote: "This episode follows the previous broken picture frame incident.",
+            serialHook: "The next episode reveals another friend saw the accident."
+          }),
           lessonOrTheme: "è¯šå®ž",
           selectedCharacters: [expect.objectContaining({ assetId: "asset_character" })],
           selectedScenes: [expect.objectContaining({ assetId: "asset_scene" })],
+          seriesContext: expect.objectContaining({
+            continuityRules: "Episode 2 must continue the unresolved apology conflict and end with a new classroom misunderstanding.",
+            dramaIntensity: "melodrama",
+            narrativeMode: "serialized"
+          }),
           storyWorldContext: expect.objectContaining({
             description: expect.stringContaining("彩虹森林"),
             name: "彩虹森林世界观",
@@ -294,12 +308,15 @@ function createSeries(overrides: Partial<ContentSeries> = {}): ContentSeries {
 
   return {
     _id: overrides._id ?? "series_001",
+    continuityRules: overrides.continuityRules ?? "Carry forward the unresolved conflict across episodes.",
     audience: overrides.audience ?? "创业者 / 内容运营",
     contentType: overrides.contentType ?? "AI 工具科普",
     createdAt: overrides.createdAt ?? now,
+    dramaIntensity: overrides.dramaIntensity ?? "medium",
     description: overrides.description ?? "用短故事讲清楚 AI 工具的真实落地场景。",
     durationSeconds: overrides.durationSeconds ?? 45,
     language: overrides.language ?? "zh-CN",
+    narrativeMode: overrides.narrativeMode ?? "standalone",
     musicStyle: overrides.musicStyle ?? "现代、简洁、轻节奏",
     name: overrides.name ?? "AI 工具实战系列",
     referenceAssetIds: overrides.referenceAssetIds ?? [],
@@ -321,8 +338,10 @@ function createEpisode(overrides: Partial<SeriesEpisodeIdea> = {}): SeriesEpisod
     _id: overrides._id ?? "episode_001",
     ageRange: overrides.ageRange ?? "创业者",
     caseId: overrides.caseId ?? null,
+    continuityNote: overrides.continuityNote ?? "",
     createdAt: overrides.createdAt ?? now,
     episodeNo: overrides.episodeNo ?? 1,
+    serialHook: overrides.serialHook ?? "",
     interactiveEnding: overrides.interactiveEnding ?? "å¦‚æžœæ˜¯ä½ ï¼Œä½ ä¼šåœ¨å“ªä¸ªçŽ¯èŠ‚å¢žåŠ äººå·¥å®¡æ ¸ï¼Ÿ",
     lessonOrTheme: overrides.lessonOrTheme ?? "è‡ªåŠ¨åŒ–ä¹Ÿéœ€è¦å®¡æ ¸èŠ‚ç‚¹",
     moralLesson: overrides.moralLesson ?? "理解 AI 自动化的真实边界",
@@ -344,12 +363,14 @@ function createEpisodeFromInput(input: SeriesEpisodeIdeaCreateInput, id: string)
     _id: id,
     ageRange: input.ageRange ?? "",
     caseId: input.caseId ?? null,
+    continuityNote: input.continuityNote ?? "",
     episodeNo: input.episodeNo ?? 1,
     interactiveEnding: input.interactiveEnding ?? "",
     lessonOrTheme: input.lessonOrTheme ?? "",
     moralLesson: input.moralLesson,
     promptSeed: input.promptSeed,
     riskNotes: input.riskNotes ?? "",
+    serialHook: input.serialHook ?? "",
     seriesId: input.seriesId ?? "series_001",
     selectedCharacterAssetIds: input.selectedCharacterAssetIds ?? [],
     selectedSceneAssetIds: input.selectedSceneAssetIds ?? [],

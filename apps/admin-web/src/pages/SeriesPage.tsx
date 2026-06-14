@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, X, XCircle } from "lucide-react";
-import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
+import type { ContentSeries, ContentSeriesDramaIntensity, ContentSeriesNarrativeMode, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset } from "../lib/draft-reference-assets.js";
@@ -32,6 +32,8 @@ interface SeriesPageProps {
 }
 
 const seriesStatusOptions: ContentSeriesStatus[] = ["draft", "active", "paused", "archived"];
+const narrativeModeOptions: ContentSeriesNarrativeMode[] = ["standalone", "serialized"];
+const dramaIntensityOptions: ContentSeriesDramaIntensity[] = ["low", "medium", "high", "melodrama"];
 const episodeStatusOptions: SeriesEpisodeIdeaStatus[] = ["draft", "approved", "converted_to_case", "rejected"];
 type SeriesWorkspaceTab = "settings" | "assets" | "episodes" | "cases";
 
@@ -285,6 +287,19 @@ export function SeriesPage(props: SeriesPageProps) {
                 </Field>
                 <Field label="禁忌 / 合规规则">
                   <textarea rows={3} value={seriesDraft.safetyRules} onChange={(event) => patchSeriesDraft({ safetyRules: event.target.value })} />
+                </Field>
+                <Field label="叙事模式">
+                  <select value={seriesDraft.narrativeMode} onChange={(event) => patchSeriesDraft({ narrativeMode: event.target.value as ContentSeriesNarrativeMode })}>
+                    {narrativeModeOptions.map((mode) => <option key={mode} value={mode}>{narrativeModeLabel(mode)}</option>)}
+                  </select>
+                </Field>
+                <Field label="狗血 / 抓马强度">
+                  <select value={seriesDraft.dramaIntensity} onChange={(event) => patchSeriesDraft({ dramaIntensity: event.target.value as ContentSeriesDramaIntensity })}>
+                    {dramaIntensityOptions.map((intensity) => <option key={intensity} value={intensity}>{dramaIntensityLabel(intensity)}</option>)}
+                  </select>
+                </Field>
+                <Field className="wide" label="连续剧规则 / 前情关系">
+                  <textarea rows={3} value={seriesDraft.continuityRules} onChange={(event) => patchSeriesDraft({ continuityRules: event.target.value })} placeholder="例如：每集延续上一集误会；主角关系持续拉扯；每集结尾留下下一集悬念。" />
                 </Field>
               </div>
               <EditableActionBar
@@ -603,6 +618,12 @@ function EpisodeRow(props: {
           <Field label="互动结尾">
             <textarea rows={2} value={episodeDraft.interactiveEnding} onChange={(event) => patchEpisodeDraft({ interactiveEnding: event.target.value })} />
           </Field>
+          <Field label="连续剧钩子 / 下一集悬念">
+            <textarea rows={2} value={episodeDraft.serialHook} onChange={(event) => patchEpisodeDraft({ serialHook: event.target.value })} />
+          </Field>
+          <Field label="连续性说明">
+            <textarea rows={2} value={episodeDraft.continuityNote} onChange={(event) => patchEpisodeDraft({ continuityNote: event.target.value })} />
+          </Field>
           <AssetCheckboxGroup
             assets={characterAssets}
             label="本集出场角色"
@@ -826,6 +847,24 @@ function seriesStatusLabel(status: ContentSeriesStatus): string {
     paused: "暂停"
   };
   return labels[status];
+}
+
+function narrativeModeLabel(mode: ContentSeriesNarrativeMode): string {
+  const labels: Record<ContentSeriesNarrativeMode, string> = {
+    serialized: "连续剧",
+    standalone: "单集"
+  };
+  return labels[mode];
+}
+
+function dramaIntensityLabel(intensity: ContentSeriesDramaIntensity): string {
+  const labels: Record<ContentSeriesDramaIntensity, string> = {
+    high: "强抓马",
+    low: "轻冲突",
+    medium: "标准冲突",
+    melodrama: "狗血连续剧"
+  };
+  return labels[intensity];
 }
 
 function episodeStatusLabel(status: SeriesEpisodeIdeaStatus): string {

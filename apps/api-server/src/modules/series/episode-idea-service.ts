@@ -53,12 +53,14 @@ interface OpenAIResponseBody {
 interface ParsedIdeas {
   ideas: Array<{
     ageRange?: string;
+    continuityNote?: string;
     episodeNo?: number;
     interactiveEnding?: string;
     lessonOrTheme?: string;
     moralLesson?: string;
     promptSeed?: string;
     riskNotes?: string;
+    serialHook?: string;
     selectedCharacterAssetIds?: string[];
     selectedSceneAssetIds?: string[];
     sourceStory?: string;
@@ -160,7 +162,16 @@ export function buildEpisodeIdeaPrompt(series: ContentSeries, count: number, sto
     storyWorld ? "一致性要求：每条选题必须保留上述世界观的主角、身份、地点、组织和核心关系；只能在这个世界内扩展新冲突和新剧情。" : "",
     "",
     `请生成 ${count} 条单集选题。每条必须包含：集数、标题、核心看点/价值、来源/灵感、剧情梗概、promptSeed、目标受众/年龄层、风险提示、互动结尾。`,
-    "字段语义说明：lessonOrTheme / moralLesson 表示该集的核心看点、观点、价值或知识点，不一定是道德说教；sourceStory 表示来源/灵感；ageRange 表示目标受众或年龄层；selectedCharacterAssetIds 和 selectedSceneAssetIds 只有在你明确知道系列绑定资产 ID 时才填写，否则返回空数组。"
+    "字段语义说明：lessonOrTheme / moralLesson 表示该集的核心看点、观点、价值或知识点，不一定是道德说教；sourceStory 表示来源/灵感；ageRange 表示目标受众或年龄层；selectedCharacterAssetIds 和 selectedSceneAssetIds 只有在你明确知道系列绑定资产 ID 时才填写，否则返回空数组。",
+    `Narrative mode: ${series.narrativeMode}`,
+    `Drama intensity: ${series.dramaIntensity}`,
+    series.continuityRules ? `Continuity rules: ${series.continuityRules}` : "",
+    series.narrativeMode === "serialized"
+      ? "Serialized series requirement: generate episodes as a continuing drama with shared continuity, escalating unresolved tension, previous/next episode hooks, and a cliffhanger or open question in serialHook. Do not reset the premise each episode."
+      : "Standalone requirement: each idea must resolve its core episode conflict in one short, while still fitting the reusable series world.",
+    series.dramaIntensity === "melodrama" || series.dramaIntensity === "high"
+      ? "High melodrama requirement: use safe but intense drama such as misunderstanding, betrayal, secret reveal, public confrontation, reversal, emotional choice, and cliffhanger. Keep it fictional, non-explicit, non-gory, and non-humiliating."
+      : "Drama requirement: keep conflict clear and watchable without overloading the episode."
   ].filter((line) => line !== "").join("\n");
 }
 
@@ -170,6 +181,9 @@ function buildLockedSeriesContext(series: ContentSeries, storyWorld: StoryWorld 
     series.description,
     series.values,
     series.tone,
+    series.narrativeMode,
+    series.dramaIntensity,
+    series.continuityRules,
     series.visualStyle,
     storyWorld?.name,
     storyWorld?.description,
@@ -197,11 +211,13 @@ function normalizeIdeas(parsed: ParsedIdeas, count: number): SeriesEpisodeIdeaCr
   return parsed.ideas
     .map((idea): SeriesEpisodeIdeaCreateInput => ({
       ageRange: normalizeText(idea.ageRange, ""),
+      continuityNote: normalizeText(idea.continuityNote, ""),
       episodeNo: typeof idea.episodeNo === "number" ? idea.episodeNo : undefined,
       interactiveEnding: normalizeText(idea.interactiveEnding, ""),
       lessonOrTheme: normalizeText(idea.lessonOrTheme, idea.moralLesson ?? ""),
       moralLesson: normalizeText(idea.moralLesson, "核心看点待补充"),
       promptSeed: normalizeText(idea.promptSeed, idea.synopsis ?? idea.title ?? ""),
+      serialHook: normalizeText(idea.serialHook, ""),
       riskNotes: normalizeText(idea.riskNotes, "按系列安全规则复核。"),
       selectedCharacterAssetIds: Array.isArray(idea.selectedCharacterAssetIds) ? idea.selectedCharacterAssetIds : [],
       selectedSceneAssetIds: Array.isArray(idea.selectedSceneAssetIds) ? idea.selectedSceneAssetIds : [],
@@ -269,19 +285,21 @@ const episodeIdeasJsonSchema = {
         additionalProperties: false,
         properties: {
           ageRange: { type: "string" },
+          continuityNote: { type: "string" },
           episodeNo: { type: "number" },
           interactiveEnding: { type: "string" },
           lessonOrTheme: { type: "string" },
           moralLesson: { type: "string" },
           promptSeed: { type: "string" },
           riskNotes: { type: "string" },
+          serialHook: { type: "string" },
           selectedCharacterAssetIds: { items: { type: "string" }, type: "array" },
           selectedSceneAssetIds: { items: { type: "string" }, type: "array" },
           sourceStory: { type: "string" },
           synopsis: { type: "string" },
           title: { type: "string" }
         },
-        required: ["episodeNo", "title", "lessonOrTheme", "moralLesson", "sourceStory", "synopsis", "promptSeed", "ageRange", "riskNotes", "interactiveEnding", "selectedCharacterAssetIds", "selectedSceneAssetIds"],
+        required: ["episodeNo", "title", "lessonOrTheme", "moralLesson", "sourceStory", "synopsis", "promptSeed", "ageRange", "riskNotes", "interactiveEnding", "serialHook", "continuityNote", "selectedCharacterAssetIds", "selectedSceneAssetIds"],
         type: "object"
       },
       type: "array"
