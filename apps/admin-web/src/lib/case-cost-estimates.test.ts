@@ -116,6 +116,7 @@ function createJob(overrides: Partial<AdminJob> = {}): AdminJob {
     privacy: "private",
     productionBrief: null,
     prompt: "生成一支短片。",
+    referenceAssetIds: [],
     reviewStatus: "draft",
     sceneCount: 5,
     sceneAssetIds: [],

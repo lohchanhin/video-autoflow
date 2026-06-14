@@ -25,6 +25,7 @@ export interface AdminJob {
   topic: string;
   prompt: string;
   productionBrief: ProductionBrief | null;
+  referenceAssetIds: string[];
   sceneAssetIds: string[];
   storyWorldId: string | null;
   genre: string;
@@ -58,6 +59,7 @@ export interface NewJobInput {
   topic: string;
   prompt: string;
   productionBrief?: ProductionBrief | null | undefined;
+  referenceAssetIds?: string[] | undefined;
   sceneAssetIds?: string[] | undefined;
   storyWorldId?: string | null | undefined;
   genre?: string | undefined;
@@ -174,6 +176,7 @@ export function loadJobs(): AdminJob[] {
     outlineQc: job.outlineQc ?? null,
     prompt: job.prompt ?? "",
     productionBrief: job.productionBrief ?? null,
+    referenceAssetIds: Array.isArray(job.referenceAssetIds) ? uniqueStrings(job.referenceAssetIds) : [],
     reviewStatus: job.reviewStatus ?? (job.status === "READY_TO_UPLOAD" || job.status === "QC_PASSED" ? "needs_review" : "draft"),
     scheduleId: job.scheduleId ?? null,
     scheduleRunId: job.scheduleRunId ?? null,
@@ -206,6 +209,7 @@ export function createJob(input: NewJobInput): AdminJob {
     topic: input.topic,
     prompt: input.prompt,
     productionBrief: input.productionBrief ?? null,
+    referenceAssetIds: uniqueStrings(input.referenceAssetIds ?? []),
     sceneAssetIds: input.sceneAssetIds ?? (input.backgroundAssetId ? [input.backgroundAssetId] : []),
     storyWorldId: input.storyWorldId ?? null,
     genre: input.genre?.trim() || getTemplateGenreLabel(input.templateType),
@@ -224,6 +228,10 @@ export function createJob(input: NewJobInput): AdminJob {
     createdAt: now,
     updatedAt: now
   };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return values.filter((value, index, array) => Boolean(value) && array.indexOf(value) === index);
 }
 
 function getTemplateGenreLabel(templateType: ContentTemplateType): string {

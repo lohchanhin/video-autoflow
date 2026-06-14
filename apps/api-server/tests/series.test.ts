@@ -279,6 +279,40 @@ describe("series API", () => {
     expect(response.body.caseSeed.productionBrief.selectedCharacters).toEqual([]);
     expect(response.body.caseSeed.productionBrief.selectedScenes).toEqual([]);
   });
+
+  it("allows a previously converted episode idea to be rebuilt into a new case seed", async () => {
+    const series = createSeries({
+      referenceAssetIds: ["asset_character", "asset_scene"]
+    });
+    const episode = createEpisode({
+      caseId: "job_missing",
+      status: "converted_to_case"
+    });
+    const rebuiltEpisode = {
+      ...episode,
+      caseId: "job_rebuilt"
+    };
+    const repository = createSeriesRepositoryMock({
+      findEpisodeIdea: vi.fn().mockResolvedValue(episode),
+      findSeriesById: vi.fn().mockResolvedValue(series),
+      patchEpisodeIdea: vi.fn().mockResolvedValue(rebuiltEpisode)
+    });
+
+    const response = await request(createApp({ contentSeriesRepository: repository }))
+      .post(`/series/${series._id}/episodes/${episode._id}/convert-case`)
+      .send({ caseId: "job_rebuilt" })
+      .expect(201);
+
+    expect(repository.patchEpisodeIdea).toHaveBeenCalledWith(series._id, episode._id, {
+      caseId: "job_rebuilt",
+      status: "converted_to_case"
+    });
+    expect(response.body.caseSeed).toMatchObject({
+      episodeId: episode._id,
+      id: "job_rebuilt",
+      referenceAssetIds: ["asset_character", "asset_scene"]
+    });
+  });
 });
 
 function createSeriesRepositoryMock(overrides: Partial<ContentSeriesRepository> = {}): ContentSeriesRepository {

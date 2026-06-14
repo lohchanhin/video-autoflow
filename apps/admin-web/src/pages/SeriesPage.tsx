@@ -536,7 +536,8 @@ function EpisodeRow(props: {
   const episodeDraft = episodeEditor.draft ?? props.episode;
   const characterAssets = props.assets.filter((asset) => asset.type === "character_design");
   const sceneAssets = props.assets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame");
-  const canConvert = props.episode.status === "approved";
+  const canRebuildConvertedCase = props.episode.status === "converted_to_case" && !props.linkedJob;
+  const canConvert = props.episode.status === "approved" || canRebuildConvertedCase;
   const reportDirtyState = props.reportDirtyState;
   const episodeId = props.episode._id;
 
@@ -599,7 +600,7 @@ function EpisodeRow(props: {
           </button>
         ) : (
           <button className="primary-button" disabled={!canConvert} type="button" onClick={() => props.convertEpisodeToCase(props.selectedSeries, props.episode)}>
-            转 Case
+            {canRebuildConvertedCase ? "重建 Case" : "转 Case"}
           </button>
         )}
       </div>

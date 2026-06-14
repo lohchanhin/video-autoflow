@@ -2085,6 +2085,13 @@ export function App() {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
     const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
+    const selectedStoryWorld = storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === storyWorldId) ?? null : null;
+    const referenceAssetIds = mergeIds(
+      selectedAssets.assets.map((asset) => asset._id),
+      selectedSeries?.referenceAssetIds ?? [],
+      selectedStoryWorld?.recurringCharacterAssetIds ?? [],
+      selectedStoryWorld?.defaultSceneAssetIds ?? []
+    );
 
     if (!normalizedTopic) {
       return;
@@ -2098,6 +2105,7 @@ export function App() {
       episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
       productionBrief,
+      referenceAssetIds,
       sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       seriesId: selectedSeries?._id ?? null,
       storyWorldId,
@@ -2114,7 +2122,7 @@ export function App() {
     setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets]);
     appendCaseActivity(job.id, "case_created", "Case 已建立", "这个 Case 是手动建立的，尚未生成脚本大纲。");
     void handleBootstrapProductionAssets(job);
-    void attachSelectedAssetsToCase(job, selectedAssets.assets);
+    void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(referenceAssetIds));
     setSelectedJobId(job.id);
     setTopic("");
     setPrompt("");
@@ -2135,6 +2143,13 @@ export function App() {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
     const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
+    const selectedStoryWorld = storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === storyWorldId) ?? null : null;
+    const referenceAssetIds = mergeIds(
+      selectedAssets.assets.map((asset) => asset._id),
+      selectedSeries?.referenceAssetIds ?? [],
+      selectedStoryWorld?.recurringCharacterAssetIds ?? [],
+      selectedStoryWorld?.defaultSceneAssetIds ?? []
+    );
 
     if (!normalizedTopic || isGeneratingDraftPreview) {
       return;
@@ -2153,6 +2168,7 @@ export function App() {
       language,
       prompt: normalizedPrompt,
       productionBrief,
+      referenceAssetIds,
       sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       sceneCount,
       seriesId: selectedSeries?._id ?? null,
@@ -2236,6 +2252,7 @@ export function App() {
     appendCaseActivity(job.id, "case_created", "Case 已建立", "这个 Case 已进入生产，脚本、分镜和图片提示词已写入记录。");
     void handleBootstrapProductionAssets(job);
     void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(
+      caseDraftPreview.input.referenceAssetIds ?? [],
       caseDraftPreview.input.characterAssetIds ?? [],
       caseDraftPreview.input.sceneAssetIds ?? [],
       caseDraftPreview.input.characterAssetId,
@@ -2500,6 +2517,13 @@ export function App() {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
     const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
+    const selectedStoryWorld = storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === storyWorldId) ?? null : null;
+    const referenceAssetIds = mergeIds(
+      selectedAssets.assets.map((asset) => asset._id),
+      selectedSeries?.referenceAssetIds ?? [],
+      selectedStoryWorld?.recurringCharacterAssetIds ?? [],
+      selectedStoryWorld?.defaultSceneAssetIds ?? []
+    );
 
     if (!normalizedTopic) {
       setGenerationError("请输入主题或想法，再开始自动写大纲并生成 MP4。");
@@ -2525,6 +2549,7 @@ export function App() {
       language,
       prompt: normalizedPrompt,
       productionBrief,
+      referenceAssetIds,
       sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       sceneCount,
       seriesId: selectedSeries?._id ?? null,
@@ -2572,7 +2597,7 @@ export function App() {
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
       void handleBootstrapProductionAssets(workingJob);
-      const attachedAssets = await attachSelectedAssetsToCase(workingJob, selectedAssets.assets);
+      const attachedAssets = await attachSelectedAssetsToCase(workingJob, getReferenceAssetsFromIds(referenceAssetIds));
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(workingJob!.id, activeTargetIds), ...currentTargets.filter((target) => target.jobId !== workingJob!.id)]);
       addCaseActivities([
         createCaseActivity({
@@ -3035,6 +3060,7 @@ export function App() {
         language: response.caseSeed.language,
         prompt: response.caseSeed.prompt,
         productionBrief,
+        referenceAssetIds: seedReferenceIds,
         sceneAssetIds,
         sceneCount: response.caseSeed.sceneCount,
         seriesId: response.caseSeed.seriesId,
@@ -3101,13 +3127,15 @@ export function App() {
   }
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
-    const seriesReferenceAssetIds = job.seriesId
-      ? contentSeries.find((series) => series._id === job.seriesId)?.referenceAssetIds ?? []
+    const effectiveSeriesId = job.seriesId ?? job.productionBrief?.seriesContext?.seriesId ?? null;
+    const seriesReferenceAssetIds = effectiveSeriesId
+      ? contentSeries.find((series) => series._id === effectiveSeriesId)?.referenceAssetIds ?? []
       : [];
     const selectedAssetIds = new Set([
       job.characterAssetId,
       job.backgroundAssetId,
       ...(job.characterAssetIds ?? []),
+      ...(job.referenceAssetIds ?? []),
       ...seriesReferenceAssetIds,
       ...(job.sceneAssetIds ?? [])
     ].filter((id): id is string => Boolean(id)));
@@ -4705,11 +4733,12 @@ export function App() {
   const selectedJobActivities = selectedJob ? caseActivities.filter((activity) => activity.jobId === selectedJob.id) : [];
   const selectedJobPublishTargets = selectedJob ? casePublishTargets.filter((target) => target.jobId === selectedJob.id) : [];
   const selectedJobSceneReviews = selectedJob ? sceneReviews.filter((review) => review.jobId === selectedJob.id).sort((a, b) => a.sceneId - b.sceneId) : [];
-  const selectedJobSeries = selectedJob?.seriesId ? contentSeries.find((series) => series._id === selectedJob.seriesId) ?? null : null;
+  const selectedJobSeriesId = selectedJob?.seriesId ?? selectedJob?.productionBrief?.seriesContext?.seriesId ?? null;
+  const selectedJobSeries = selectedJobSeriesId ? contentSeries.find((series) => series._id === selectedJobSeriesId) ?? null : null;
   const selectedJobProductionAssets = selectedJob
     ? getProductionAssetsForCase({
         ...selectedJob,
-        referenceAssetIds: selectedJobSeries?.referenceAssetIds ?? []
+        referenceAssetIds: mergeIds(selectedJob.referenceAssetIds ?? [], selectedJobSeries?.referenceAssetIds ?? [])
       }, productionAssets)
     : [];
   const selectedJobQcReport = selectedJob ? caseQcReports.find((report) => report.jobId === selectedJob.id) ?? null : null;

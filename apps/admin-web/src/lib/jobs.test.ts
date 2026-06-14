@@ -33,6 +33,20 @@ describe("case process records", () => {
     expect(records.find((record) => record.stageId === "publish")?.ownerAgentId).toBe("agent_ai_producer");
   });
 
+  it("keeps inherited reference asset ids on a created case", () => {
+    const job = createJob({
+      topic: "Series episode",
+      prompt: "Use the series asset library.",
+      referenceAssetIds: ["asset_banana_ceo", "asset_sweet_shop", "asset_banana_ceo"],
+      templateType: "comedy_sketch",
+      language: "zh-CN",
+      sceneCount: 5,
+      costLimitRM: 50
+    });
+
+    expect(job.referenceAssetIds).toEqual(["asset_banana_ceo", "asset_sweet_shop"]);
+  });
+
   it("normalizes legacy records without ownerAgentId", () => {
     const job = createJob({
       topic: "Legacy case",

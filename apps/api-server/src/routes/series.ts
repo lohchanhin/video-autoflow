@@ -237,8 +237,8 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           throw new ApiError("Episode idea not found.", 404, "EPISODE_IDEA_NOT_FOUND");
         }
 
-        if (episode.status !== "approved") {
-          throw new ApiError("Only approved episode ideas can be converted to Case.", 409, "EPISODE_NOT_APPROVED");
+        if (episode.status !== "approved" && episode.status !== "converted_to_case") {
+          throw new ApiError("Only approved or previously converted episode ideas can be converted to Case.", 409, "EPISODE_NOT_APPROVED");
         }
 
         const caseId = parseCaseId(req.body);
