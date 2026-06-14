@@ -4341,10 +4341,11 @@ export function App() {
         appendCaseActivity(job.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已在合成 MP4 前自动生成旁白。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
       }
 
+      const autoGenerateMissingVideoClipsBeforeCompose = false;
       const expectedClipCount = getSeedanceClipInputs(workingRecords, sceneReviews, productionAssets, job).length;
       const currentClipCount = getGeneratedClipCount(workingRecords, job.id);
 
-      if (expectedClipCount > 0 && currentClipCount < expectedClipCount) {
+      if (autoGenerateMissingVideoClipsBeforeCompose && expectedClipCount > 0 && currentClipCount < expectedClipCount) {
         const clipResults = await generateSeedanceSceneClipsForJob(job, workingRecords);
         const clipNow = new Date().toISOString();
         const clipCostRM = clipResults.reduce((sum, result) => sum + result.costRM, 0);
