@@ -196,6 +196,30 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
     }
   });
 
+  router.delete("/series/:id/episodes/:episodeId", async (req: Request, res: Response, next) => {
+    try {
+      const seriesId = paramString(req.params.id);
+      const episodeId = paramString(req.params.episodeId);
+      const deleted = await withContentSeriesRepository(options, async (repository) => {
+        const series = await repository.findSeriesById(seriesId);
+
+        if (!series) {
+          throw new ApiError("Series not found.", 404, "SERIES_NOT_FOUND");
+        }
+
+        return repository.deleteEpisodeIdea(seriesId, episodeId);
+      });
+
+      if (!deleted) {
+        throw new ApiError("Episode idea not found.", 404, "EPISODE_IDEA_NOT_FOUND");
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/series/:id/episodes/:episodeId/convert-case", async (req: Request, res: Response, next) => {
     try {
       const seriesId = paramString(req.params.id);

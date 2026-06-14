@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, X, XCircle } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import type { ContentSeries, ContentSeriesDramaIntensity, ContentSeriesNarrativeMode, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
 import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
@@ -13,6 +13,7 @@ interface SeriesPageProps {
   convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
   createSeries: () => void;
   createStoryWorld: (input: Omit<StoryWorld, "_id" | "createdAt" | "updatedAt">) => Promise<StoryWorld | null>;
+  deleteEpisode: (seriesId: string, episodeId: string) => void;
   deleteSeries: (id: string) => void;
   episodes: SeriesEpisodeIdea[];
   error: string | null;
@@ -388,6 +389,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 <SeriesEpisodeBoard
                   assets={generatedAssets}
                   convertEpisodeToCase={props.convertEpisodeToCase}
+                  deleteEpisode={props.deleteEpisode}
                   episodes={props.episodes}
                   generateIdeas={props.generateIdeas}
                   generating={generating}
@@ -460,6 +462,7 @@ export function SeriesPage(props: SeriesPageProps) {
 function SeriesEpisodeBoard(props: {
   assets: ProductionAsset[];
   convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
+  deleteEpisode: SeriesPageProps["deleteEpisode"];
   episodes: SeriesEpisodeIdea[];
   generateIdeas: (seriesId: string, count: number) => void;
   generating: boolean;
@@ -507,6 +510,7 @@ function SeriesEpisodeBoard(props: {
               selectedSeries={props.selectedSeries}
               reportDirtyState={props.reportDirtyState}
               updateEpisode={props.updateEpisode}
+              deleteEpisode={props.deleteEpisode}
               convertEpisodeToCase={props.convertEpisodeToCase}
             />
           ))}
@@ -519,6 +523,7 @@ function SeriesEpisodeBoard(props: {
 function EpisodeRow(props: {
   assets: ProductionAsset[];
   convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
+  deleteEpisode: SeriesPageProps["deleteEpisode"];
   episode: SeriesEpisodeIdea;
   linkedJob: AdminJob | null;
   openCase: (id: string) => void;
@@ -555,6 +560,18 @@ function EpisodeRow(props: {
     episodeEditor.markSaved(nextDraft);
   }
 
+  function deleteEpisode() {
+    if (!confirmDiscardDirtyDraft(episodeEditor.isDirty)) {
+      return;
+    }
+
+    if (!window.confirm(`确定删除题库「${props.episode.title}」？这只会移除题库记录，不会删除已经转出的 Case。`)) {
+      return;
+    }
+
+    props.deleteEpisode(props.selectedSeries._id, props.episode._id);
+  }
+
   return (
     <div className={`episode-row ${expanded ? "expanded" : ""}`}>
       <button className="episode-title-cell" type="button" onClick={() => setExpanded(!expanded)}>
@@ -572,8 +589,8 @@ function EpisodeRow(props: {
           <CheckCircle2 size={15} />
           批准
         </button>
-        <button className="secondary-button" type="button" onClick={() => saveEpisodeDraft({ status: "rejected" })}>
-          <XCircle size={15} />
+        <button aria-label="删除题库" className="danger-button episode-delete-button" type="button" onClick={deleteEpisode}>
+          <Trash2 size={15} />
           拒绝
         </button>
         {props.linkedJob ? (

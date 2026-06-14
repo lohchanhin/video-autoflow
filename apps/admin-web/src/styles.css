@@ -2388,7 +2388,7 @@ textarea {
 .episode-table-head,
 .episode-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 0.8fr) minmax(120px, 0.8fr) 140px minmax(240px, auto);
+  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 0.8fr) minmax(120px, 0.8fr) 140px minmax(190px, auto);
   gap: 10px;
   align-items: center;
   min-width: 980px;
@@ -2444,6 +2444,19 @@ textarea {
   gap: 7px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.episode-row-actions .episode-delete-button {
+  font-size: 0;
+}
+
+.episode-row-actions .episode-delete-button svg {
+  flex: 0 0 auto;
+}
+
+.episode-row-actions .episode-delete-button::after {
+  content: "删除";
+  font-size: 14px;
 }
 
 .episode-detail {

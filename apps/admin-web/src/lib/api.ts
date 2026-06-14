@@ -597,6 +597,19 @@ export async function patchSeriesEpisodeIdea(seriesId: string, episodeId: string
   );
 }
 
+export async function deleteSeriesEpisodeIdea(seriesId: string, episodeId: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/series/${encodeURIComponent(seriesId)}/episodes/${encodeURIComponent(episodeId)}`, { method: "DELETE" }).catch(() => null);
+
+  if (!response) {
+    throw new Error(`Series episode delete failed: API server is offline at ${apiBaseUrl}. Start it with pnpm dev:api or restart pnpm dev.`);
+  }
+
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    throw new Error(errorBody?.error?.message ?? `Series episode delete failed with HTTP ${response.status}.`);
+  }
+}
+
 export async function convertSeriesEpisodeToCase(seriesId: string, episodeId: string, caseId: string): Promise<ConvertSeriesEpisodeToCaseResponse> {
   return fetchJson<ConvertSeriesEpisodeToCaseResponse>(
     `/series/${encodeURIComponent(seriesId)}/episodes/${encodeURIComponent(episodeId)}/convert-case`,

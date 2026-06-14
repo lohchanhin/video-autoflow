@@ -346,6 +346,7 @@ export interface SeriesEpisodeIdeaPatchInput {
 export interface ContentSeriesRepository {
   createSeries(input: ContentSeriesCreateInput): Promise<ContentSeries>;
   createEpisodeIdeas(seriesId: string, ideas: SeriesEpisodeIdeaCreateInput[]): Promise<SeriesEpisodeIdea[]>;
+  deleteEpisodeIdea(seriesId: string, episodeId: string): Promise<boolean>;
   deleteSeries(id: string): Promise<boolean>;
   ensureIndexes(): Promise<void>;
   findEpisodeIdea(seriesId: string, episodeId: string): Promise<SeriesEpisodeIdea | null>;
@@ -414,6 +415,11 @@ export function createContentSeriesRepository(connection: MongoDatabaseConnectio
       }
 
       return episodes;
+    },
+
+    async deleteEpisodeIdea(seriesId: string, episodeId: string): Promise<boolean> {
+      const result = await episodesCollection.deleteOne({ _id: episodeId, seriesId } as Filter<SeriesEpisodeIdeaDocument>);
+      return result.deletedCount === 1;
     },
 
     async deleteSeries(id: string): Promise<boolean> {

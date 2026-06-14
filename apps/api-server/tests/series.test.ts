@@ -148,6 +148,33 @@ describe("series API", () => {
       .expect(409);
   });
 
+  it("deletes an episode idea from a series", async () => {
+    const series = createSeries();
+    const episode = createEpisode();
+    const repository = createSeriesRepositoryMock({
+      deleteEpisodeIdea: vi.fn().mockResolvedValue(true),
+      findSeriesById: vi.fn().mockResolvedValue(series)
+    });
+
+    await request(createApp({ contentSeriesRepository: repository }))
+      .delete(`/series/${series._id}/episodes/${episode._id}`)
+      .expect(204);
+
+    expect(repository.deleteEpisodeIdea).toHaveBeenCalledWith(series._id, episode._id);
+  });
+
+  it("returns not found when deleting a missing episode idea", async () => {
+    const series = createSeries();
+    const repository = createSeriesRepositoryMock({
+      deleteEpisodeIdea: vi.fn().mockResolvedValue(false),
+      findSeriesById: vi.fn().mockResolvedValue(series)
+    });
+
+    await request(createApp({ contentSeriesRepository: repository }))
+      .delete(`/series/${series._id}/episodes/episode_missing`)
+      .expect(404);
+  });
+
   it("converts approved episode ideas into a case seed", async () => {
     const series = createSeries({
       continuityRules: "Episode 2 must continue the unresolved apology conflict and end with a new classroom misunderstanding.",
@@ -260,6 +287,7 @@ function createSeriesRepositoryMock(overrides: Partial<ContentSeriesRepository> 
 
   return {
     createEpisodeIdeas: vi.fn(async (_seriesId: string, ideas: SeriesEpisodeIdeaCreateInput[]) => ideas.map((idea, index) => createEpisodeFromInput(idea, `episode_${index + 1}`))),
+    deleteEpisodeIdea: vi.fn().mockResolvedValue(false),
     createSeries: vi.fn(async (input) => createSeries(input)),
     deleteSeries: vi.fn().mockResolvedValue(true),
     ensureIndexes: vi.fn(),

@@ -190,6 +190,16 @@ describe("contentSeriesRepository", () => {
       }
     ]);
     const approved = await repository.patchEpisodeIdea(series._id, episodes[0]!._id, { status: "approved" });
+    const deletedEpisode = await repository.deleteEpisodeIdea(series._id, episodes[0]!._id);
+    const episodeListAfterEpisodeDelete = await repository.listEpisodeIdeas(series._id);
+    const nextEpisodes = await repository.createEpisodeIdeas(series._id, [
+      {
+        moralLesson: "ç¬¬äºŒæ¡é€‰é¢˜",
+        promptSeed: "ç”¨æ¥æµ‹è¯•åˆ é™¤ç³»åˆ—æ—¶ä¼šæ¸…ç†é¢˜åº“ã€‚",
+        synopsis: "ç¬¬äºŒæ¡é€‰é¢˜ã€‚",
+        title: "ç¬¬äºŒæ¡é€‰é¢˜"
+      }
+    ]);
     const listedBeforeDelete = await repository.listSeries();
     const episodeListBeforeDelete = await repository.listEpisodeIdeas(series._id);
     const deleted = await repository.deleteSeries(series._id);
@@ -198,6 +208,9 @@ describe("contentSeriesRepository", () => {
     expect(listedBeforeDelete).toHaveLength(1);
     expect(episodeListBeforeDelete).toHaveLength(1);
     expect(approved?.status).toBe("approved");
+    expect(deletedEpisode).toBe(true);
+    expect(episodeListAfterEpisodeDelete).toHaveLength(0);
+    expect(nextEpisodes).toHaveLength(1);
     expect(deleted).toBe(true);
     expect(await repository.listEpisodeIdeas(series._id)).toHaveLength(0);
   });

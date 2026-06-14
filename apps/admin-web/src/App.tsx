@@ -105,6 +105,7 @@ import {
   createStoryWorld as requestCreateStoryWorld,
   deleteContentSeries as requestDeleteContentSeries,
   deleteProductionAsset as requestDeleteProductionAsset,
+  deleteSeriesEpisodeIdea as requestDeleteSeriesEpisodeIdea,
   generateSeriesEpisodeIdeas as requestGenerateSeriesEpisodeIdeas,
   generateProductionAsset as requestProductionAssetGeneration,
   getDatabaseStatus,
@@ -2869,6 +2870,16 @@ export function App() {
     }
   }
 
+  async function handleDeleteSeriesEpisode(seriesId: string, episodeId: string) {
+    try {
+      await requestDeleteSeriesEpisodeIdea(seriesId, episodeId);
+      setSeriesEpisodes((currentEpisodes) => currentEpisodes.filter((episode) => episode._id !== episodeId));
+      setSeriesError(null);
+    } catch (error) {
+      setSeriesError(error instanceof Error ? error.message : "Series episode delete failed.");
+    }
+  }
+
   async function handleConvertSeriesEpisodeToCase(series: ContentSeries, episode: SeriesEpisodeIdea) {
     if (apiState !== "online") {
       setSeriesError(`API 服务当前为 ${apiState}。单集转 Case 需要连接 ${apiBaseUrl}。`);
@@ -4629,6 +4640,7 @@ export function App() {
             selectedSeriesId={selectedSeriesId}
             series={contentSeries}
             storyWorlds={storyWorlds}
+            deleteEpisode={(seriesId, episodeId) => void handleDeleteSeriesEpisode(seriesId, episodeId)}
             updateEpisode={(seriesId, episodeId, patch) => handleUpdateSeriesEpisode(seriesId, episodeId, patch)}
             updateSeries={(id, patch) => handleUpdateSeries(id, patch)}
           />
