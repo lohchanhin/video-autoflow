@@ -116,7 +116,7 @@ async function generateWithOpenAI(
   let totalOutputTokens = 0;
   let finalContent: GeneratedScriptStoryContent | null = null;
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     const response = await fetch(`${options.baseUrl.replace(/\/$/u, "")}/responses`, {
       body: JSON.stringify({
         input: buildOpenAIPrompt(input, qualityFeedback),
@@ -384,6 +384,12 @@ function formatProductionBriefForPrompt(input: NormalizedScriptStoryInput): stri
     ].filter(Boolean).join(" / ")).join(" || ")}` : "",
     brief.selectedCharacters?.length || brief.selectedScenes?.length
       ? "Selected assets are a reusable library. Use the assets relevant to this episode, but when you use one, visible output must keep its selected label or role. Do not rename selected fruit/person assets into unrelated names such as Leo or Luna unless those names were explicitly supplied by the user."
+      : "",
+    brief.selectedCharacters?.length
+      ? `Allowed visible cast labels/roles: ${brief.selectedCharacters.map((character) => [
+        character.label,
+        character.role
+      ].filter(Boolean).join(" / ")).join(" || ")}. If the episode needs a CEO, clerk, rival, assistant, teacher, parent, or other named role, map it to this selected cast list. Do not invent unrelated named cast members outside this list.`
       : "",
     brief.requiredBeats?.length ? `Required beats: ${brief.requiredBeats.join(" | ")}` : "",
     brief.visualContinuityRules?.length ? `Visual continuity rules: ${brief.visualContinuityRules.join(" | ")}` : "",
@@ -1002,22 +1008,26 @@ function checkProductionBriefAlignment(input: NormalizedScriptStoryInput, conten
 
   const visibleText = collectVisibleTexts(content).join("\n").toLowerCase();
   const briefText = collectProductionBriefTexts(brief).join("\n").toLowerCase();
-  const requiredCharacters = (brief.selectedCharacters ?? [])
-    .filter((character) => hasMeaningfulRequiredTerm(character.label) && assetLabelAppearsInText(character.label, briefText));
+  const selectedCharacters = brief.selectedCharacters ?? [];
+  const selectedScenes = brief.selectedScenes ?? [];
+  const isReusableCastLibrary = selectedCharacters.length > 3;
+  const isReusableSceneLibrary = selectedScenes.length > 3;
+  const requiredCharacters = selectedCharacters
+    .filter((character) => !isReusableCastLibrary && hasMeaningfulRequiredTerm(character.label) && assetLabelAppearsInText(character.label, briefText));
   const requiredScenes = (brief.selectedScenes ?? [])
-    .filter((scene) => hasMeaningfulRequiredTerm(scene.label) && assetLabelAppearsInText(scene.label, briefText));
+    .filter((scene) => !isReusableSceneLibrary && hasMeaningfulRequiredTerm(scene.label) && assetLabelAppearsInText(scene.label, briefText));
   const missingCharacters = requiredCharacters
     .filter((character) => !assetLabelAppearsInText(character.label, visibleText))
     .map((character) => character.label);
   const missingScenes = requiredScenes
     .filter((scene) => !assetLabelAppearsInText(scene.label, visibleText))
     .map((scene) => scene.label);
-  const missingCharacterLibraryUse = (brief.selectedCharacters?.length ?? 0) > 0
-    && !brief.selectedCharacters?.some((character) => assetLabelAppearsInText(character.label, visibleText))
+  const missingCharacterLibraryUse = selectedCharacters.length > 0
+    && !selectedCharacters.some((character) => assetLabelAppearsInText(character.label, visibleText))
     ? "no selected character asset is visible in the outline"
     : "";
-  const missingSceneLibraryUse = (brief.selectedScenes?.length ?? 0) > 0
-    && !brief.selectedScenes?.some((scene) => assetLabelAppearsInText(scene.label, visibleText))
+  const missingSceneLibraryUse = selectedScenes.length > 0
+    && !selectedScenes.some((scene) => assetLabelAppearsInText(scene.label, visibleText))
     ? "no selected scene asset is visible in the outline"
     : "";
   const missingTheme = brief.lessonOrTheme && hasMeaningfulRequiredTerm(brief.lessonOrTheme) && !meaningfulTermsAppearInText(brief.lessonOrTheme, visibleText)
