@@ -1660,7 +1660,7 @@ textarea {
   min-width: 0;
 }
 
-@media (max-width: 1500px) and (min-width: 1201px) {
+@media (max-width: 1680px) and (min-width: 1201px) {
   .series-layout {
     grid-template-columns: 280px minmax(0, 1fr);
   }
@@ -1727,13 +1727,36 @@ textarea {
 
 .series-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
   min-width: 0;
 }
 
+.series-form-grid .field {
+  grid-column: span 2;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.series-form-grid .field:has(select),
+.series-form-grid .field:has(input[type="number"]) {
+  grid-column: span 1;
+}
+
+.series-form-grid .field:has(textarea),
 .series-form-grid .field.wide {
   grid-column: 1 / -1;
+}
+
+.series-form-grid textarea {
+  min-height: 92px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.series-form-grid .field:has(textarea) > span {
+  padding-top: 2px;
 }
 
 .series-workspace-panel {
@@ -2459,6 +2482,9 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .series-form-grid .field,
+  .series-form-grid .field:has(select),
+  .series-form-grid .field:has(input[type="number"]),
   .series-form-grid .field.wide {
     grid-column: auto;
   }
