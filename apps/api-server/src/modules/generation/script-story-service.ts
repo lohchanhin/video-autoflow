@@ -305,8 +305,8 @@ function buildOpenAIPrompt(input: NormalizedScriptStoryInput, qualityFeedback = 
     "The 45 second voiceover must have protagonist, goal, anomaly/inciting event, rule or limit, escalation, twist, and an ending hook.",
     "Every storyboard scene must be a visible action: who is in frame, what object changes, what the camera sees. Avoid abstract-only descriptions such as a feeling, mood, atmosphere, or sound entering a mind.",
     "Create one visualBible for the whole case. It must define one fictional adult protagonist, stable wardrobe, face/hair/body details, recurring props, environment, lighting, palette, and negative prompt rules.",
-    "If productionBrief.selectedCharacters is present, the protagonist/cast and visualBible character details must preserve those names, roles, identity notes, wardrobe, silhouette, and recurring props.",
-    "If productionBrief.selectedScenes or storyWorldContext is present, the visualBible environment and storyboard scenes must preserve those locations, spatial rules, props, lighting, color palette, and world rules.",
+    "If productionBrief.selectedCharacters is present, treat them as the approved reusable cast library. Use the episode-relevant selected character assets, preserve their names/roles/identity notes/wardrobe/silhouette/props, and never replace a character or fruit/person identity that is named in the episode, continuity rules, or prompt.",
+    "If productionBrief.selectedScenes or storyWorldContext is present, treat them as the approved reusable location/style library. Use the episode-relevant selected scene assets, preserve their spatial rules/props/lighting/palette/world rules, and do not require every library location to appear in one episode.",
     "If productionBrief.lessonOrTheme is present, the story must make that theme visible through character choices and conflict, not a generic lecture.",
     "If productionBrief.seriesContext.narrativeMode is serialized, write this as one episode of an ongoing serial: preserve continuity rules, use the episode's continuityNote/serialHook when present, and end with a safe next-episode hook instead of fully resetting the premise.",
     "If productionBrief.seriesContext.narrativeMode is standalone, resolve this episode's main conflict inside the short.",
@@ -994,18 +994,33 @@ function checkProductionBriefAlignment(input: NormalizedScriptStoryInput, conten
   }
 
   const visibleText = collectVisibleTexts(content).join("\n").toLowerCase();
-  const missingCharacters = (brief.selectedCharacters ?? [])
-    .filter((character) => hasMeaningfulRequiredTerm(character.label) && !visibleText.includes(character.label.toLowerCase()))
+  const briefText = collectProductionBriefTexts(brief).join("\n").toLowerCase();
+  const requiredCharacters = (brief.selectedCharacters ?? [])
+    .filter((character) => hasMeaningfulRequiredTerm(character.label) && assetLabelAppearsInText(character.label, briefText));
+  const requiredScenes = (brief.selectedScenes ?? [])
+    .filter((scene) => hasMeaningfulRequiredTerm(scene.label) && assetLabelAppearsInText(scene.label, briefText));
+  const missingCharacters = requiredCharacters
+    .filter((character) => !assetLabelAppearsInText(character.label, visibleText))
     .map((character) => character.label);
-  const missingScenes = (brief.selectedScenes ?? [])
-    .filter((scene) => hasMeaningfulRequiredTerm(scene.label) && !visibleText.includes(scene.label.toLowerCase()))
+  const missingScenes = requiredScenes
+    .filter((scene) => !assetLabelAppearsInText(scene.label, visibleText))
     .map((scene) => scene.label);
-  const missingTheme = brief.lessonOrTheme && hasMeaningfulRequiredTerm(brief.lessonOrTheme) && !visibleText.includes(brief.lessonOrTheme.toLowerCase())
+  const missingCharacterLibraryUse = (brief.selectedCharacters?.length ?? 0) > 0
+    && !brief.selectedCharacters?.some((character) => assetLabelAppearsInText(character.label, visibleText))
+    ? "no selected character asset is visible in the outline"
+    : "";
+  const missingSceneLibraryUse = (brief.selectedScenes?.length ?? 0) > 0
+    && !brief.selectedScenes?.some((scene) => assetLabelAppearsInText(scene.label, visibleText))
+    ? "no selected scene asset is visible in the outline"
+    : "";
+  const missingTheme = brief.lessonOrTheme && hasMeaningfulRequiredTerm(brief.lessonOrTheme) && !meaningfulTermsAppearInText(brief.lessonOrTheme, visibleText)
     ? brief.lessonOrTheme
     : "";
   const problems = [
     ...missingCharacters.map((label) => `missing selected character: ${label}`),
     ...missingScenes.map((label) => `missing selected scene: ${label}`),
+    missingCharacterLibraryUse,
+    missingSceneLibraryUse,
     missingTheme ? `missing episode theme: ${missingTheme}` : ""
   ].filter(Boolean);
 
@@ -1020,6 +1035,105 @@ function checkProductionBriefAlignment(input: NormalizedScriptStoryInput, conten
 
 function hasMeaningfulRequiredTerm(value: string | undefined): value is string {
   return Boolean(value && value.trim().length >= 2 && !/^(new|untitled|未命名|参考|角色|场景|scene|character)$/iu.test(value.trim()));
+}
+
+function collectProductionBriefTexts(brief: NonNullable<NormalizedScriptStoryInput["productionBrief"]>): string[] {
+  return [
+    brief.goal,
+    brief.conflict,
+    brief.lessonOrTheme,
+    brief.seriesContext?.name,
+    brief.seriesContext?.description,
+    brief.seriesContext?.values,
+    brief.seriesContext?.tone,
+    brief.seriesContext?.visualStyle,
+    brief.seriesContext?.musicStyle,
+    brief.seriesContext?.safetyRules,
+    brief.seriesContext?.continuityRules,
+    brief.episodeContext?.title,
+    brief.episodeContext?.lessonOrTheme,
+    brief.episodeContext?.synopsis,
+    brief.episodeContext?.promptSeed,
+    brief.episodeContext?.continuityNote,
+    brief.episodeContext?.serialHook,
+    brief.storyWorldContext?.name,
+    brief.storyWorldContext?.description,
+    brief.storyWorldContext?.relationshipMap,
+    brief.storyWorldContext?.visualStyle,
+    brief.storyWorldContext?.safetyRules,
+    ...(brief.requiredBeats ?? []),
+    ...(brief.visualContinuityRules ?? [])
+  ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+function assetLabelAppearsInText(label: string | undefined, text: string): boolean {
+  if (!label || !text) {
+    return false;
+  }
+
+  return buildSearchTerms(label).some((term) => text.includes(term));
+}
+
+function meaningfulTermsAppearInText(value: string, text: string): boolean {
+  const terms = buildSearchTerms(value);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  return terms.some((term) => text.includes(term));
+}
+
+function buildSearchTerms(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  const genericTerms = new Set([
+    "asset",
+    "case",
+    "character",
+    "design",
+    "reference",
+    "scene",
+    "style",
+    "三视图",
+    "人物",
+    "参考",
+    "场景",
+    "总裁",
+    "素材",
+    "角色",
+    "设定",
+    "设计"
+  ]);
+  const normalized = value
+    .toLowerCase()
+    .replace(/[_/|,，。:：;；()（）【】<>《》"'“”‘’]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = normalized
+    .split(" ")
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 2 && !genericTerms.has(word));
+  const cjkCompact = normalized.replace(/[^\p{Script=Han}]/gu, "");
+  const cjkTerms = new Set<string>();
+
+  if (cjkCompact.length >= 2) {
+    cjkTerms.add(cjkCompact);
+
+    for (let size = 3; size >= 2; size -= 1) {
+      for (let index = 0; index <= cjkCompact.length - size; index += 1) {
+        const term = cjkCompact.slice(index, index + size);
+
+        if (!genericTerms.has(term)) {
+          cjkTerms.add(term);
+        }
+      }
+    }
+  }
+
+  return [...new Set([...words, ...cjkTerms])].filter((term) => term.length >= 2);
 }
 
 function buildOutlineRewriteFeedback(outlineQc: GeneratedOutlineQualityCheck): string {

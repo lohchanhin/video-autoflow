@@ -263,6 +263,115 @@ describe("POST /generation/script", () => {
     expect(response.script.title).toContain("兔子米米");
     expect(response.storyboard.map((scene) => scene.visual).join("\n")).toContain("彩虹森林");
   });
+  it("treats series-bound assets as a reusable library instead of requiring every asset in one episode", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-series-library-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({
+      output_text: JSON.stringify(buildGoodSerializedFruitDraft()),
+      usage: {
+        input_tokens: 220,
+        output_tokens: 360
+      }
+    }), { status: 200 }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const scriptStoryService = createScriptStoryService({
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-test",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await scriptStoryService.generateScriptStory({
+      costLimitRM: 7.5,
+      durationSeconds: 60,
+      jobId: "job_series_library_test",
+      language: "zh-CN",
+      productionBrief: {
+        goal: "生成水果八点档连续剧的一集",
+        lessonOrTheme: "甜品店秘密揭幕",
+        selectedCharacters: [
+          {
+            assetId: "asset_banana_ceo",
+            label: "香蕉人",
+            role: "冷面总裁",
+            visualIdentity: "香蕉拟人总裁，金色西装，冷峻表情"
+          },
+          {
+            assetId: "asset_rival_ceo",
+            label: "反派总裁",
+            role: "竞争者",
+            visualIdentity: "深色西装，笑容危险"
+          },
+          {
+            assetId: "asset_white_moonlight",
+            label: "白月光",
+            role: "旧日线索",
+            visualIdentity: "白色礼服，温柔但神秘"
+          },
+          {
+            assetId: "asset_green_apple",
+            label: "青苹果",
+            role: "集团助理",
+            visualIdentity: "青绿色套装，敏锐观察"
+          }
+        ],
+        selectedScenes: [
+          {
+            assetId: "asset_peach_dessert_shop",
+            label: "水蜜桃甜品店",
+            location: "隐藏在商业区后巷的水蜜桃甜品店",
+            visualRules: "粉金色甜品柜，玻璃橱窗，夜晚霓虹反光"
+          },
+          {
+            assetId: "asset_ceo_office",
+            label: "CEO办公室",
+            location: "高层玻璃办公室",
+            visualRules: "黑金办公桌，城市夜景"
+          },
+          {
+            assetId: "asset_mansion",
+            label: "豪宅外观",
+            location: "豪宅门口",
+            visualRules: "雨夜车灯和铁门"
+          }
+        ],
+        seriesContext: {
+          continuityRules: "连续剧主线：香蕉总裁表面冷酷，正在寻找多年前救过自己的神秘甜品师；女主是秘密甜品店员。单集不需要出现所有系列资产，但不能把香蕉总裁换成橘子总裁。",
+          description: "水果拟人版都市豪门短剧",
+          dramaIntensity: "melodrama",
+          name: "水果八点档",
+          narrativeMode: "serialized",
+          tone: "情绪浓烈，对白直接，每集结尾留钩子",
+          values: "秘密、误会、反转、情感拉扯",
+          visualStyle: "现代都市，豪华商业区，电影级3D动画"
+        },
+        visualContinuityRules: [
+          "香蕉总裁必须保持香蕉拟人身份",
+          "本集核心地点是水蜜桃甜品店",
+          "系列资产库中的角色不需要每集全部登场"
+        ]
+      },
+      prompt: "第三集：甜品店秘密揭幕但留下更大反转。",
+      sceneCount: 3,
+      templateType: "romance_story",
+      topic: "命运揭幕：秘密的甜品店员"
+    });
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(response.outlineQc.status, JSON.stringify(response.outlineQc, null, 2)).toBe("pass");
+    expect(response.script.title).toContain("香蕉");
+    expect(response.storyboard.map((scene) => scene.visual).join("\n")).toContain("水蜜桃甜品店");
+    expect(JSON.stringify(response.outlineQc)).not.toContain("反派总裁");
+    expect(JSON.stringify(response.outlineQc)).not.toContain("CEO办公室");
+  });
 });
 
 function buildBadGenericHorrorDraft(topic: string) {
@@ -506,6 +615,89 @@ function buildGoodStructuredBriefDraft() {
       },
       negativePrompt: "no text, no captions, no UI, no panels",
       style: "single vertical storybook cinematic still"
+    }
+  };
+}
+
+function buildGoodSerializedFruitDraft() {
+  return {
+    backgroundMusic: {
+      enabled: true,
+      instrumentation: "钢琴、弦乐、低频鼓点",
+      mood: "浓烈、悬疑、拉扯",
+      prompt: "都市豪门水果拟人短剧背景音乐，钢琴和弦乐制造秘密揭幕的紧张感，低频鼓点在反转处推进，无人声。",
+      style: "都市狗血连续剧",
+      tempo: "medium"
+    },
+    interpretedIdea: {
+      centralObject: "刻着香蕉集团旧标志的甜品配方卡",
+      conflict: "香蕉总裁发现秘密甜品店员手里的配方卡，怀疑她就是多年前救过自己的人，却又怕她接近自己另有目的。",
+      endingHook: "配方卡背面露出一个从未公开的家族印章。",
+      escalation: "甜品店停电、账本掉落、香蕉总裁看见配方卡上的旧伤痕暗号。",
+      expandedPremise: "香蕉总裁夜访水蜜桃甜品店，发现秘密甜品店员的配方卡和自己失踪多年的救命线索完全吻合。",
+      genre: "serialized urban melodrama",
+      logline: "香蕉总裁在水蜜桃甜品店发现女主隐藏的身份线索，误会和心动同时升级。",
+      protagonist: "香蕉总裁",
+      rawTopic: "命运揭幕：秘密的甜品店员",
+      ruleOrConstraint: "不能更换香蕉总裁和水蜜桃甜品店，结尾必须留下下一集钩子。",
+      setting: "水蜜桃甜品店",
+      twist: "女主不是普通店员，她保管的配方卡可能决定香蕉集团继承权。"
+    },
+    script: {
+      hook: "香蕉总裁推开水蜜桃甜品店的门时，柜台后的秘密店员正把一张旧配方卡藏进围裙。",
+      title: "香蕉总裁在甜品店认出了她的秘密",
+      voiceover: "雨夜，香蕉总裁独自走进水蜜桃甜品店。秘密甜品店员刚要收起配方卡，他却看见卡角上的香蕉集团旧标志。她说这只是一张普通甜品配方，他却认出那道折痕，和多年前救他的人留下的一模一样。灯忽然灭了，账本从柜台滑落，里面夹着他的旧照片。香蕉总裁低声问，你到底是谁？她还没回答，配方卡背面露出一个从未公开的家族印章。"
+    },
+    storyboard: [
+      {
+        camera: "medium push-in",
+        durationSeconds: 8,
+        imagePrompt: "香蕉拟人冷面总裁推开水蜜桃甜品店玻璃门，雨夜霓虹反光，柜台后的秘密甜品店员正在藏起旧配方卡，单一电影画面，无文字无字幕。",
+        sceneId: 1,
+        sfx: ["雨声", "门铃"],
+        visual: "香蕉总裁推开水蜜桃甜品店的玻璃门，看见店员把旧配方卡藏进围裙。",
+        voiceText: "雨夜，香蕉总裁独自走进水蜜桃甜品店。"
+      },
+      {
+        camera: "close-up",
+        durationSeconds: 10,
+        imagePrompt: "香蕉总裁戴着黑金手套拿起旧配方卡，卡角露出香蕉集团旧标志，秘密甜品店员紧张地看着他，粉金色甜品柜背景，单一电影画面，无文字。",
+        sceneId: 2,
+        sfx: ["低频鼓点", "纸张摩擦"],
+        visual: "香蕉总裁拿起配方卡，认出卡角上的香蕉集团旧标志和折痕。",
+        voiceText: "他却看见卡角上的香蕉集团旧标志，和多年前救他的人留下的一模一样。"
+      },
+      {
+        camera: "dramatic reveal",
+        durationSeconds: 12,
+        imagePrompt: "水蜜桃甜品店突然停电，香蕉总裁伸手翻开柜台账本，一张配方卡从账本里滑出，卡片背面的神秘家族印章被手电光照亮，秘密店员隔着柜台紧张对视，单一电影画面，无文字。",
+        sceneId: 3,
+        sfx: ["停电声", "心跳", "反转音效"],
+        visual: "灯光熄灭后，香蕉总裁伸手翻开柜台账本，配方卡滑出并露出神秘家族印章。",
+        voiceText: "香蕉总裁低声问，你到底是谁？配方卡背面露出一个从未公开的家族印章。"
+      }
+    ],
+    visualBible: {
+      character: {
+        ageRange: "adult, late 20s to 30s",
+        bodyType: "tall elegant fruit-person silhouette",
+        expressionRange: "冷峻、怀疑、动摇",
+        fixedProps: ["黑金手套", "旧配方卡"],
+        hair: "香蕉拟人金色发束",
+        name: "香蕉总裁",
+        role: "水果集团继承人",
+        signatureDetails: "香蕉拟人身份、金色西装、冷面表情",
+        wardrobe: "黑金剪裁西装"
+      },
+      environment: {
+        keyObjects: ["旧配方卡", "甜品柜", "账本", "家族印章"],
+        lighting: "雨夜霓虹加室内暖光",
+        location: "水蜜桃甜品店",
+        palette: "粉金、黑金、雨夜蓝",
+        recurringDetails: "水蜜桃甜品店玻璃橱窗和粉金色柜台"
+      },
+      negativePrompt: "no text, no captions, no UI, no storyboard sheet, no comic panels",
+      style: "single vertical cinematic 3D animated urban melodrama still"
     }
   };
 }
