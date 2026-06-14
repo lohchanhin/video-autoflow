@@ -377,6 +377,76 @@ describe("POST /generation/script", () => {
     expect(JSON.stringify(response.outlineQc)).not.toContain("反派总裁");
     expect(JSON.stringify(response.outlineQc)).not.toContain("CEO办公室");
   });
+
+  it("does not block production when only storyboard shootability needs prompt refinement", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-shootable-warning-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const draft = buildGoodSerializedFruitDraft();
+
+    draft.storyboard = draft.storyboard.map((scene) => ({
+      ...scene,
+      imagePrompt: `香橙江湖与水蜜桃甜品店的情绪氛围在命运裂变中扩散，豪门关系变得更浓烈，单一电影画面，无文字。`,
+      visual: `香橙江湖与水蜜桃甜品店的情绪氛围在命运裂变中扩散，豪门关系变得更浓烈。`
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({
+        output_text: JSON.stringify(draft),
+        usage: {
+          input_tokens: 180,
+          output_tokens: 280
+        }
+      }), { status: 200 }))
+    );
+
+    const scriptStoryService = createScriptStoryService({
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-test",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await scriptStoryService.generateScriptStory({
+      costLimitRM: 7.5,
+      durationSeconds: 60,
+      jobId: "job_shootable_warning_test",
+      language: "zh-CN",
+      productionBrief: {
+        goal: "生成水果八点档连续剧的一集",
+        lessonOrTheme: "甜品店秘密揭幕",
+        selectedCharacters: [
+          {
+            assetId: "asset_banana_ceo",
+            label: "香橙江湖",
+            role: "冷面总裁",
+            visualIdentity: "水果拟人总裁，金色西装，冷峻表情"
+          }
+        ],
+        selectedScenes: [
+          {
+            assetId: "asset_peach_dessert_shop",
+            label: "水蜜桃甜品店",
+            location: "隐藏在商业区后巷的水蜜桃甜品店",
+            visualRules: "粉金色甜品柜，玻璃橱窗，夜晚霓虹反光"
+          }
+        ]
+      },
+      prompt: "保持已选角色和场景，不要重新发明故事。",
+      sceneCount: 3,
+      templateType: "romance_story",
+      topic: "命运揭幕：秘密的甜品店员"
+    });
+
+    expect(response.outlineQc.checks.find((check) => check.label === "shootable_scenes")?.status).toBe("fail");
+    expect(response.outlineQc.status, JSON.stringify(response.outlineQc, null, 2)).toBe("pass");
+    expect(response.requiresReview).toBe(false);
+  });
 });
 
 function buildBadGenericHorrorDraft(topic: string) {

@@ -887,12 +887,15 @@ function runOutlineQualityCheck(input: NormalizedScriptStoryInput, content: Gene
     checkProductionBriefAlignment(input, content)
   ];
   const failed = checks.filter((check) => check.status === "fail");
+  const blockingFailed = failed.filter((check) => check.label !== "shootable_scenes");
 
   return createOutlineQc(
-    failed.length > 0 ? "needs_review" : "pass",
+    blockingFailed.length > 0 ? "needs_review" : "pass",
     checks,
-    failed.length > 0
-      ? `Outline needs review: ${failed.map((check) => check.label).join(", ")}.`
+    blockingFailed.length > 0
+      ? `Outline needs review: ${blockingFailed.map((check) => check.label).join(", ")}.`
+      : failed.length > 0
+        ? `Outline is usable. Non-blocking warnings: ${failed.map((check) => check.label).join(", ")}. Scene image prompts will be used as the production source.`
       : "Outline is concrete, clean, and shootable."
   );
 }

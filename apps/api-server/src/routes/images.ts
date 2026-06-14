@@ -327,7 +327,7 @@ function referencesFromBody(value: unknown): GenerateImagesRequest["references"]
     });
   }
 
-  return references.slice(0, 8);
+  return references.slice(0, 20);
 }
 
 function characterFromBody(value: unknown): GenerateImagesRequest["character"] {

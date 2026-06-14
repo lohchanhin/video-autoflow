@@ -1962,6 +1962,13 @@ export function App() {
     return groups.flat().filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index);
   }
 
+  function getProductionBriefReferenceIds(brief: ProductionBrief | null | undefined): string[] {
+    return mergeIds(
+      (brief?.selectedCharacters ?? []).map((character) => character.assetId ?? ""),
+      (brief?.selectedScenes ?? []).map((scene) => scene.assetId ?? "")
+    );
+  }
+
   function buildProductionBriefFromDraft(referenceAssets = getSelectedDraftAssets()): ProductionBrief {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
@@ -3128,16 +3135,19 @@ export function App() {
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
     const effectiveSeriesId = job.seriesId ?? job.productionBrief?.seriesContext?.seriesId ?? null;
-    const seriesReferenceAssetIds = effectiveSeriesId
-      ? contentSeries.find((series) => series._id === effectiveSeriesId)?.referenceAssetIds ?? []
-      : [];
+    const effectiveSeries = effectiveSeriesId ? contentSeries.find((series) => series._id === effectiveSeriesId) ?? null : null;
+    const effectiveStoryWorldId = job.storyWorldId ?? job.productionBrief?.storyWorldContext?.storyWorldId ?? effectiveSeries?.storyWorldId ?? null;
+    const effectiveStoryWorld = effectiveStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === effectiveStoryWorldId) ?? null : null;
     const selectedAssetIds = new Set([
       job.characterAssetId,
       job.backgroundAssetId,
       ...(job.characterAssetIds ?? []),
       ...(job.referenceAssetIds ?? []),
-      ...seriesReferenceAssetIds,
-      ...(job.sceneAssetIds ?? [])
+      ...(effectiveSeries?.referenceAssetIds ?? []),
+      ...(effectiveStoryWorld?.recurringCharacterAssetIds ?? []),
+      ...(effectiveStoryWorld?.defaultSceneAssetIds ?? []),
+      ...(job.sceneAssetIds ?? []),
+      ...getProductionBriefReferenceIds(job.productionBrief)
     ].filter((id): id is string => Boolean(id)));
     const assets = [...extraAssets, ...productionAssets]
       .filter((asset) => asset.jobId === job.id || selectedAssetIds.has(asset._id))
@@ -4736,10 +4746,18 @@ export function App() {
   const selectedJobSceneReviews = selectedJob ? sceneReviews.filter((review) => review.jobId === selectedJob.id).sort((a, b) => a.sceneId - b.sceneId) : [];
   const selectedJobSeriesId = selectedJob?.seriesId ?? selectedJob?.productionBrief?.seriesContext?.seriesId ?? null;
   const selectedJobSeries = selectedJobSeriesId ? contentSeries.find((series) => series._id === selectedJobSeriesId) ?? null : null;
+  const selectedJobStoryWorldId = selectedJob?.storyWorldId ?? selectedJob?.productionBrief?.storyWorldContext?.storyWorldId ?? selectedJobSeries?.storyWorldId ?? null;
+  const selectedJobStoryWorld = selectedJobStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === selectedJobStoryWorldId) ?? null : null;
   const selectedJobProductionAssets = selectedJob
     ? getProductionAssetsForCase({
         ...selectedJob,
-        referenceAssetIds: mergeIds(selectedJob.referenceAssetIds ?? [], selectedJobSeries?.referenceAssetIds ?? [])
+        referenceAssetIds: mergeIds(
+          selectedJob.referenceAssetIds ?? [],
+          selectedJobSeries?.referenceAssetIds ?? [],
+          selectedJobStoryWorld?.recurringCharacterAssetIds ?? [],
+          selectedJobStoryWorld?.defaultSceneAssetIds ?? [],
+          getProductionBriefReferenceIds(selectedJob.productionBrief)
+        )
       }, productionAssets)
     : [];
   const selectedJobQcReport = selectedJob ? caseQcReports.find((report) => report.jobId === selectedJob.id) ?? null : null;
