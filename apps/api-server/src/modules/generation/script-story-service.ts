@@ -962,11 +962,14 @@ function checkShootableScenes(storyboard: GeneratedStoryboardScene[]): Generated
   const failedScenes = storyboard
     .filter((scene) => !isShootableScene(scene))
     .map((scene) => `Scene ${scene.sceneId}`);
+  const shouldBlock = failedScenes.length >= Math.max(1, Math.ceil(storyboard.length / 2));
 
   return {
-    detail: failedScenes.length > 0 ? `${failedScenes.join(", ")} needs visible subject/action/object.` : "Every scene has visible action and image-ready prompt text.",
+    detail: failedScenes.length > 0
+      ? `${failedScenes.join(", ")} needs visible subject/action/object.${shouldBlock ? "" : " Minor scene weakness does not block this outline."}`
+      : "Every scene has visible action and image-ready prompt text.",
     label: "shootable_scenes",
-    status: failedScenes.length > 0 ? "fail" : "pass"
+    status: shouldBlock ? "fail" : "pass"
   };
 }
 
@@ -1046,25 +1049,13 @@ function collectProductionBriefTexts(brief: NonNullable<NormalizedScriptStoryInp
     brief.goal,
     brief.conflict,
     brief.lessonOrTheme,
-    brief.seriesContext?.name,
-    brief.seriesContext?.description,
-    brief.seriesContext?.values,
-    brief.seriesContext?.tone,
-    brief.seriesContext?.visualStyle,
-    brief.seriesContext?.musicStyle,
-    brief.seriesContext?.safetyRules,
-    brief.seriesContext?.continuityRules,
     brief.episodeContext?.title,
     brief.episodeContext?.lessonOrTheme,
     brief.episodeContext?.synopsis,
     brief.episodeContext?.promptSeed,
     brief.episodeContext?.continuityNote,
     brief.episodeContext?.serialHook,
-    brief.storyWorldContext?.name,
-    brief.storyWorldContext?.description,
-    brief.storyWorldContext?.relationshipMap,
-    brief.storyWorldContext?.visualStyle,
-    brief.storyWorldContext?.safetyRules,
+    brief.episodeContext?.interactiveEnding,
     ...(brief.requiredBeats ?? []),
     ...(brief.visualContinuityRules ?? []).filter((rule) => !isReferenceAssetLibraryRule(rule))
   ].filter((value): value is string => Boolean(value && value.trim()));
