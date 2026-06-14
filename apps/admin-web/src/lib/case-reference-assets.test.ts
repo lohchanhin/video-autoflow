@@ -5,6 +5,7 @@ import {
   buildAssetContextBriefFromAssets,
   buildReferenceAssetPromptContext,
   findReadyReferenceAssetsByIds,
+  getProductionAssetsForCase,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
@@ -97,6 +98,85 @@ describe("case reference asset routing", () => {
     );
 
     expect(selected.map((asset) => asset._id)).toEqual(["asset_paladin", "asset_rabbit", "asset_forest"]);
+  });
+
+  it("shows inherited series assets on a case even before they are copied into case rows", () => {
+    const rabbit = createAsset({
+      _id: "asset_rabbit",
+      label: "Rabbit hero",
+      jobId: "asset_library",
+      storagePath: "",
+      type: "character_design",
+      url: "https://cdn.test/rabbit.png"
+    });
+    const forest = createAsset({
+      _id: "asset_forest",
+      label: "Rainbow forest",
+      jobId: "asset_library",
+      storagePath: "",
+      type: "scene_design",
+      url: "https://cdn.test/forest.png"
+    });
+    const unrelated = createAsset({
+      _id: "asset_unrelated",
+      label: "Unrelated asset",
+      jobId: "asset_library",
+      storagePath: "",
+      type: "scene_design",
+      url: "https://cdn.test/unrelated.png"
+    });
+
+    const caseAssets = getProductionAssetsForCase({
+      characterAssetIds: ["asset_rabbit"],
+      id: "job_series_case",
+      sceneAssetIds: ["asset_forest"]
+    }, [rabbit, forest, unrelated]);
+
+    expect(caseAssets.map((asset) => asset._id)).toEqual(["asset_rabbit", "asset_forest"]);
+  });
+
+  it("falls back to series-level reference IDs for existing converted cases", () => {
+    const bananaCeo = createAsset({
+      _id: "asset_banana_ceo",
+      label: "Banana CEO",
+      jobId: "asset_library",
+      storagePath: "",
+      type: "character_design",
+      url: "https://cdn.test/banana-ceo.png"
+    });
+
+    const caseAssets = getProductionAssetsForCase({
+      id: "job_existing_series_case",
+      referenceAssetIds: ["asset_banana_ceo"]
+    }, [bananaCeo]);
+
+    expect(caseAssets.map((asset) => asset._id)).toEqual(["asset_banana_ceo"]);
+  });
+
+  it("prefers copied case asset rows over inherited library rows with the same media", () => {
+    const libraryRabbit = createAsset({
+      _id: "asset_rabbit",
+      label: "Rabbit hero",
+      jobId: "asset_library",
+      storagePath: "",
+      type: "character_design",
+      url: "https://cdn.test/rabbit.png"
+    });
+    const copiedRabbit = createAsset({
+      _id: "asset_rabbit_case_copy",
+      label: "Character reference: Rabbit hero",
+      jobId: "job_series_case",
+      storagePath: "",
+      type: "character_design",
+      url: "https://cdn.test/rabbit.png"
+    });
+
+    const caseAssets = getProductionAssetsForCase({
+      characterAssetIds: ["asset_rabbit"],
+      id: "job_series_case"
+    }, [libraryRabbit, copiedRabbit]);
+
+    expect(caseAssets.map((asset) => asset._id)).toEqual(["asset_rabbit_case_copy"]);
   });
 
   it("builds a multi-reference case brief from every selected character and scene asset", () => {

@@ -126,6 +126,7 @@ import {
   buildAssetContextBriefFromAssets,
   buildReferenceAssetPromptContext,
   findReadyReferenceAssetsByIds,
+  getProductionAssetsForCase,
   getProductionAssetMediaUrl,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
@@ -1948,8 +1949,8 @@ export function App() {
     };
   }
 
-  function splitReadyReferenceAssetIdsByType(assetIds: string[]): { characterAssetIds: string[]; sceneAssetIds: string[] } {
-    const assets = findReadyReferenceAssetsByIds(productionAssets, assetIds);
+  function splitReadyReferenceAssetIdsByType(assetIds: string[], assetSource = productionAssets): { characterAssetIds: string[]; sceneAssetIds: string[] } {
+    const assets = findReadyReferenceAssetsByIds(assetSource, assetIds);
 
     return {
       characterAssetIds: assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
@@ -3007,11 +3008,16 @@ export function App() {
     const caseId = createId("job");
 
     try {
+      const latestAssetsResponse = await requestProductionAssets();
+      const latestProductionAssets = latestAssetsResponse.assets;
+      setProductionAssets(latestProductionAssets);
+
       const response = await requestConvertSeriesEpisodeToCase(series._id, episode._id, caseId);
       const seedReferenceIds = [...response.caseSeed.referenceAssetIds, ...response.caseSeed.characterAssetIds, ...response.caseSeed.sceneAssetIds]
         .filter((id, index, ids) => ids.indexOf(id) === index);
-      const referenceAssets = findReadyReferenceAssetsByIds(productionAssets, seedReferenceIds);
-      const splitSeedAssetIds = splitReadyReferenceAssetIdsByType(seedReferenceIds);
+      const referenceAssets = findReadyReferenceAssetsByIds(latestProductionAssets, seedReferenceIds);
+      const missingReferenceCount = Math.max(0, seedReferenceIds.length - referenceAssets.length);
+      const splitSeedAssetIds = splitReadyReferenceAssetIdsByType(seedReferenceIds, latestProductionAssets);
       const characterAssetIds = splitSeedAssetIds.characterAssetIds;
       const sceneAssetIds = splitSeedAssetIds.sceneAssetIds;
       const characterAsset = referenceAssets.find(isCharacterDesignAsset) ?? null;
@@ -3041,8 +3047,17 @@ export function App() {
       setJobProcessRecords((currentRecords) => [...createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), ...currentRecords]);
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets]);
       appendCaseActivity(job.id, "case_created", "已从系列题库建立 Case", `系列：${series.name}。单集：${episode.title}。`);
-      void handleBootstrapProductionAssets(job);
-      void attachSelectedAssetsToCase(job, referenceAssets);
+      await handleBootstrapProductionAssets(job);
+      const attachedAssets = await attachSelectedAssetsToCase(job, referenceAssets);
+
+      if (seedReferenceIds.length > 0 && referenceAssets.length === 0) {
+        appendCaseActivity(job.id, "error", "Series reference assets not available", "This episode has bound asset IDs, but none were ready/approved with usable media in MongoDB when converting to Case.");
+      } else if (missingReferenceCount > 0) {
+        appendCaseActivity(job.id, "error", "Some series references were skipped", `${missingReferenceCount} bound asset(s) were missing, not ready, or did not have usable media.`);
+      } else if (attachedAssets.length > 0) {
+        appendCaseActivity(job.id, "stage_updated", "Series references inherited", `${attachedAssets.length} bound reference asset(s) were copied into this Case.`);
+      }
+
       setSeriesEpisodes((currentEpisodes) => currentEpisodes.map((currentEpisode) => (currentEpisode._id === episode._id ? response.episode : currentEpisode)));
       setSelectedJobId(job.id);
       setSeriesError(null);
@@ -3086,10 +3101,14 @@ export function App() {
   }
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
+    const seriesReferenceAssetIds = job.seriesId
+      ? contentSeries.find((series) => series._id === job.seriesId)?.referenceAssetIds ?? []
+      : [];
     const selectedAssetIds = new Set([
       job.characterAssetId,
       job.backgroundAssetId,
       ...(job.characterAssetIds ?? []),
+      ...seriesReferenceAssetIds,
       ...(job.sceneAssetIds ?? [])
     ].filter((id): id is string => Boolean(id)));
     const assets = [...extraAssets, ...productionAssets]
@@ -4686,7 +4705,13 @@ export function App() {
   const selectedJobActivities = selectedJob ? caseActivities.filter((activity) => activity.jobId === selectedJob.id) : [];
   const selectedJobPublishTargets = selectedJob ? casePublishTargets.filter((target) => target.jobId === selectedJob.id) : [];
   const selectedJobSceneReviews = selectedJob ? sceneReviews.filter((review) => review.jobId === selectedJob.id).sort((a, b) => a.sceneId - b.sceneId) : [];
-  const selectedJobProductionAssets = selectedJob ? productionAssets.filter((asset) => asset.jobId === selectedJob.id).sort((a, b) => (a.sceneId ?? 0) - (b.sceneId ?? 0) || a.label.localeCompare(b.label)) : [];
+  const selectedJobSeries = selectedJob?.seriesId ? contentSeries.find((series) => series._id === selectedJob.seriesId) ?? null : null;
+  const selectedJobProductionAssets = selectedJob
+    ? getProductionAssetsForCase({
+        ...selectedJob,
+        referenceAssetIds: selectedJobSeries?.referenceAssetIds ?? []
+      }, productionAssets)
+    : [];
   const selectedJobQcReport = selectedJob ? caseQcReports.find((report) => report.jobId === selectedJob.id) ?? null : null;
   const selectedCharacter = selectedJob?.characterId ? characterProfiles.find((character) => character.id === selectedJob.characterId) ?? null : null;
   const canUpload = accounts.some((account) => account.status === "connected");

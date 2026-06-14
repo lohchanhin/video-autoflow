@@ -28,6 +28,50 @@ export function findReadyReferenceAssetsByIds(assets: ProductionAsset[], assetId
     .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
 }
 
+export interface CaseReferenceAssetSelection {
+  backgroundAssetId?: string | null;
+  characterAssetId?: string | null;
+  characterAssetIds?: string[];
+  id: string;
+  referenceAssetIds?: string[];
+  sceneAssetIds?: string[];
+}
+
+export function getProductionAssetsForCase(job: CaseReferenceAssetSelection, assets: ProductionAsset[]): ProductionAsset[] {
+  const selectedAssetIds = new Set([
+    job.characterAssetId,
+    job.backgroundAssetId,
+    ...(job.characterAssetIds ?? []),
+    ...(job.referenceAssetIds ?? []),
+    ...(job.sceneAssetIds ?? [])
+  ].filter((id): id is string => Boolean(id)));
+
+  const candidates = assets
+    .filter((asset) => asset.jobId === job.id || selectedAssetIds.has(asset._id))
+    .sort((left, right) => {
+      const leftJobPriority = left.jobId === job.id ? 0 : 1;
+      const rightJobPriority = right.jobId === job.id ? 0 : 1;
+
+      return leftJobPriority - rightJobPriority
+        || (left.sceneId ?? 0) - (right.sceneId ?? 0)
+        || left.label.localeCompare(right.label);
+    });
+
+  const seen = new Set<string>();
+
+  return candidates.filter((asset) => {
+    const mediaUrl = getProductionAssetMediaUrl(asset);
+    const dedupeKey = mediaUrl || asset._id;
+
+    if (seen.has(dedupeKey)) {
+      return false;
+    }
+
+    seen.add(dedupeKey);
+    return true;
+  });
+}
+
 export function buildAssetContextBrief(characterAsset: ProductionAsset | null, backgroundAsset: ProductionAsset | null): string {
   const lines = [
     characterAsset
