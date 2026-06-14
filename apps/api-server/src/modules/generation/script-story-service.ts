@@ -382,6 +382,9 @@ function formatProductionBriefForPrompt(input: NormalizedScriptStoryInput): stri
       scene.visualRules,
       scene.notes
     ].filter(Boolean).join(" / ")).join(" || ")}` : "",
+    brief.selectedCharacters?.length || brief.selectedScenes?.length
+      ? "Selected assets are a reusable library. Use the assets relevant to this episode, but when you use one, visible output must keep its selected label or role. Do not rename selected fruit/person assets into unrelated names such as Leo or Luna unless those names were explicitly supplied by the user."
+      : "",
     brief.requiredBeats?.length ? `Required beats: ${brief.requiredBeats.join(" | ")}` : "",
     brief.visualContinuityRules?.length ? `Visual continuity rules: ${brief.visualContinuityRules.join(" | ")}` : "",
     "Do not copy asset prompt-engineering instructions into visible output. Use only visual facts, story rules, and selected names/locations."
@@ -1148,10 +1151,25 @@ function buildSearchTerms(value: string | undefined): string[] {
 }
 
 function buildOutlineRewriteFeedback(outlineQc: GeneratedOutlineQualityCheck): string {
-  return outlineQc.checks
+  const correctiveRules = outlineQc.checks
     .filter((check) => check.status === "fail")
-    .map((check) => `- ${check.label}: ${check.detail}`)
-    .join("\n");
+    .map((check) => {
+      if (check.label === "shootable_scenes") {
+        return `- ${check.label}: ${check.detail} Rewrite every failed storyboard scene as visible physical action: exact character/subject + exact location + object + action verb. Use concrete verbs such as 打开, 拿起, 递给, 推开, 发现, 翻开, 站在, 坐在, 看见. Avoid abstract phrases such as 真相爆发, 命运裂变, 风暴, 情绪, 氛围.`;
+      }
+
+      if (check.label === "production_brief_alignment") {
+        return `- ${check.label}: ${check.detail} Use the selected asset labels/roles that are relevant to this episode in visible output. Do not rename selected fruit/person assets into unrelated English names. If the brief says banana CEO, keep it visible as 香蕉总裁/香蕉人 instead of Leo. If it says secret dessert clerk, map it to the selected dessert/fruit character label when available.`;
+      }
+
+      return `- ${check.label}: ${check.detail}`;
+    });
+
+  return [
+    "Rewrite the outline from scratch and satisfy every failed check below.",
+    "Keep the same user topic, series continuity, selected asset library, and episode premise.",
+    ...correctiveRules
+  ].join("\n");
 }
 
 function collectVisibleTexts(content: GeneratedScriptStoryContent): string[] {
