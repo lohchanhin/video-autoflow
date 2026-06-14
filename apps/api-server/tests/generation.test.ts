@@ -12,6 +12,7 @@ import { createTtsGenerationService, type TtsGenerationService } from "../src/mo
 import type { VideoClipGenerationService } from "../src/modules/generation/video-clip-service.js";
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -871,6 +872,95 @@ describe("POST /generation/images", () => {
     expect(response.body.error.message).toContain("Selected reference image");
     expect(response.body.error.message).toContain("Banana CEO");
     expect(response.body.error.message).toContain("stopped before the model could invent a different character");
+  });
+
+  it("falls back to an approved reference composite PNG when OpenAI scene image generation times out", async () => {
+    const originalFetch = globalThis.fetch;
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-reference-composite-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+
+    await storage.writeFile(
+      "jobs/job_reference_composite/storyboard.json",
+      JSON.stringify({
+        scenes: [
+          {
+            camera: "medium shot",
+            durationSeconds: 8,
+            imagePrompt: "The peach dessert clerk looks at the banana CEO in a luxury dessert shop.",
+            sceneId: 1,
+            sfx: ["room tone"],
+            visual: "The peach dessert clerk stands inside the dessert shop while the banana CEO arrives.",
+            voiceText: "Luna froze when the banana CEO walked in."
+          }
+        ]
+      })
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url.includes("/images/edits") || url.includes("/images/generations")) {
+        return new Response(JSON.stringify({ error: { message: "Gateway Timeout" } }), {
+          headers: { "Content-Type": "application/json" },
+          status: 504,
+          statusText: "Gateway Timeout"
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    const imageGenerationService = createImageGenerationService({
+      openai: {
+        apiKey: "test-openai-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-image-1-mini",
+        quality: "low",
+        size: "1024x1536",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await request(createApp({ imageGenerationService, storage }))
+      .post("/generation/images/scene")
+      .send({
+        costLimitRM: 7.5,
+        jobId: "job_reference_composite",
+        language: "zh-CN",
+        prompt: "水果人豪门连续剧",
+        references: [
+          {
+            label: "水蜜桃Luna",
+            prompt: "peach dessert clerk, pastel dress, gentle eyes",
+            role: "reference_image",
+            type: "character_design",
+            url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          },
+          {
+            label: "水蜜桃甜品店",
+            prompt: "luxury dessert shop with warm lighting",
+            role: "reference_image",
+            type: "scene_design",
+            url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          }
+        ],
+        sceneCount: 1,
+        sceneId: 1,
+        templateType: "romance_story",
+        topic: "命运揭幕：秘密的甜品店员"
+      })
+      .expect(201);
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(response.body.image.asset.publicUrl).toBe("http://localhost:4000/uploads/jobs/job_reference_composite/images/scene_01.png");
+    expect(response.body.image.qualityCheck.status).toBe("warning");
+    expect(response.body.image.qualityCheck.model).toBe("local-reference-composite");
+    expect(response.body.image.usage.pricingMode).toBe("reference_composite_fallback");
+    expect(response.body.requiresReview).toBe(false);
   });
 
   it("regenerates one scene image with an override prompt", async () => {
