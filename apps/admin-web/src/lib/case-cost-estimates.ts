@@ -1,7 +1,7 @@
 import type { ToolProviderSettings, ToolProviderType } from "./admin-data.js";
 import type { AdminJob, JobProcessRecord } from "./jobs.js";
 
-export type CaseNextCostStage = "script" | "image" | "tts" | "compose" | "qc" | "review";
+export type CaseNextCostStage = "script" | "image" | "tts" | "video" | "compose" | "qc" | "review";
 
 export type CaseNextCostPricingStatus = "priced" | "free" | "missing_tool" | "disabled" | "missing_price" | "not_applicable";
 
@@ -19,6 +19,9 @@ export interface CaseNextCostEstimate {
 export interface CaseCostReadiness {
   finalMp4Ready: boolean;
   imageReadyForCompose: boolean;
+  seedanceClipsReady?: boolean;
+  seedanceCurrentClipCount?: number;
+  seedanceExpectedClipCount?: number;
   scriptStoryReady: boolean;
   voiceoverReadyForCompose: boolean;
 }
@@ -119,6 +122,19 @@ function resolveNextCostStage(job: AdminJob, readiness: CaseCostReadiness): {
     };
   }
 
+  if (readiness.seedanceClipsReady === false) {
+    const current = readiness.seedanceCurrentClipCount ?? 0;
+    const expected = Math.max(1, readiness.seedanceExpectedClipCount ?? job.sceneCount);
+    const missing = Math.max(0, expected - current);
+
+    return {
+      detail: `生成缺失的 ${missing}/${expected} 个 Seedance 2.0 场景视频片段`,
+      label: "Seedance 视频片段",
+      stage: "video",
+      toolType: "video"
+    };
+  }
+
   if (!readiness.finalMp4Ready) {
     return {
       detail: `合成约 ${Math.max(1, job.durationSeconds)} 秒 MP4`,
@@ -191,6 +207,14 @@ function estimateToolQuantities(stage: CaseNextCostStage, job: AdminJob, records
       inputUnits: 0,
       outputUnits: estimateVoiceoverCharacters(job, records),
       unitLabel: "characters"
+    };
+  }
+
+  if (stage === "video") {
+    return {
+      inputUnits: 0,
+      outputUnits: Math.max(1, job.durationSeconds),
+      unitLabel: "seconds"
     };
   }
 

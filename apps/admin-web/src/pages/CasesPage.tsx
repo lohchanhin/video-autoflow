@@ -1257,7 +1257,7 @@ function ProductionTab(
         <div className="reference-asset-note">
           <AlertTriangle size={15} />
           <span>
-            旧 MP4 不可审核：这个 Case 需要 {seedanceClipReadiness.expected} 个 Seedance 2.0 场景片段，目前只有 {seedanceClipReadiness.current} 个。请点击“生成完整 MP4”，系统会先补齐视频片段再合成。
+            旧 MP4 不可审核：这个 Case 需要 {seedanceClipReadiness.expected} 个 Seedance 2.0 场景片段，目前只有 {seedanceClipReadiness.current} 个。请点击“生成 Seedance MP4”，系统会先补齐视频片段再合成。
           </span>
         </div>
       ) : null}
@@ -1560,6 +1560,9 @@ function CaseOverviewPanel(props: {
     readiness: {
       finalMp4Ready: props.finalMp4Ready,
       imageReadyForCompose: props.imageReadyForCompose,
+      seedanceClipsReady: props.seedanceClipReadiness.ready,
+      seedanceCurrentClipCount: props.seedanceClipReadiness.current,
+      seedanceExpectedClipCount: props.seedanceClipReadiness.expected,
       scriptStoryReady: props.scriptStoryReady,
       voiceoverReadyForCompose: props.voiceoverReadyForCompose
     },
