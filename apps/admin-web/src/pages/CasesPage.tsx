@@ -1023,7 +1023,10 @@ function ProductionTab(
   const imageReadyForCompose = Boolean(imageRecord?.status === "done" && splitArtifactPaths(imageRecord.artifactPath).some(isRasterImagePath) && !hasBlockedSceneReview);
   const voiceoverReadyForCompose = Boolean(ttsRecord?.status === "done" && splitArtifactPaths(ttsRecord.artifactPath).some(isAudioPath));
   const bgmReadyForCompose = Boolean(bgmRecord?.status === "done" && splitArtifactPaths(bgmRecord.artifactPath).some(isAudioPath));
-  const finalMp4Ready = Boolean(composeRecord?.status === "done" && splitArtifactPaths(composeRecord.artifactPath).some(isVideoPath));
+  const seedanceClipReadiness = getSeedanceClipReadiness(props.selectedJob, props.selectedRecords, props.selectedSceneReviews);
+  const composedMp4Exists = Boolean(composeRecord?.status === "done" && splitArtifactPaths(composeRecord.artifactPath).some(isVideoPath));
+  const finalMp4BlockedBySeedance = composedMp4Exists && !seedanceClipReadiness.ready;
+  const finalMp4Ready = Boolean(composedMp4Exists && seedanceClipReadiness.ready);
   const canApproveMp4 = finalMp4Ready && voiceoverReadyForCompose && ["QC_PASSED", "READY_TO_UPLOAD", "COMPOSED"].includes(props.selectedJob.status);
   const budgetExhausted = props.selectedJob.actualCostRM >= props.selectedJob.costLimitRM;
   const visibleBudgetPlan = buildCaseBudgetRescuePlan(props.selectedJob.actualCostRM, props.selectedJob.costLimitRM);
@@ -1043,6 +1046,7 @@ function ProductionTab(
     isRunningQc,
     isWriting,
     job: props.selectedJob,
+    seedanceClipReadiness,
     scriptStoryReady,
     voiceoverReadyForCompose,
     handlers: {
@@ -1249,6 +1253,14 @@ function ProductionTab(
 
       {apiUnavailable ? <ServiceIssueBanner apiState={props.apiState} action="Generation" /> : null}
       {props.generationError ? <div className="inline-error">{props.generationError}</div> : null}
+      {finalMp4BlockedBySeedance ? (
+        <div className="reference-asset-note">
+          <AlertTriangle size={15} />
+          <span>
+            旧 MP4 不可审核：这个 Case 需要 {seedanceClipReadiness.expected} 个 Seedance 2.0 场景片段，目前只有 {seedanceClipReadiness.current} 个。请点击“生成完整 MP4”，系统会先补齐视频片段再合成。
+          </span>
+        </div>
+      ) : null}
 
       <div className="production-workbench-tabs grouped" role="tablist" aria-label="Production workbench sections">
         {productionTabGroups.map((group) => (
@@ -1282,6 +1294,7 @@ function ProductionTab(
           nextAction={nextAction}
           reportDirtyState={reportProductionDirtyState}
           records={props.selectedRecords}
+          seedanceClipReadiness={seedanceClipReadiness}
           scriptStoryReady={scriptStoryReady}
           toolProviderSettings={props.toolProviderSettings}
           openCostSettings={props.openCostSettings}
@@ -1328,6 +1341,7 @@ function ProductionTab(
       {activeProductionTab === "script" || activeProductionTab === "voice" || activeProductionTab === "music" || activeProductionTab === "clips" || activeProductionTab === "final" ? (
         <StageOutputPanel
           characters={props.characters}
+          finalMp4BlockedBySeedance={finalMp4BlockedBySeedance}
           generateBgmForJob={props.generateBgmForJob}
           generateImagesForJob={props.generateImagesForJob}
           generateSceneImageForJob={props.generateSceneImageForJob}
@@ -1342,6 +1356,7 @@ function ProductionTab(
           isRunningQc={isRunningQc}
           record={tabRecord}
           sceneReviews={props.selectedSceneReviews}
+          seedanceClipReadiness={seedanceClipReadiness}
           qcReport={props.selectedQcReport}
           storedVideos={props.storedVideos}
           job={props.selectedJob}
@@ -1365,7 +1380,15 @@ function ProductionTab(
             sceneReviews={props.selectedSceneReviews}
             updateSceneReview={props.updateSceneReview}
           />
-          <CaseAssetsPanel job={props.selectedJob} qcReport={props.selectedQcReport} records={props.selectedRecords} sceneReviews={props.selectedSceneReviews} storedVideos={props.storedVideos} />
+          <CaseAssetsPanel
+            finalMp4BlockedBySeedance={finalMp4BlockedBySeedance}
+            job={props.selectedJob}
+            qcReport={props.selectedQcReport}
+            records={props.selectedRecords}
+            sceneReviews={props.selectedSceneReviews}
+            seedanceClipReadiness={seedanceClipReadiness}
+            storedVideos={props.storedVideos}
+          />
         </section>
       ) : null}
 
@@ -1412,6 +1435,7 @@ function getNextCaseAction(input: {
   isRunningQc: boolean;
   isWriting: boolean;
   job: AdminJob;
+  seedanceClipReadiness: ReturnType<typeof getSeedanceClipReadiness>;
   scriptStoryReady: boolean;
   voiceoverReadyForCompose: boolean;
   handlers: {
@@ -1457,7 +1481,7 @@ function getNextCaseAction(input: {
     return {
       disabled: input.apiUnavailable || input.isRendering,
       icon: <FileVideo size={16} />,
-      label: input.isRendering ? "正在生成 MP4" : "生成完整 MP4",
+      label: input.isRendering ? "正在生成 Seedance MP4" : input.seedanceClipReadiness.ready ? "重新合成完整 MP4" : "生成 Seedance MP4",
       loading: input.isRendering,
       onClick: input.handlers.generateVideo
     };
@@ -1520,6 +1544,7 @@ function CaseOverviewPanel(props: {
   nextAction: CaseNextAction;
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   records: JobProcessRecord[];
+  seedanceClipReadiness: ReturnType<typeof getSeedanceClipReadiness>;
   scriptStoryReady: boolean;
   toolProviderSettings: ToolProviderSettings[];
   openCostSettings: () => void;
@@ -1551,6 +1576,7 @@ function CaseOverviewPanel(props: {
     props.scriptStoryReady ? "" : "脚本、分镜或图片提示词还没完成。",
     props.imageReadyForCompose ? "" : "场景图片还没准备好，或仍需要审核。",
     props.voiceoverReadyForCompose ? "" : "配音音频还没生成。",
+    props.seedanceClipReadiness.ready ? "" : `Seedance 2.0 场景片段不足：${props.seedanceClipReadiness.current}/${props.seedanceClipReadiness.expected}。`,
     props.finalMp4Ready ? "" : "最终 MP4 还没合成。"
   ].filter(Boolean);
 
@@ -1862,7 +1888,15 @@ function SceneImageWorkbench(props: {
   );
 }
 
-function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; records: JobProcessRecord[]; sceneReviews: SceneReviewItem[]; storedVideos: StoredVideo[] }) {
+function CaseAssetsPanel(props: {
+  finalMp4BlockedBySeedance: boolean;
+  job: AdminJob;
+  qcReport: CaseQcReport | null;
+  records: JobProcessRecord[];
+  sceneReviews: SceneReviewItem[];
+  seedanceClipReadiness: ReturnType<typeof getSeedanceClipReadiness>;
+  storedVideos: StoredVideo[];
+}) {
   const imageRecord = props.records.find((record) => record.stageId === "image");
   const composeRecord = props.records.find((record) => record.stageId === "compose");
   const subtitleRecord = props.records.find((record) => record.stageId === "subtitle");
@@ -1884,7 +1918,13 @@ function CaseAssetsPanel(props: { job: AdminJob; qcReport: CaseQcReport | null; 
     <section className="case-artifact-summary-panel panel">
       <SectionHeader eyebrow="产物摘要" title="媒体文件" action={<StatusPill tone={videoPath ? "success" : "neutral"}>{videoPath ? "MP4 已就绪" : "等待中"}</StatusPill>} />
       {props.job.visualBible ? <VisualBibleCard visualBible={props.job.visualBible} /> : null}
-      {videoPath ? (
+      {props.finalMp4BlockedBySeedance ? (
+        <div className="reference-asset-note">
+          <AlertTriangle size={15} />
+          <span>旧 MP4 已隐藏：Seedance 2.0 片段只有 {props.seedanceClipReadiness.current}/{props.seedanceClipReadiness.expected}，请重新生成完整 MP4。</span>
+        </div>
+      ) : null}
+      {videoPath && !props.finalMp4BlockedBySeedance ? (
         <div className="case-video-preview">
           {isVideoPath(videoPath) && isOpenableMediaUrl(videoPath) ? <video controls src={videoPath} /> : null}
           <a href={isOpenableMediaUrl(videoPath) ? videoPath : undefined} target="_blank" rel="noreferrer">
@@ -1975,6 +2015,7 @@ function ArtifactLink(props: { icon: ReactNode; label: string; path: string }) {
 
 function StageOutputPanel(props: {
   characters: CharacterProfile[];
+  finalMp4BlockedBySeedance: boolean;
   generateBgmForJob: (job: AdminJob) => void;
   generateImagesForJob: (job: AdminJob) => void;
   generateSceneImageForJob: (job: AdminJob, scene: SceneReviewItem) => void;
@@ -1992,6 +2033,7 @@ function StageOutputPanel(props: {
   record: JobProcessRecord | null;
   reportDirtyState?: CasesPageProps["reportDirtyState"];
   sceneReviews: SceneReviewItem[];
+  seedanceClipReadiness: ReturnType<typeof getSeedanceClipReadiness>;
   storedVideos: StoredVideo[];
   updateSceneReview: (id: string, updater: (review: SceneReviewItem) => SceneReviewItem) => void;
 }) {
@@ -2069,7 +2111,14 @@ function StageOutputPanel(props: {
             <span>输出</span>
             <pre>{getRecordOutputForDisplay(props.record) || "还没有记录输出。"}</pre>
           </div>
-          <ArtifactPreview artifactPath={props.record.artifactPath || storedVideo?.publicUrl || storedVideo?.storagePath || ""} />
+          {props.record.stageId === "compose" && props.finalMp4BlockedBySeedance ? (
+            <div className="reference-asset-note">
+              <AlertTriangle size={15} />
+              <span>旧 MP4 不可审核：Seedance 2.0 场景片段只有 {props.seedanceClipReadiness.current}/{props.seedanceClipReadiness.expected}，请重新生成完整 MP4。</span>
+            </div>
+          ) : (
+            <ArtifactPreview artifactPath={props.record.artifactPath || storedVideo?.publicUrl || storedVideo?.storagePath || ""} />
+          )}
           {isImageStage ? (
             <SceneReviewPanel
               generatingSceneImageIds={props.generatingSceneImageIds}
@@ -2586,6 +2635,20 @@ function isVideoPath(value: string): boolean {
 
 function isAudioPath(value: string): boolean {
   return isAudioMediaUrl(value);
+}
+
+function getSeedanceClipReadiness(job: AdminJob, records: JobProcessRecord[], sceneReviews: SceneReviewItem[]) {
+  const videoRecord = records.find((record) => record.stageId === "video");
+  const imageRecord = records.find((record) => record.stageId === "image");
+  const generatedClipCount = splitArtifactPaths(videoRecord?.artifactPath).filter(isVideoPath).length;
+  const imageSceneCount = splitArtifactPaths(imageRecord?.artifactPath).filter(isRasterImagePath).length;
+  const expectedClipCount = Math.max(job.sceneCount, sceneReviews.length, imageSceneCount);
+
+  return {
+    current: generatedClipCount,
+    expected: expectedClipCount,
+    ready: expectedClipCount > 0 && generatedClipCount >= expectedClipCount
+  };
 }
 
 function assetMediaUrl(asset: ProductionAsset): string {
