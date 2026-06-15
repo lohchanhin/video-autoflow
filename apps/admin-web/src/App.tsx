@@ -383,6 +383,27 @@ function applyVideoClipGenerationResultsToRecords(
   });
 }
 
+function invalidateComposeRecordsAfterVideoClipChange(records: JobProcessRecord[], jobId: string, now: string): JobProcessRecord[] {
+  const downstreamStages: ProductionStageId[] = ["compose", "qc", "publish", "archive"];
+
+  return records.map((record) => {
+    if (record.jobId !== jobId || !downstreamStages.includes(record.stageId)) {
+      return record;
+    }
+
+    return {
+      ...record,
+      artifactPath: "",
+      notes: "Seedance 2.0 视频片段已更新，旧 MP4 已失效。",
+      output: record.stageId === "publish"
+        ? "等待重新合成并通过审核后，才允许进入 YouTube 私密上传。"
+        : "Seedance 2.0 视频片段已更新，请重新生成完整 MP4。",
+      status: record.status === "skipped" ? "skipped" : "pending",
+      updatedAt: now
+    };
+  });
+}
+
 function describeComposedSceneImages(images: GenerateVideoResponse["artifacts"]["sceneImages"]): string {
   const paths = images.map((image) => image.publicUrl ?? image.storagePath);
   const rasterCount = paths.filter(isRasterImageArtifact).length;
@@ -475,7 +496,7 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
   const scenePromptMap = parseScenePromptMap(promptRecord?.output ?? "");
   const jobReviews = sceneReviews.filter((review) => review.jobId === job.id).sort((left, right) => left.sceneId - right.sceneId);
   const imageArtifacts = splitArtifactPaths(imageRecord?.artifactPath).map(resolveMediaUrl).filter(isRasterImageArtifact);
-  const enabledAssets = referenceAssets.filter((asset) => asset.jobId === job.id && (asset.status === "approved" || asset.status === "ready") && getProductionAssetMediaUrl(asset));
+  const enabledAssets = referenceAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && getProductionAssetMediaUrl(asset));
   const sceneIds = collectSceneIds(job, sceneTimings, jobReviews, imageArtifacts);
 
   return sceneIds.map((sceneId) => {
@@ -3159,6 +3180,24 @@ export function App() {
       .filter((reference): reference is GenerationReferenceAsset => Boolean(reference));
   }
 
+  function getEffectiveProductionAssetsForJob(job: AdminJob): ProductionAsset[] {
+    const effectiveSeriesId = job.seriesId ?? job.productionBrief?.seriesContext?.seriesId ?? null;
+    const effectiveSeries = effectiveSeriesId ? contentSeries.find((series) => series._id === effectiveSeriesId) ?? null : null;
+    const effectiveStoryWorldId = job.storyWorldId ?? job.productionBrief?.storyWorldContext?.storyWorldId ?? effectiveSeries?.storyWorldId ?? null;
+    const effectiveStoryWorld = effectiveStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === effectiveStoryWorldId) ?? null : null;
+
+    return getProductionAssetsForCase({
+      ...job,
+      referenceAssetIds: mergeIds(
+        job.referenceAssetIds ?? [],
+        effectiveSeries?.referenceAssetIds ?? [],
+        effectiveStoryWorld?.recurringCharacterAssetIds ?? [],
+        effectiveStoryWorld?.defaultSceneAssetIds ?? [],
+        getProductionBriefReferenceIds(job.productionBrief)
+      )
+    }, productionAssets);
+  }
+
   function getReferenceGenerationBlocker(job: AdminJob, references: GenerationReferenceAsset[]): string | null {
     const selectedCharacterIds = [job.characterAssetId, ...(job.characterAssetIds ?? [])].filter((id): id is string => Boolean(id));
     const selectedSceneIds = [job.backgroundAssetId, ...(job.sceneAssetIds ?? [])].filter((id): id is string => Boolean(id));
@@ -4107,7 +4146,7 @@ export function App() {
   }
 
   async function generateSeedanceSceneClipsForJob(job: AdminJob, recordsSnapshot: JobProcessRecord[]): Promise<GenerateVideoClipResponse[]> {
-    const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, productionAssets, job);
+    const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, getEffectiveProductionAssetsForJob(job), job);
 
     if (clipInputs.length === 0) {
       throw new Error("找不到可用于 Seedance 的分镜场景。请先重新生成或确认脚本/分镜。");
@@ -4221,7 +4260,14 @@ export function App() {
             : currentJob
         )
       );
-      setJobProcessRecords((currentRecords) => applyVideoClipGenerationResultsToRecords(currentRecords, job.id, successfulResults, now));
+      setJobProcessRecords((currentRecords) =>
+        invalidateComposeRecordsAfterVideoClipChange(
+          applyVideoClipGenerationResultsToRecords(currentRecords, job.id, successfulResults, now),
+          job.id,
+          now
+        )
+      );
+      setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
       appendCaseActivity(
         job.id,
         "stage_updated",
@@ -4351,11 +4397,14 @@ export function App() {
         appendCaseActivity(job.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已在合成 MP4 前自动生成旁白。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
       }
 
-      const autoGenerateMissingVideoClipsBeforeCompose = false;
-      const expectedClipCount = getSeedanceClipInputs(workingRecords, sceneReviews, productionAssets, job).length;
+      const expectedClipCount = getSeedanceClipInputs(workingRecords, sceneReviews, getEffectiveProductionAssetsForJob(job), job).length;
       const currentClipCount = getGeneratedClipCount(workingRecords, job.id);
 
-      if (autoGenerateMissingVideoClipsBeforeCompose && expectedClipCount > 0 && currentClipCount < expectedClipCount) {
+      if (expectedClipCount === 0) {
+        throw new Error("找不到可用于 Seedance 2.0 的分镜场景，不能生成动态影片。请先生成脚本、分镜和场景图片。");
+      }
+
+      if (currentClipCount < expectedClipCount) {
         const clipResults = await generateSeedanceSceneClipsForJob(job, workingRecords);
         const clipNow = new Date().toISOString();
         const clipCostRM = clipResults.reduce((sum, result) => sum + result.costRM, 0);
@@ -4363,6 +4412,12 @@ export function App() {
         workingRecords = applyVideoClipGenerationResultsToRecords(workingRecords, job.id, clipResults, clipNow);
         setJobProcessRecords((currentRecords) => applyVideoClipGenerationResultsToRecords(currentRecords, job.id, clipResults, clipNow));
         appendCaseActivity(job.id, "stage_updated", "Seedance 视频片段已生成", `${clipResults[0]?.model ?? "Seedance 2.0"} 已在合成 MP4 前自动生成 ${clipResults.length} 个场景片段。成本 RM ${clipCostRM.toFixed(4)}。`);
+      }
+
+      const readyClipCount = getGeneratedClipCount(workingRecords, job.id);
+
+      if (readyClipCount < expectedClipCount) {
+        throw new Error(`Seedance 2.0 视频片段不足：需要 ${expectedClipCount} 个场景片段，目前只有 ${readyClipCount} 个。系统不会用静态图片合成假影片，请先重新生成视频片段。`);
       }
 
       setJobProcessRecords((currentRecords) =>
@@ -4744,22 +4799,7 @@ export function App() {
   const selectedJobActivities = selectedJob ? caseActivities.filter((activity) => activity.jobId === selectedJob.id) : [];
   const selectedJobPublishTargets = selectedJob ? casePublishTargets.filter((target) => target.jobId === selectedJob.id) : [];
   const selectedJobSceneReviews = selectedJob ? sceneReviews.filter((review) => review.jobId === selectedJob.id).sort((a, b) => a.sceneId - b.sceneId) : [];
-  const selectedJobSeriesId = selectedJob?.seriesId ?? selectedJob?.productionBrief?.seriesContext?.seriesId ?? null;
-  const selectedJobSeries = selectedJobSeriesId ? contentSeries.find((series) => series._id === selectedJobSeriesId) ?? null : null;
-  const selectedJobStoryWorldId = selectedJob?.storyWorldId ?? selectedJob?.productionBrief?.storyWorldContext?.storyWorldId ?? selectedJobSeries?.storyWorldId ?? null;
-  const selectedJobStoryWorld = selectedJobStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === selectedJobStoryWorldId) ?? null : null;
-  const selectedJobProductionAssets = selectedJob
-    ? getProductionAssetsForCase({
-        ...selectedJob,
-        referenceAssetIds: mergeIds(
-          selectedJob.referenceAssetIds ?? [],
-          selectedJobSeries?.referenceAssetIds ?? [],
-          selectedJobStoryWorld?.recurringCharacterAssetIds ?? [],
-          selectedJobStoryWorld?.defaultSceneAssetIds ?? [],
-          getProductionBriefReferenceIds(selectedJob.productionBrief)
-        )
-      }, productionAssets)
-    : [];
+  const selectedJobProductionAssets = selectedJob ? getEffectiveProductionAssetsForJob(selectedJob) : [];
   const selectedJobQcReport = selectedJob ? caseQcReports.find((report) => report.jobId === selectedJob.id) ?? null : null;
   const selectedCharacter = selectedJob?.characterId ? characterProfiles.find((character) => character.id === selectedJob.characterId) ?? null : null;
   const canUpload = accounts.some((account) => account.status === "connected");
