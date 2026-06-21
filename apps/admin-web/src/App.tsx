@@ -169,9 +169,24 @@ import { inferTemplateTypeFromGenre } from "./lib/genres.js";
 import { countDirtyDrafts, updateDirtyDraftMap } from "./lib/editable-draft.js";
 import { importLocalDataSnapshot, isLocalDataMigrationMessage } from "./lib/local-data-portability.js";
 import { resolveViewFromHash, type ActiveView } from "./lib/view-routing.js";
+import {
+  isSceneReviewBlockingForProduction,
+  selectSceneGenerationReferences,
+  selectSceneProductionAssetsForGeneration
+} from "./lib/scene-reference-routing.js";
 
 type ApiState = "checking" | "online" | "offline";
 type ServiceState = "checking" | "online" | "offline" | "warning";
+
+class VideoClipGenerationError extends Error {
+  readonly partialResults: GenerateVideoClipResponse[];
+
+  constructor(message: string, partialResults: GenerateVideoClipResponse[]) {
+    super(message);
+    this.name = "VideoClipGenerationError";
+    this.partialResults = partialResults;
+  }
+}
 
 export interface CaseDraftPreview {
   input: NewJobInput;
@@ -430,7 +445,7 @@ function hasGeneratedRasterImages(records: JobProcessRecord[], jobId: string): b
 }
 
 function hasBlockedSceneReviews(sceneReviews: SceneReviewItem[], jobId: string): boolean {
-  return sceneReviews.some((review) => review.jobId === jobId && (review.status === "needs_review" || review.status === "rejected" || review.qcStatus === "fail"));
+  return sceneReviews.some((review) => review.jobId === jobId && isSceneReviewBlockingForProduction(review));
 }
 
 function hasGeneratedVoiceoverAudio(records: JobProcessRecord[], jobId: string): boolean {
@@ -502,22 +517,31 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
   return sceneIds.map((sceneId) => {
     const timing = sceneTimings.get(sceneId);
     const review = jobReviews.find((candidate) => candidate.sceneId === sceneId);
+    const imagePrompt = scenePromptMap.get(sceneId) ?? review?.prompt ?? "";
+    const sceneAssets = selectSceneProductionAssetsForGeneration(enabledAssets, {
+      imagePrompt,
+      sceneId,
+      visual: timing?.visual ?? review?.prompt ?? "",
+      voiceText: timing?.voiceText ?? ""
+    });
+    const reviewIsBlocking = review ? isSceneReviewBlockingForProduction(review) : false;
     const sceneImage = imageArtifacts.find((artifact) => getSceneNumberFromArtifact(artifact) === sceneId) ?? imageArtifacts[sceneId - 1];
-    const firstFrameAsset = enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === null);
-    const lastFrameAsset = enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === null);
+    const firstFrameAsset = sceneAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === sceneId) ?? sceneAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === null);
+    const lastFrameAsset = sceneAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === sceneId) ?? sceneAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === null);
     const firstFrameUrl = firstFrameAsset ? getProductionAssetMediaUrl(firstFrameAsset) : "";
     const lastFrameUrl = lastFrameAsset ? getProductionAssetMediaUrl(lastFrameAsset) : "";
-    const imageUrl = firstFrameUrl || resolveMediaUrl(review?.artifactPath) || resolveMediaUrl(sceneImage) || undefined;
-    const referenceAssetsForScene = enabledAssets
-      .filter((asset) => asset.role === "reference_image" && (asset.sceneId === null || asset.sceneId === sceneId))
+    const reviewImageUrl = reviewIsBlocking ? "" : resolveMediaUrl(review?.artifactPath);
+    const recordSceneImageUrl = reviewIsBlocking ? "" : resolveMediaUrl(sceneImage);
+    const imageUrl = firstFrameUrl || reviewImageUrl || recordSceneImageUrl || undefined;
+    const referenceAssetsForScene = sceneAssets
+      .filter((asset) => asset.role === "reference_image")
       .filter((asset, index, assets) => assets.findIndex((candidate) => getProductionAssetMediaUrl(candidate) === getProductionAssetMediaUrl(asset)) === index)
       .slice(0, 8);
     const referenceImageUrls = referenceAssetsForScene
       .map(getProductionAssetMediaUrl)
       .filter((url, index, urls) => Boolean(url) && url !== imageUrl && url !== lastFrameUrl && urls.indexOf(url) === index);
-    const imagePrompt = scenePromptMap.get(sceneId) ?? review?.prompt ?? "";
     const durationSeconds = getSeedanceDurationSeconds(timing?.durationSeconds, job.durationSeconds, sceneIds.length);
-    const referenceContext = referenceAssetsForScene
+    const referenceContext = sceneAssets
       .map(buildReferenceAssetPromptContext)
       .filter(Boolean)
       .join("\n");
@@ -1103,6 +1127,10 @@ function buildReadableImageGenerationError(message: string, generatedCount: numb
   }
 
   return [message, progress].filter(Boolean).join(" ");
+}
+
+function isRecoverableAutopilotPause(message: string): boolean {
+  return /质检|QC|审核|图片供应商|反向代理|等待超时|单独重试|参考资产|可用参考图|视觉 QC|needs_review|seedance|场景片段|视频片段|504|timeout|quota|限额/iu.test(message);
 }
 
 function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: string, result: GenerateTtsResponse, now: string): JobProcessRecord[] {
@@ -2298,6 +2326,64 @@ export function App() {
     switchView("cases");
   }
 
+  async function runAutopilotSeedanceClipStep(
+    job: AdminJob,
+    records: JobProcessRecord[],
+    attachedAssets: ProductionAsset[],
+    sourceLabel: string
+  ): Promise<{ job: AdminJob; records: JobProcessRecord[] }> {
+    assertCaseBudgetAvailable(job, "自动生成 Seedance 场景片段");
+    setAutoGenerateStep(`${sourceLabel}: 生成 Seedance 场景片段`);
+
+    const workingStartedAt = new Date().toISOString();
+    const workingJob = {
+      ...job,
+      status: "VIDEO_GENERATING" as const,
+      updatedAt: workingStartedAt
+    };
+    const workingRecords = records.map((record) =>
+      record.stageId === "video"
+        ? {
+            ...record,
+            notes: "",
+            output: "自动生产正在按已确认分镜和已通过 QC 的场景图生成 Seedance 2.0 场景片段...",
+            status: "working" as const,
+            updatedAt: workingStartedAt
+          }
+        : record
+    );
+
+    upsertJob(workingJob);
+    upsertJobRecords(workingJob.id, workingRecords);
+
+    const clipResults = await generateSeedanceSceneClipsForJob(
+      workingJob,
+      workingRecords,
+      getEffectiveProductionAssetsForJobWithExtra(workingJob, attachedAssets)
+    );
+    const clipNow = new Date().toISOString();
+    const clipCostRM = clipResults.reduce((sum, result) => sum + result.costRM, 0);
+    const nextJob = {
+      ...workingJob,
+      actualCostRM: Number((workingJob.actualCostRM + clipCostRM).toFixed(4)),
+      reviewStatus: "draft" as const,
+      status: keepLaterStatus(workingJob.status, "VIDEO_DONE"),
+      updatedAt: clipNow
+    };
+    const nextRecords = applyVideoClipGenerationResultsToRecords(workingRecords, workingJob.id, clipResults, clipNow);
+
+    upsertJob(nextJob);
+    upsertJobRecords(nextJob.id, nextRecords);
+    appendCaseActivity(
+      nextJob.id,
+      "stage_updated",
+      "Seedance 场景片段已生成",
+      `${clipResults[0]?.model ?? "Seedance 2.0"} 已根据每个分镜生成 ${clipResults.length} 个场景片段。成本 RM ${clipCostRM.toFixed(4)}。`
+    );
+
+    return { job: nextJob, records: nextRecords };
+  }
+
   async function runAutopilotPipelineFromInput(
     draftInput: NewJobInput,
     activeTargetIds: string[],
@@ -2366,7 +2452,10 @@ export function App() {
       }
 
       if (scriptResult.requiresReview) {
-        throw new Error(`大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`);
+        const message = `大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`;
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：大纲需审核", message);
+        return workingJob;
       }
 
       assertCaseBudgetAvailable(workingJob, "自动生成图片");
@@ -2413,7 +2502,10 @@ export function App() {
       appendCaseActivity(workingJob.id, "stage_updated", "图片已生成", `${imageResult.provider} ${imageResult.model} 已生成 ${imageResult.images.length} 张场景图片。成本 RM ${imageResult.costRM.toFixed(4)}。`);
 
       if (imageResult.requiresReview) {
-        throw new Error("图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。");
+        const message = "图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。";
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：图片需审核", message);
+        return workingJob;
       }
 
       assertCaseBudgetAvailable(workingJob, "自动生成配音");
@@ -2455,6 +2547,10 @@ export function App() {
       upsertJobRecords(workingJob.id, workingRecords);
       appendCaseActivity(workingJob.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已生成同步旁白音频。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
 
+      const clipStep = await runAutopilotSeedanceClipStep(workingJob, workingRecords, attachedAssets, options.sourceLabel);
+      workingJob = clipStep.job;
+      workingRecords = clipStep.records;
+
       assertCaseBudgetAvailable(workingJob, "自动合成 MP4");
       setAutoGenerateStep(`${options.sourceLabel}: 合成 MP4`);
       workingJob = {
@@ -2467,7 +2563,7 @@ export function App() {
         record.stageId === "compose"
           ? {
               ...record,
-              output: "自动生产正在用图片、字幕和同步配音合成 MP4...",
+              output: "自动生产正在用 Seedance 场景片段、字幕和同步配音合成 MP4...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2501,18 +2597,28 @@ export function App() {
       return workingJob;
     } catch (error) {
       const message = error instanceof Error ? error.message : "自动生产失败。";
+      const videoClipFailure = error instanceof VideoClipGenerationError;
+      const partialClipResults = videoClipFailure ? error.partialResults : [];
+      const partialClipCostRM = partialClipResults.reduce((sum, result) => sum + result.costRM, 0);
       setGenerationError(message);
 
       if (workingJob) {
+        const pausedForReview = isRecoverableAutopilotPause(message);
         const failedJob = {
           ...workingJob,
-          status: "FAILED" as const,
+          actualCostRM: partialClipResults.length > 0 ? Number((workingJob.actualCostRM + partialClipCostRM).toFixed(4)) : workingJob.actualCostRM,
+          reviewStatus: pausedForReview ? "needs_review" as const : workingJob.reviewStatus,
+          status: pausedForReview ? workingJob.status : "FAILED" as const,
           updatedAt: new Date().toISOString()
         };
+        const failedRecords = partialClipResults.length > 0
+          ? applyVideoClipGenerationResultsToRecords(workingRecords, failedJob.id, partialClipResults, failedJob.updatedAt, "failed", message)
+          : workingRecords;
+
         upsertJob(failedJob);
         upsertJobRecords(
           failedJob.id,
-          workingRecords.map((record) =>
+          failedRecords.map((record) =>
             record.status === "working"
               ? {
                   ...record,
@@ -2524,7 +2630,16 @@ export function App() {
               : record
           )
         );
-        appendCaseActivity(failedJob.id, "error", "自动生产失败", message);
+        appendCaseActivity(
+          failedJob.id,
+          "error",
+          pausedForReview ? "自动生产暂停，等待人工审核" : "自动生产失败",
+          partialClipResults.length > 0 ? `${message} 已保留 ${partialClipResults.length} 个成功 Seedance 片段。` : message
+        );
+      }
+
+      if (workingJob && isRecoverableAutopilotPause(message)) {
+        return workingJob;
       }
 
       throw error;
@@ -2645,7 +2760,10 @@ export function App() {
       switchView("cases");
 
       if (scriptResult.requiresReview) {
-        throw new Error(`大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`);
+        const message = `大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`;
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：大纲需审核", message);
+        return;
       }
 
       assertCaseBudgetAvailable(workingJob, "自动生成图片");
@@ -2692,7 +2810,10 @@ export function App() {
       appendCaseActivity(workingJob.id, "stage_updated", "图片已生成", `${imageResult.provider} ${imageResult.model} 已生成 ${imageResult.images.length} 张场景图片。成本 RM ${imageResult.costRM.toFixed(4)}。`);
 
       if (imageResult.requiresReview) {
-        throw new Error("图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。");
+        const message = "图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。";
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：图片需审核", message);
+        return;
       }
 
       assertCaseBudgetAvailable(workingJob, "自动生成配音");
@@ -2734,6 +2855,10 @@ export function App() {
       upsertJobRecords(workingJob.id, workingRecords);
       appendCaseActivity(workingJob.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已生成同步旁白音频。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
 
+      const clipStep = await runAutopilotSeedanceClipStep(workingJob, workingRecords, attachedAssets, "自动生产");
+      workingJob = clipStep.job;
+      workingRecords = clipStep.records;
+
       assertCaseBudgetAvailable(workingJob, "自动合成 MP4");
       setAutoGenerateStep("合成 MP4");
       workingJob = {
@@ -2746,7 +2871,7 @@ export function App() {
         record.stageId === "compose"
           ? {
               ...record,
-              output: "自动生产正在用图片、字幕和同步配音合成 MP4...",
+              output: "自动生产正在用 Seedance 场景片段、字幕和同步配音合成 MP4...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2778,18 +2903,28 @@ export function App() {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "自动生产失败。";
+      const videoClipFailure = error instanceof VideoClipGenerationError;
+      const partialClipResults = videoClipFailure ? error.partialResults : [];
+      const partialClipCostRM = partialClipResults.reduce((sum, result) => sum + result.costRM, 0);
       setGenerationError(message);
 
       if (workingJob) {
+        const pausedForReview = isRecoverableAutopilotPause(message);
         const failedJob = {
           ...workingJob,
-          status: "FAILED" as const,
+          actualCostRM: partialClipResults.length > 0 ? Number((workingJob.actualCostRM + partialClipCostRM).toFixed(4)) : workingJob.actualCostRM,
+          reviewStatus: pausedForReview ? "needs_review" as const : workingJob.reviewStatus,
+          status: pausedForReview ? workingJob.status : "FAILED" as const,
           updatedAt: new Date().toISOString()
         };
+        const failedRecords = partialClipResults.length > 0
+          ? applyVideoClipGenerationResultsToRecords(workingRecords, failedJob.id, partialClipResults, failedJob.updatedAt, "failed", message)
+          : workingRecords;
+
         upsertJob(failedJob);
         upsertJobRecords(
           failedJob.id,
-          workingRecords.map((record) =>
+          failedRecords.map((record) =>
             record.status === "working"
               ? {
                   ...record,
@@ -2801,7 +2936,12 @@ export function App() {
               : record
           )
         );
-        appendCaseActivity(failedJob.id, "error", "自动生产失败", message);
+        appendCaseActivity(
+          failedJob.id,
+          "error",
+          pausedForReview ? "自动生产暂停，等待人工审核" : "自动生产失败",
+          partialClipResults.length > 0 ? `${message} 已保留 ${partialClipResults.length} 个成功 Seedance 片段。` : message
+        );
       }
     } finally {
       setAutoGenerateStep(null);
@@ -3198,11 +3338,35 @@ export function App() {
     }, productionAssets);
   }
 
+  function getEffectiveProductionAssetsForJobWithExtra(job: AdminJob, extraAssets: ProductionAsset[] = []): ProductionAsset[] {
+    const mergedAssets = [...extraAssets, ...productionAssets];
+    const seen = new Set<string>();
+
+    return getEffectiveProductionAssetsForJob(job)
+      .concat(extraAssets)
+      .filter((asset) => {
+        const mediaUrl = getProductionAssetMediaUrl(asset);
+        const key = mediaUrl || asset._id;
+
+        if (seen.has(key)) {
+          return false;
+        }
+
+        seen.add(key);
+        return mergedAssets.some((candidate) => candidate._id === asset._id);
+      });
+  }
+
   function getReferenceGenerationBlocker(job: AdminJob, references: GenerationReferenceAsset[]): string | null {
     const selectedCharacterIds = [job.characterAssetId, ...(job.characterAssetIds ?? [])].filter((id): id is string => Boolean(id));
     const selectedSceneIds = [job.backgroundAssetId, ...(job.sceneAssetIds ?? [])].filter((id): id is string => Boolean(id));
+    const selectedReferenceIds = (job.referenceAssetIds ?? []).filter(Boolean);
     const hasCharacterReference = references.some((reference) => reference.type === "character_design");
     const hasSceneReference = references.some((reference) => reference.type === "scene_design" || reference.type === "style_reference" || reference.type === "first_frame" || reference.type === "last_frame");
+
+    if (selectedReferenceIds.length > 0 && references.length === 0) {
+      return "这个 Case 已继承系列/题库参考资产，但目前没有任何可用参考图。请到「设计资产」确认这些资产已保存入库、状态为已保存/已批准，并且图片 URL 可打开。系统不会在缺少系列参考时继续乱画。";
+    }
 
     if (selectedCharacterIds.length > 0 && !hasCharacterReference) {
       return "这个 Case 有选定角色资产，但没有可用的角色参考图。请到「设计资产」确认角色设计已保存入库、状态为已保存/已批准，并且图片 URL 可打开后再生成图片。系统不会在缺少角色参考图时擅自换角色。";
@@ -3643,7 +3807,11 @@ export function App() {
       );
 
       try {
-        const result = await requestSceneImageGeneration(job, target.sceneId, target.prompt, character, references, toolOverride);
+        const sceneReferences = selectSceneGenerationReferences(references, {
+          imagePrompt: target.prompt,
+          sceneId: target.sceneId
+        });
+        const result = await requestSceneImageGeneration(job, target.sceneId, target.prompt, character, sceneReferences, toolOverride);
         const now = new Date().toISOString();
         latestProvider = result.provider;
         latestModel = result.model;
@@ -3663,10 +3831,28 @@ export function App() {
         const rawMessage = error instanceof Error ? error.message : `Scene ${target.sceneId} image generation failed.`;
         const message = buildReadableImageGenerationError(rawMessage, generatedImages.length, targets.length);
         const now = new Date().toISOString();
+        const failedReview: SceneReviewItem = {
+          artifactPath: "",
+          id: `${job.id}_scene_${target.sceneId}`,
+          jobId: job.id,
+          notes: message,
+          prompt: target.prompt,
+          qcIssues: [message],
+          qcStatus: "fail",
+          qcSummary: message,
+          referenceImagePath: "",
+          sceneId: target.sceneId,
+          status: "needs_review",
+          updatedAt: now
+        };
 
         setJobProcessRecords((currentRecords) =>
           applySceneImageProgressToRecords(currentRecords, job.id, generatedImages, targets.length, latestProvider, latestModel, now, { errorMessage: message })
         );
+        setSceneReviews((currentReviews) => [
+          failedReview,
+          ...currentReviews.filter((review) => review.jobId !== job.id || review.sceneId !== target.sceneId)
+        ]);
         appendCaseActivity(job.id, "error", `场景 ${target.sceneId} 图片失败`, message);
         throw new Error(message);
       } finally {
@@ -3781,7 +3967,8 @@ export function App() {
           currentJob.id === job.id
             ? {
                 ...currentJob,
-                status: "FAILED",
+                reviewStatus: "needs_review",
+                status: currentJob.status === "IMAGE_GENERATING" ? "IMAGE_DONE" : currentJob.status,
                 updatedAt: new Date().toISOString()
               }
             : currentJob
@@ -3836,10 +4023,14 @@ export function App() {
         throw new Error(referenceBlocker);
       }
 
-      const result = await requestSceneImageGeneration(job, scene.sceneId, scene.prompt, character, references, getToolOverride("image"));
+      const sceneReferences = selectSceneGenerationReferences(references, {
+        imagePrompt: scene.prompt,
+        sceneId: scene.sceneId
+      });
+      const result = await requestSceneImageGeneration(job, scene.sceneId, scene.prompt, character, sceneReferences, getToolOverride("image"));
       const now = new Date().toISOString();
       const artifactPath = result.image.asset.publicUrl ?? result.image.asset.storagePath;
-      const hasOtherBlockedScenes = sceneReviews.some((review) => review.jobId === job.id && review.id !== scene.id && (review.status === "needs_review" || review.status === "rejected"));
+      const hasOtherBlockedScenes = sceneReviews.some((review) => review.jobId === job.id && review.id !== scene.id && isSceneReviewBlockingForProduction(review));
 
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -4145,8 +4336,8 @@ export function App() {
     }
   }
 
-  async function generateSeedanceSceneClipsForJob(job: AdminJob, recordsSnapshot: JobProcessRecord[]): Promise<GenerateVideoClipResponse[]> {
-    const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, getEffectiveProductionAssetsForJob(job), job);
+  async function generateSeedanceSceneClipsForJob(job: AdminJob, recordsSnapshot: JobProcessRecord[], effectiveAssets = getEffectiveProductionAssetsForJob(job)): Promise<GenerateVideoClipResponse[]> {
+    const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, effectiveAssets, job);
 
     if (clipInputs.length === 0) {
       throw new Error("找不到可用于 Seedance 的分镜场景。请先重新生成或确认脚本/分镜。");
@@ -4168,16 +4359,25 @@ export function App() {
         )
       );
 
-      const result = await requestVideoClipGeneration(job, {
-        durationSeconds: clipInput.durationSeconds,
-        imageUrl: clipInput.imageUrl,
-        lastFrameImageUrl: clipInput.lastFrameImageUrl,
-        prompt: clipInput.prompt,
-        referenceImageUrls: clipInput.referenceImageUrls,
-        sceneId: clipInput.sceneId
-      }, getToolOverride("video"));
+      try {
+        const result = await requestVideoClipGeneration(job, {
+          durationSeconds: clipInput.durationSeconds,
+          imageUrl: clipInput.imageUrl,
+          lastFrameImageUrl: clipInput.lastFrameImageUrl,
+          prompt: clipInput.prompt,
+          referenceImageUrls: clipInput.referenceImageUrls,
+          sceneId: clipInput.sceneId
+        }, getToolOverride("video"));
 
-      results.push(result);
+        results.push(result);
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : "Seedance 场景片段生成失败。";
+        const progress = results.length > 0
+          ? `已保留 ${results.length}/${clipInputs.length} 个成功片段，请到「视频片段」页签单独重试失败场景。`
+          : "还没有成功片段，请检查该场景首帧、参考图和 Seedance 工具设置后重试。";
+
+        throw new VideoClipGenerationError(`场景 ${clipInput.sceneId} Seedance 片段失败：${rawMessage} ${progress}`, results);
+      }
     }
 
     return results;
@@ -4277,20 +4477,26 @@ export function App() {
       setSelectedJobId(job.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Seedance 视频片段生成失败。";
+      const partialResults = error instanceof VideoClipGenerationError ? error.partialResults : successfulResults;
+      const now = new Date().toISOString();
+      const partialCostRM = partialResults.reduce((sum, result) => sum + result.costRM, 0);
+
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
           currentJob.id === job.id
             ? {
                 ...currentJob,
-                updatedAt: new Date().toISOString()
+                actualCostRM: partialResults.length > 0 ? Number((currentJob.actualCostRM + partialCostRM).toFixed(4)) : currentJob.actualCostRM,
+                reviewStatus: "needs_review",
+                updatedAt: now
               }
             : currentJob
         )
       );
       setJobProcessRecords((currentRecords) =>
-        successfulResults.length > 0
-          ? applyVideoClipGenerationResultsToRecords(currentRecords, job.id, successfulResults, new Date().toISOString(), "failed", message)
+        partialResults.length > 0
+          ? applyVideoClipGenerationResultsToRecords(currentRecords, job.id, partialResults, now, "failed", message)
           : currentRecords.map((record) =>
               record.jobId === job.id && record.stageId === "video"
                 ? {
@@ -4298,12 +4504,17 @@ export function App() {
                     notes: message,
                     output: message,
                     status: "failed",
-                    updatedAt: new Date().toISOString()
+                    updatedAt: now
                   }
                 : record
             )
       );
-      appendCaseActivity(job.id, "error", "Seedance 视频片段失败", message);
+      appendCaseActivity(
+        job.id,
+        "error",
+        "Seedance 视频片段失败",
+        partialResults.length > 0 ? `${message} 已写回 ${partialResults.length} 个成功片段。` : message
+      );
     } finally {
       setGeneratingVideoClipCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -4477,32 +4688,61 @@ export function App() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "影片生成失败。";
+      const videoClipFailure = error instanceof VideoClipGenerationError;
+      const partialResults = videoClipFailure ? error.partialResults : [];
+      const partialCostRM = partialResults.reduce((sum, result) => sum + result.costRM, 0);
+      const now = new Date().toISOString();
+
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
           currentJob.id === job.id
             ? {
                 ...currentJob,
-                status: "FAILED",
-                updatedAt: new Date().toISOString()
+                actualCostRM: partialResults.length > 0 ? Number((currentJob.actualCostRM + partialCostRM).toFixed(4)) : currentJob.actualCostRM,
+                reviewStatus: videoClipFailure ? "needs_review" : currentJob.reviewStatus,
+                status: videoClipFailure ? currentJob.status : "FAILED",
+                updatedAt: now
               }
             : currentJob
         )
       );
       setJobProcessRecords((currentRecords) =>
-        currentRecords.map((record) =>
-          record.jobId === job.id && record.stageId === "compose"
-            ? {
+        (partialResults.length > 0 ? applyVideoClipGenerationResultsToRecords(currentRecords, job.id, partialResults, now, "failed", message) : currentRecords)
+          .map((record) => {
+            if (record.jobId !== job.id) {
+              return record;
+            }
+
+            if (videoClipFailure && record.stageId === "compose") {
+              return {
+                ...record,
+                notes: "等待失败的 Seedance 场景片段补齐后再合成 MP4。",
+                output: "Seedance 片段未齐，最终 MP4 已暂停。请先到「视频片段」页签重试失败场景。",
+                status: "pending",
+                updatedAt: now
+              };
+            }
+
+            if (!videoClipFailure && record.stageId === "compose") {
+              return {
                 ...record,
                 notes: message,
                 output: message,
                 status: "failed",
-                updatedAt: new Date().toISOString()
-              }
-            : record
-        )
+                updatedAt: now
+              };
+            }
+
+            return record;
+          })
       );
-      appendCaseActivity(job.id, "error", "影片生成失败", message);
+      appendCaseActivity(
+        job.id,
+        "error",
+        videoClipFailure ? "Seedance 片段未齐，MP4 暂停" : "影片生成失败",
+        partialResults.length > 0 ? `${message} 已保留 ${partialResults.length} 个成功片段。` : message
+      );
     } finally {
       setGeneratingCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }

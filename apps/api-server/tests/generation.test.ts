@@ -957,10 +957,10 @@ describe("POST /generation/images", () => {
 
     expect(fetchSpy).toHaveBeenCalled();
     expect(response.body.image.asset.publicUrl).toBe("http://localhost:4000/uploads/jobs/job_reference_composite/images/scene_01.png");
-    expect(response.body.image.qualityCheck.status).toBe("warning");
+    expect(response.body.image.qualityCheck.status).toBe("fail");
     expect(response.body.image.qualityCheck.model).toBe("local-reference-composite");
     expect(response.body.image.usage.pricingMode).toBe("reference_composite_fallback");
-    expect(response.body.requiresReview).toBe(false);
+    expect(response.body.requiresReview).toBe(true);
   });
 
   it("regenerates one scene image with an override prompt", async () => {

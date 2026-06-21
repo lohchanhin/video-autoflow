@@ -363,7 +363,7 @@ function buildScenePrompt(
     `Approved scene image brief: ${basePrompt}`,
     `Fixed protagonist identity: ${character}`,
     `Fixed environment: ${formatVisualBibleEnvironment(visualBible)}`,
-    input.references?.length ? `Selected production reference assets: ${formatGenerationReferences(input.references)}` : "",
+    input.references?.length ? `Reference routing: use only these ${input.references.length} selected production reference asset(s) for this scene. Ignore unrelated cast or locations. ${formatGenerationReferences(input.references)}` : "",
     `Camera and motion intent: ${scene.camera}.`,
     `Visual style: ${visualBible.style || getTemplateVisualStyle(input.templateType)}.`,
     characterReferenceLock
@@ -825,12 +825,12 @@ function buildReferenceCompositeQualityCheck(
     checkedAt: new Date().toISOString(),
     issues: [
       "OpenAI image generation timed out; scene image was composed from approved reference assets.",
-      "Manual review is recommended before final publishing."
+      "This local reference composite is not production-ready and must not be sent to Seedance or final MP4 composition."
     ],
     model: "local-reference-composite",
     retryCount,
-    status: "warning",
-    summary: summary ?? `Scene ${scenePrompt.sceneId} uses approved character/scene references as a recoverable production composite.`
+    status: "fail",
+    summary: summary ?? `Scene ${scenePrompt.sceneId} uses a local reference composite fallback. Regenerate this scene image before video generation.`
   };
 }
 

@@ -592,7 +592,7 @@ function EpisodeRow(props: {
         </button>
         <button aria-label="删除题库" className="danger-button episode-delete-button" type="button" onClick={deleteEpisode}>
           <Trash2 size={15} />
-          拒绝
+          删除
         </button>
         {props.linkedJob ? (
           <button className="primary-button" type="button" onClick={() => props.openCase(props.linkedJob!.id)}>
