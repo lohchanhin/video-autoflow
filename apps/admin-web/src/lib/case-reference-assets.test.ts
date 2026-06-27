@@ -25,7 +25,8 @@ describe("case reference asset routing", () => {
     expect(isCharacterDesignAsset(createAsset({ type: "character_design" }))).toBe(true);
     expect(isBackgroundDesignAsset(createAsset({ type: "scene_design" }))).toBe(true);
     expect(isBackgroundDesignAsset(createAsset({ type: "style_reference" }))).toBe(true);
-    expect(isBackgroundDesignAsset(createAsset({ type: "first_frame" }))).toBe(true);
+    expect(isBackgroundDesignAsset(createAsset({ type: "first_frame" }))).toBe(false);
+    expect(isBackgroundDesignAsset(createAsset({ type: "last_frame" }))).toBe(false);
     expect(isBackgroundDesignAsset(createAsset({ type: "character_design" }))).toBe(false);
   });
 

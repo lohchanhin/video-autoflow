@@ -535,7 +535,7 @@ function EpisodeRow(props: {
   const episodeEditor = useEditableDraft(props.episode, `${props.episode._id}:${props.episode.updatedAt}`);
   const episodeDraft = episodeEditor.draft ?? props.episode;
   const characterAssets = props.assets.filter((asset) => asset.type === "character_design");
-  const sceneAssets = props.assets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame");
+  const sceneAssets = props.assets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference");
   const canRebuildConvertedCase = props.episode.status === "converted_to_case" && !props.linkedJob;
   const canConvert = props.episode.status === "approved" || canRebuildConvertedCase;
   const reportDirtyState = props.reportDirtyState;
@@ -834,7 +834,7 @@ function AssetBindingPicker(props: {
 
 function formatAssetBindingBreakdown(assets: ProductionAsset[]): string {
   const characters = assets.filter((asset) => asset.type === "character_design").length;
-  const scenes = assets.filter((asset) => asset.type === "scene_design" || asset.type === "first_frame" || asset.type === "last_frame").length;
+  const scenes = assets.filter((asset) => asset.type === "scene_design").length;
   const style = assets.filter((asset) => asset.type === "style_reference").length;
   const bgm = assets.filter((asset) => asset.type === "bgm_reference").length;
   const parts = [
@@ -915,7 +915,5 @@ const assetPickerTypeOrder: ProductionAsset["type"][] = [
   "character_design",
   "scene_design",
   "style_reference",
-  "first_frame",
-  "last_frame",
   "bgm_reference"
 ];

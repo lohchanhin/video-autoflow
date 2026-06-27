@@ -55,6 +55,22 @@ describe("scene reference routing", () => {
     expect(selected.map((asset) => asset.label)).toEqual(["兔子米米", "森林小学"]);
   });
 
+  it("does not route first or last frame rows as reusable scene references", () => {
+    const assets = [
+      createAsset({ _id: "asset_banana", label: "香蕉总裁", type: "character_design" }),
+      createAsset({ _id: "asset_office", label: "总裁办公室", type: "scene_design" }),
+      createAsset({ _id: "asset_first", label: "总裁办公室首帧", role: "first_frame", sceneId: 1, type: "first_frame" }),
+      createAsset({ _id: "asset_last", label: "总裁办公室尾帧", role: "last_frame", sceneId: 1, type: "last_frame" })
+    ];
+
+    const selected = selectSceneProductionAssetsForGeneration(assets, {
+      imagePrompt: "香蕉总裁在总裁办公室低声质问。",
+      sceneId: 1
+    });
+
+    expect(selected.map((asset) => asset.type)).toEqual(["character_design", "scene_design"]);
+  });
+
   it("blocks local reference composite fallback from downstream production", () => {
     expect(isReferenceCompositeFallbackText("OpenAI image generation timed out; scene image was composed from approved reference assets.")).toBe(true);
     expect(isSceneReviewBlockingForProduction({

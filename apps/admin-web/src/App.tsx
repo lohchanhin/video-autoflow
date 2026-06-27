@@ -526,20 +526,17 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
     });
     const reviewIsBlocking = review ? isSceneReviewBlockingForProduction(review) : false;
     const sceneImage = imageArtifacts.find((artifact) => getSceneNumberFromArtifact(artifact) === sceneId) ?? imageArtifacts[sceneId - 1];
-    const firstFrameAsset = sceneAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === sceneId) ?? sceneAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === null);
-    const lastFrameAsset = sceneAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === sceneId) ?? sceneAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === null);
-    const firstFrameUrl = firstFrameAsset ? getProductionAssetMediaUrl(firstFrameAsset) : "";
-    const lastFrameUrl = lastFrameAsset ? getProductionAssetMediaUrl(lastFrameAsset) : "";
     const reviewImageUrl = reviewIsBlocking ? "" : resolveMediaUrl(review?.artifactPath);
     const recordSceneImageUrl = reviewIsBlocking ? "" : resolveMediaUrl(sceneImage);
-    const imageUrl = firstFrameUrl || reviewImageUrl || recordSceneImageUrl || undefined;
+    const imageUrl = reviewImageUrl || recordSceneImageUrl || undefined;
     const referenceAssetsForScene = sceneAssets
       .filter((asset) => asset.role === "reference_image")
+      .filter((asset) => asset.type !== "first_frame" && asset.type !== "last_frame")
       .filter((asset, index, assets) => assets.findIndex((candidate) => getProductionAssetMediaUrl(candidate) === getProductionAssetMediaUrl(asset)) === index)
       .slice(0, 8);
     const referenceImageUrls = referenceAssetsForScene
       .map(getProductionAssetMediaUrl)
-      .filter((url, index, urls) => Boolean(url) && url !== imageUrl && url !== lastFrameUrl && urls.indexOf(url) === index);
+      .filter((url, index, urls) => Boolean(url) && url !== imageUrl && urls.indexOf(url) === index);
     const durationSeconds = getSeedanceDurationSeconds(timing?.durationSeconds, job.durationSeconds, sceneIds.length);
     const referenceContext = sceneAssets
       .map(buildReferenceAssetPromptContext)
@@ -549,7 +546,7 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
     return {
       durationSeconds,
       imageUrl,
-      lastFrameImageUrl: lastFrameUrl || undefined,
+      lastFrameImageUrl: undefined,
       prompt: buildSeedanceScenePrompt({
         durationSeconds,
         imagePrompt,
@@ -2141,13 +2138,7 @@ export function App() {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
     const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
-    const selectedStoryWorld = storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === storyWorldId) ?? null : null;
-    const referenceAssetIds = mergeIds(
-      selectedAssets.assets.map((asset) => asset._id),
-      selectedSeries?.referenceAssetIds ?? [],
-      selectedStoryWorld?.recurringCharacterAssetIds ?? [],
-      selectedStoryWorld?.defaultSceneAssetIds ?? []
-    );
+    const referenceAssetIds = mergeIds(selectedAssets.assets.map((asset) => asset._id));
 
     if (!normalizedTopic) {
       return;
@@ -2199,13 +2190,7 @@ export function App() {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
     const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
-    const selectedStoryWorld = storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === storyWorldId) ?? null : null;
-    const referenceAssetIds = mergeIds(
-      selectedAssets.assets.map((asset) => asset._id),
-      selectedSeries?.referenceAssetIds ?? [],
-      selectedStoryWorld?.recurringCharacterAssetIds ?? [],
-      selectedStoryWorld?.defaultSceneAssetIds ?? []
-    );
+    const referenceAssetIds = mergeIds(selectedAssets.assets.map((asset) => asset._id));
 
     if (!normalizedTopic || isGeneratingDraftPreview) {
       return;
@@ -2660,13 +2645,7 @@ export function App() {
     const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
     const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
     const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
-    const selectedStoryWorld = storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === storyWorldId) ?? null : null;
-    const referenceAssetIds = mergeIds(
-      selectedAssets.assets.map((asset) => asset._id),
-      selectedSeries?.referenceAssetIds ?? [],
-      selectedStoryWorld?.recurringCharacterAssetIds ?? [],
-      selectedStoryWorld?.defaultSceneAssetIds ?? []
-    );
+    const referenceAssetIds = mergeIds(selectedAssets.assets.map((asset) => asset._id));
 
     if (!normalizedTopic) {
       setGenerationError("请输入主题或想法，再开始自动写大纲并生成 MP4。");
@@ -3295,18 +3274,11 @@ export function App() {
   }
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
-    const effectiveSeriesId = job.seriesId ?? job.productionBrief?.seriesContext?.seriesId ?? null;
-    const effectiveSeries = effectiveSeriesId ? contentSeries.find((series) => series._id === effectiveSeriesId) ?? null : null;
-    const effectiveStoryWorldId = job.storyWorldId ?? job.productionBrief?.storyWorldContext?.storyWorldId ?? effectiveSeries?.storyWorldId ?? null;
-    const effectiveStoryWorld = effectiveStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === effectiveStoryWorldId) ?? null : null;
     const selectedAssetIds = new Set([
       job.characterAssetId,
       job.backgroundAssetId,
       ...(job.characterAssetIds ?? []),
       ...(job.referenceAssetIds ?? []),
-      ...(effectiveSeries?.referenceAssetIds ?? []),
-      ...(effectiveStoryWorld?.recurringCharacterAssetIds ?? []),
-      ...(effectiveStoryWorld?.defaultSceneAssetIds ?? []),
       ...(job.sceneAssetIds ?? []),
       ...getProductionBriefReferenceIds(job.productionBrief)
     ].filter((id): id is string => Boolean(id)));
@@ -3321,18 +3293,10 @@ export function App() {
   }
 
   function getEffectiveProductionAssetsForJob(job: AdminJob): ProductionAsset[] {
-    const effectiveSeriesId = job.seriesId ?? job.productionBrief?.seriesContext?.seriesId ?? null;
-    const effectiveSeries = effectiveSeriesId ? contentSeries.find((series) => series._id === effectiveSeriesId) ?? null : null;
-    const effectiveStoryWorldId = job.storyWorldId ?? job.productionBrief?.storyWorldContext?.storyWorldId ?? effectiveSeries?.storyWorldId ?? null;
-    const effectiveStoryWorld = effectiveStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === effectiveStoryWorldId) ?? null : null;
-
     return getProductionAssetsForCase({
       ...job,
       referenceAssetIds: mergeIds(
         job.referenceAssetIds ?? [],
-        effectiveSeries?.referenceAssetIds ?? [],
-        effectiveStoryWorld?.recurringCharacterAssetIds ?? [],
-        effectiveStoryWorld?.defaultSceneAssetIds ?? [],
         getProductionBriefReferenceIds(job.productionBrief)
       )
     }, productionAssets);
@@ -3362,7 +3326,7 @@ export function App() {
     const selectedSceneIds = [job.backgroundAssetId, ...(job.sceneAssetIds ?? [])].filter((id): id is string => Boolean(id));
     const selectedReferenceIds = (job.referenceAssetIds ?? []).filter(Boolean);
     const hasCharacterReference = references.some((reference) => reference.type === "character_design");
-    const hasSceneReference = references.some((reference) => reference.type === "scene_design" || reference.type === "style_reference" || reference.type === "first_frame" || reference.type === "last_frame");
+    const hasSceneReference = references.some((reference) => reference.type === "scene_design" || reference.type === "style_reference");
 
     if (selectedReferenceIds.length > 0 && references.length === 0) {
       return "这个 Case 已继承系列/题库参考资产，但目前没有任何可用参考图。请到「设计资产」确认这些资产已保存入库、状态为已保存/已批准，并且图片 URL 可打开。系统不会在缺少系列参考时继续乱画。";
@@ -3403,8 +3367,8 @@ export function App() {
           ].filter(Boolean).join("\n"),
           prompt: asset.prompt,
           provider: asset.provider,
-          role: asset.type === "first_frame" ? "first_frame" : "reference_image",
-          scope: asset.type === "first_frame" ? "scene" : "case",
+          role: "reference_image",
+          scope: "case",
           status: asset.status,
           storagePath: asset.storagePath,
           tags: [...asset.tags, "case_reference"],

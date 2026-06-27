@@ -98,11 +98,11 @@ describe("productionAssetsRepository", () => {
       topic: "rainy convenience store"
     });
 
-    expect(first.created).toBe(5);
+    expect(first.created).toBe(3);
     expect(second.created).toBe(0);
-    expect(second.assets).toHaveLength(5);
+    expect(second.assets).toHaveLength(3);
     expect(fakeCollection.createIndex).toHaveBeenCalled();
-    expect(fakeCollection.documents()).toHaveLength(5);
+    expect(fakeCollection.documents()).toHaveLength(3);
   });
 
   it("creates, lists, patches, and deletes production assets", async () => {

@@ -249,7 +249,7 @@ function CreateCaseTab(props: CasesPageProps & { createCase: () => void }) {
     .filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset) && asset.type === "character_design")
     .sort((left, right) => left.label.localeCompare(right.label));
   const backgroundAssets = props.draftReferenceAssets
-    .filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset) && (asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame"))
+    .filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset) && (asset.type === "scene_design" || asset.type === "style_reference"))
     .sort((left, right) => left.label.localeCompare(right.label));
   const hiddenDraftAssetCount = props.draftReferenceAssets.filter(shouldHideFromNewCaseReferencePicker).length;
   const effectiveEpisodes = props.draftSeriesId
@@ -1752,10 +1752,11 @@ function getCaseCostEstimateTone(estimate: CaseNextCostEstimate): "neutral" | "a
 
 function AssetPlanSummaryPanel(props: { assets: ProductionAsset[]; job: AdminJob; openAssetPlan: (jobId: string) => void }) {
   const referenceAssets = props.assets
-    .filter((asset) => assetMediaUrl(asset) && (asset.role === "reference_image" || asset.role === "first_frame" || asset.role === "last_frame" || asset.type === "character_design" || asset.type === "scene_design" || asset.type === "style_reference"))
+    .filter((asset) => assetMediaUrl(asset) && (asset.role === "reference_image" || asset.type === "character_design" || asset.type === "scene_design" || asset.type === "style_reference"))
+    .filter((asset) => asset.type !== "first_frame" && asset.type !== "last_frame")
     .sort((left, right) => left.type.localeCompare(right.type) || left.label.localeCompare(right.label));
   const characterCount = referenceAssets.filter((asset) => asset.type === "character_design").length;
-  const sceneCount = referenceAssets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame" || asset.type === "last_frame").length;
+  const sceneCount = referenceAssets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference").length;
   const readyCount = props.assets.filter((asset) => asset.status === "ready" || asset.status === "approved").length;
   const approvedCount = props.assets.filter((asset) => asset.status === "approved").length;
 

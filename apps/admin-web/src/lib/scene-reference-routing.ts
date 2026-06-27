@@ -9,8 +9,8 @@ export interface SceneReferenceRoutingInput {
   voiceText?: string | undefined;
 }
 
-const maxCharacterReferences = 3;
-const maxSceneReferences = 3;
+const maxCharacterReferences = 2;
+const maxSceneReferences = 1;
 const maxStyleReferences = 1;
 const fallbackCompositePhrases = [
   "reference composite",
@@ -31,13 +31,15 @@ export function selectSceneProductionAssetsForGeneration(assets: ProductionAsset
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score || assetTypePriority(left.asset) - assetTypePriority(right.asset) || left.asset.label.localeCompare(right.asset.label));
 
-  const sceneSpecific = scoredAssets.filter((entry) => entry.asset.sceneId === input.sceneId).map((entry) => entry.asset);
+  const sceneSpecific = scoredAssets
+    .filter((entry) => entry.asset.sceneId === input.sceneId && entry.asset.type !== "first_frame" && entry.asset.type !== "last_frame")
+    .map((entry) => entry.asset);
   const characters = scoredAssets
     .filter((entry) => entry.asset.type === "character_design")
     .map((entry) => entry.asset)
     .slice(0, maxCharacterReferences);
   const scenes = scoredAssets
-    .filter((entry) => entry.asset.type === "scene_design" || entry.asset.type === "first_frame" || entry.asset.type === "last_frame")
+    .filter((entry) => entry.asset.type === "scene_design")
     .map((entry) => entry.asset)
     .slice(0, maxSceneReferences);
   const styles = scoredAssets
@@ -66,7 +68,7 @@ export function selectSceneGenerationReferences(references: GenerationReferenceA
     .map((entry) => entry.reference)
     .slice(0, maxCharacterReferences);
   const scenes = scoredReferences
-    .filter((entry) => entry.reference.type === "scene_design" || entry.reference.type === "first_frame" || entry.reference.type === "last_frame")
+    .filter((entry) => entry.reference.type === "scene_design")
     .map((entry) => entry.reference)
     .slice(0, maxSceneReferences);
   const styles = scoredReferences

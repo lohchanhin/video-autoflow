@@ -744,41 +744,7 @@ export function createProductionAssetsRepository(connection: MongoDatabaseConnec
 }
 
 function buildPlannedProductionAssets(input: BootstrapProductionAssetsInput): ProductionAssetCreateInput[] {
-  const sceneCount = Math.max(1, Math.min(20, Math.round(input.sceneCount)));
   const basePrompt = input.prompt?.trim() || `Asset plan for ${input.topic}`;
-  const sceneAssets = Array.from({ length: sceneCount }, (_, index): ProductionAssetCreateInput => {
-    const sceneId = index + 1;
-
-    return {
-      jobId: input.jobId,
-      label: `Scene ${sceneId} first frame`,
-      folderName: `Case ${input.jobId}`,
-      prompt: `${basePrompt}\nCreate the approved first-frame still for scene ${sceneId}.`,
-      provider: "openai",
-      role: "first_frame",
-      sceneId,
-      scope: "scene",
-      status: "planned",
-      type: "first_frame"
-    };
-  });
-  const optionalLastFrames = input.includeLastFrames
-    ? Array.from({ length: sceneCount }, (_, index): ProductionAssetCreateInput => {
-      const sceneId = index + 1;
-      return {
-        jobId: input.jobId,
-        label: `Scene ${sceneId} last frame`,
-        folderName: `Case ${input.jobId}`,
-        prompt: `${basePrompt}\nCreate the optional last-frame still for scene ${sceneId}.`,
-        provider: "openai",
-        role: "last_frame",
-        sceneId,
-        scope: "scene",
-        status: "planned",
-        type: "last_frame"
-      };
-    })
-    : [];
 
   return [
     {
@@ -816,9 +782,7 @@ function buildPlannedProductionAssets(input: BootstrapProductionAssetsInput): Pr
       scope: "case",
       status: "planned",
       type: "style_reference"
-    },
-    ...sceneAssets,
-    ...optionalLastFrames
+    }
   ];
 }
 

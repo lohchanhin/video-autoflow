@@ -12,7 +12,7 @@ export function isReusableDraftReferenceAsset(asset: ProductionAsset): boolean {
 }
 
 export function shouldHideFromNewCaseReferencePicker(asset: ProductionAsset): boolean {
-  if (asset.type !== "character_design" && asset.type !== "scene_design" && asset.type !== "style_reference" && asset.type !== "first_frame") {
+  if (asset.type !== "character_design" && asset.type !== "scene_design" && asset.type !== "style_reference") {
     return false;
   }
 

@@ -347,7 +347,7 @@ function buildScenePrompt(
     ? `${input.character.name}. ${input.character.visualIdentity}. ${input.character.referenceNotes ?? ""}`.trim()
     : formatVisualBibleCharacter(visualBible);
   const characterReferenceLock = formatReferencesByType(input.references, ["character_design"]);
-  const environmentReferenceLock = formatReferencesByType(input.references, ["scene_design", "style_reference", "first_frame", "last_frame"]);
+  const environmentReferenceLock = formatReferencesByType(input.references, ["scene_design", "style_reference"]);
 
   return [
     `Create one single vertical 9:16 cinematic still for scene ${scene.sceneId}.`,
@@ -464,7 +464,6 @@ function referencePriority(type: NonNullable<GenerateImagesRequest["references"]
   if (type === "character_design") return 0;
   if (type === "scene_design") return 1;
   if (type === "style_reference") return 2;
-  if (type === "first_frame") return 3;
   return 9;
 }
 
@@ -662,7 +661,7 @@ function isRecoverableImageTimeout(error: unknown): boolean {
 }
 
 function hasUsableCompositeReferences(input: NormalizedImageInput, reference: LoadedReferenceImage | null): boolean {
-  return Boolean(reference?.buffer || pickCompositeReference(input.references, ["scene_design", "style_reference", "first_frame", "last_frame"], 1));
+  return Boolean(reference?.buffer || pickCompositeReference(input.references, ["scene_design", "style_reference"], 1));
 }
 
 async function generateReferenceCompositeFallback(
@@ -672,7 +671,7 @@ async function generateReferenceCompositeFallback(
   reference: LoadedReferenceImage | null,
   error: unknown
 ): Promise<GeneratedOpenAIImage> {
-  const backgroundReference = pickCompositeReference(input.references, ["first_frame", "scene_design", "style_reference", "last_frame"], scenePrompt.sceneId);
+  const backgroundReference = pickCompositeReference(input.references, ["scene_design", "style_reference"], scenePrompt.sceneId);
   const backgroundBuffer = backgroundReference ? await fetchImageUrl(backgroundReference.url) : undefined;
   const characterBuffer = reference?.buffer;
 

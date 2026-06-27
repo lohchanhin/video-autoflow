@@ -14,7 +14,7 @@ export function isCharacterDesignAsset(asset: ProductionAsset): boolean {
 }
 
 export function isBackgroundDesignAsset(asset: ProductionAsset): boolean {
-  return asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame";
+  return asset.type === "scene_design" || asset.type === "style_reference";
 }
 
 export function findReadyReferenceAssetsByIds(assets: ProductionAsset[], assetIds: Array<string | string[] | null | undefined>): ProductionAsset[] {
