@@ -606,6 +606,21 @@ async function generateSceneAssetWithRetries(
     missingOpenAIKey();
   }
 
+  if (lastCheck?.status === "fail") {
+    const fallbackDetail = isReferenceCompositeFallback(lastGenerated)
+      ? "OpenAI image generation timed out and only a reference composite diagnostic image was available."
+      : "Generated image failed visual quality checks.";
+
+    throw new MissingGenerationDependencyError(
+      [
+        `Scene ${scenePrompt.sceneId} image did not pass the production quality gate.`,
+        fallbackDetail,
+        lastCheck.summary,
+        "No scene image was saved; regenerate this scene before Seedance or MP4 composition."
+      ].filter(Boolean).join(" ")
+    );
+  }
+
   const imageObject = await options.storage.writeFile(`jobs/${jobId}/images/scene_${String(scenePrompt.sceneId).padStart(2, "0")}.${lastGenerated.extension}`, lastGenerated.buffer);
 
   return {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -874,7 +875,7 @@ describe("POST /generation/images", () => {
     expect(response.body.error.message).toContain("stopped before the model could invent a different character");
   });
 
-  it("falls back to an approved reference composite PNG when OpenAI scene image generation times out", async () => {
+  it("blocks reference composite diagnostics from being saved as scene images when OpenAI times out", async () => {
     const originalFetch = globalThis.fetch;
     const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-reference-composite-test-"));
     const storage = createStorageAdapter({
@@ -953,14 +954,12 @@ describe("POST /generation/images", () => {
         templateType: "romance_story",
         topic: "命运揭幕：秘密的甜品店员"
       })
-      .expect(201);
+      .expect(409);
 
     expect(fetchSpy).toHaveBeenCalled();
-    expect(response.body.image.asset.publicUrl).toBe("http://localhost:4000/uploads/jobs/job_reference_composite/images/scene_01.png");
-    expect(response.body.image.qualityCheck.status).toBe("fail");
-    expect(response.body.image.qualityCheck.model).toBe("local-reference-composite");
-    expect(response.body.image.usage.pricingMode).toBe("reference_composite_fallback");
-    expect(response.body.requiresReview).toBe(true);
+    expect(response.body.error.message).toContain("Scene 1 image did not pass the production quality gate");
+    expect(response.body.error.message).toContain("No scene image was saved");
+    expect(existsSync(path.join(uploadsDir, "jobs/job_reference_composite/images/scene_01.png"))).toBe(false);
   });
 
   it("regenerates one scene image with an override prompt", async () => {
