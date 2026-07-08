@@ -6,6 +6,7 @@ import {
   loadProviderKeys,
   loadProductionSchedules,
   loadToolProviderSettings,
+  type ProviderKeyRecord,
   type PublishingTarget
 } from "./admin-data.js";
 import type { AdminJob } from "./jobs.js";
@@ -83,6 +84,23 @@ describe("schedule run guards", () => {
     expect(guard.blockers.some((blocker) => blocker.includes("OPENAI_API_KEY"))).toBe(true);
   });
 
+  it("allows autopilot to MP4/QC when required tools and keys are ready", () => {
+    const schedule = { ...loadProductionSchedules()[0]!, enabled: true, executionMode: "autopilot_to_mp4" as const, targetIds: [] };
+    const guard = evaluateScheduleRunGuard({
+      endpoints: loadAiToolEndpoints(),
+      jobs: [],
+      producerAgent: defaultProducerAgent,
+      providerKeys: configuredProviderKeys(["OPENAI_API_KEY"]),
+      publishingTargets: [],
+      schedule,
+      settings: loadToolProviderSettings()
+    });
+
+    expect(guard.canRun).toBe(true);
+    expect(guard.plannedCaseCount).toBeGreaterThan(0);
+    expect(guard.warnings.some((warning) => warning.includes("MP4/QC"))).toBe(true);
+  });
+
   it("blocks when daily quota or budget is exhausted", () => {
     const schedule = { ...loadProductionSchedules()[0]!, budgetLimitRM: 7.5, enabled: true, maxVideosPerDay: 1, targetIds: [] };
     const jobs = [
@@ -122,4 +140,18 @@ function createMemoryStorage(): Storage {
     removeItem: (key) => store.delete(key),
     setItem: (key, value) => store.set(key, value)
   };
+}
+
+function configuredProviderKeys(keyNames: string[]): ProviderKeyRecord[] {
+  return loadProviderKeys().map((key) =>
+    keyNames.includes(key.keyName)
+      ? {
+          ...key,
+          enabled: true,
+          lastFour: "test",
+          status: "configured",
+          updatedAt: new Date(0).toISOString()
+        }
+      : key
+  );
 }

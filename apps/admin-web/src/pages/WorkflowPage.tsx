@@ -3,6 +3,7 @@ import { RefreshCw, Settings2 } from "lucide-react";
 import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
 import type { StaffAgent } from "../lib/agents.js";
 import {
+  applyToolModelPricing,
   applyToolProviderPreset,
   customToolModelValue,
   customToolProviderValue,
@@ -29,6 +30,8 @@ import {
 interface WorkflowPageProps {
   agents: StaffAgent[];
   endpoints: AiToolEndpoint[];
+  openAgentSettings: () => void;
+  openKeySettings: () => void;
   providerKeys: ProviderKeyRecord[];
   reportDirtyState?: (key: string, isDirty: boolean) => void;
   resetSettings: () => void;
@@ -89,13 +92,20 @@ export function WorkflowPage(props: WorkflowPageProps) {
       return { stage, endpoint, setting, ...state };
     });
     const requiredRows = rows.filter((row) => row.required);
+    const blockingIssues = rows.filter((row) => row.required && !row.ready);
+    const attentionItems = rows.filter((row) => row.tone === "warning" && row.ready);
+    const optionalIssues = rows.filter((row) => !row.required && !row.ready);
+    const attentionCount = attentionItems.length + optionalIssues.length;
 
     return {
       rows,
       readyRequiredCount: requiredRows.filter((row) => row.ready).length,
       requiredCount: requiredRows.length,
-      issues: rows.filter((row) => row.tone === "danger" || row.tone === "warning"),
-      issueCount: rows.filter((row) => row.tone === "danger").length
+      attentionItems,
+      blockingIssues,
+      attentionCount,
+      issueCount: blockingIssues.length,
+      optionalIssues
     };
   }, [producerAgent, props.endpoints, props.providerKeys, props.settings]);
 
@@ -214,11 +224,58 @@ export function WorkflowPage(props: WorkflowPageProps) {
     setActiveTab("tools");
   }
 
+  function openToolSetting(settingId: string) {
+    if (!canLeaveWorkflowDrafts()) {
+      return;
+    }
+
+    setSelectedToolSettingId(settingId);
+    setActiveTab("tools");
+  }
+
+  function openRouteForStage(stageId: ProductionStageId) {
+    if (!canLeaveWorkflowDrafts()) {
+      return;
+    }
+
+    setSelectedStageId(stageId);
+    setActiveTab("pipeline");
+  }
+
+  function handleReadinessAction(input: {
+    endpoint: AiToolEndpoint | null;
+    label: string;
+    setting: ToolProviderSettings | null;
+    stageId: ProductionStageId;
+  }) {
+    if (input.label.includes("密钥")) {
+      if (canLeaveWorkflowDrafts()) props.openKeySettings();
+      return;
+    }
+
+    if (input.label.includes("Agent")) {
+      if (canLeaveWorkflowDrafts()) props.openAgentSettings();
+      return;
+    }
+
+    if (input.setting) {
+      openToolSetting(input.setting.id);
+      return;
+    }
+
+    if (input.endpoint) {
+      openToolsForEndpoint(input.endpoint.id);
+      return;
+    }
+
+    openRouteForStage(input.stageId);
+  }
+
   return (
     <section className="workflow-shell">
       <section className="panel workflow-command-panel">
         <SectionHeader
-          eyebrow="Workflow manager"
+          eyebrow="流程管理"
           title="路由、工具、就绪检查"
           action={
             <div className="workflow-header-actions">
@@ -244,9 +301,10 @@ export function WorkflowPage(props: WorkflowPageProps) {
         <div className="workflow-command-row">
           <WorkflowStat label="必要阶段就绪" value={`${readiness.readyRequiredCount}/${readiness.requiredCount}`} tone={readiness.issueCount === 0 ? "success" : "warning"} />
           <WorkflowStat label="允许自动调用" value={`${props.settings.filter((setting) => setting.allowAutopilot && setting.enabled).length}/${props.settings.length}`} tone="active" />
-          <WorkflowStat label="阻塞问题" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
+          <WorkflowStat label="硬阻塞" value={String(readiness.issueCount)} tone={readiness.issueCount === 0 ? "success" : "danger"} />
+          <WorkflowStat label="提醒事项" value={String(readiness.attentionCount)} tone={readiness.attentionCount === 0 ? "success" : "warning"} />
         </div>
-        <div className="workflow-tabs" role="tablist" aria-label="Workflow sections">
+        <div className="workflow-tabs" role="tablist" aria-label="流程区块">
           <TabButton active={activeTab === "pipeline"} label="流程路由" onClick={() => openWorkflowTab("pipeline")} />
           <TabButton active={activeTab === "tools"} label="工具设置" onClick={() => openWorkflowTab("tools")} />
           <TabButton active={activeTab === "readiness"} label="就绪检查" onClick={() => openWorkflowTab("readiness")} />
@@ -256,7 +314,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       {activeTab === "pipeline" ? (
         <section className="workflow-tab-layout">
           <section className="panel workflow-list-panel">
-            <SectionHeader eyebrow="Stage routing" title="生产流程路由" />
+            <SectionHeader eyebrow="阶段路由" title="生产流程路由" />
             <div className="workflow-table-scroll">
               <div className="workflow-route-table">
                 <div className="workflow-table-header workflow-route-header">
@@ -274,7 +332,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
                         <strong title={stage.label}>{stage.label}</strong>
                         <span title={stage.defaultOutput}>{stage.defaultOutput}</span>
                       </div>
-                      <span className="agent-controller-cell" title={producerAgent?.name ?? "No agent"}>{producerAgent?.name ?? "No agent"}</span>
+                      <span className="agent-controller-cell" title={producerAgent?.name ?? "未绑定 Agent"}>{producerAgent?.name ?? "未绑定 Agent"}</span>
                       <StatusPill tone={tone}>{label}</StatusPill>
                       <button
                         className="secondary-button compact-button"
@@ -308,7 +366,7 @@ export function WorkflowPage(props: WorkflowPageProps) {
       {activeTab === "tools" ? (
         <section className="workflow-tab-layout">
           <section className="panel workflow-list-panel">
-            <SectionHeader eyebrow="Tool registry" title="AI 工具端点" />
+            <SectionHeader eyebrow="工具注册表" title="AI 工具端点" />
             <div className="workflow-table-scroll">
               <div className="workflow-tools-table">
                 <div className="workflow-table-header workflow-tools-header">
@@ -369,27 +427,79 @@ export function WorkflowPage(props: WorkflowPageProps) {
 
       {activeTab === "readiness" ? (
         <section className="panel workflow-readiness-panel">
-          <SectionHeader eyebrow="Operational checks" title="就绪检查清单" />
-          <div className="readiness-issue-strip">
-            {readiness.issues.length === 0 ? (
-              <StatusPill tone="success">没有阻塞问题</StatusPill>
-            ) : (
-              readiness.issues.map(({ stage, endpoint, label, setting, tone }) => (
-                <div className="readiness-issue" key={stage.id}>
-                  <strong>{stage.label}</strong>
-                  <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
-                  <StatusPill tone={tone}>{tone === "danger" ? "阻塞" : "需检查"}</StatusPill>
+          <SectionHeader eyebrow="运行检查" title="就绪检查清单" action={<StatusPill tone={readiness.issueCount === 0 ? "success" : "danger"}>{readiness.issueCount === 0 ? "MP4 链路可执行" : `${readiness.issueCount} 个硬阻塞`}</StatusPill>} />
+          <div className="workflow-readiness-groups">
+            <section className="readiness-group">
+              <div className="readiness-group-header">
+                <div>
+                  <strong>MP4 必需链路</strong>
+                  <span>脚本、分镜、图片、配音、字幕、合成与 QC。这里没有阻塞时，可以先做到影片完成。</span>
                 </div>
-              ))
-            )}
+                <StatusPill tone={readiness.issueCount === 0 ? "success" : "danger"}>{readiness.issueCount === 0 ? "可执行" : "阻塞"}</StatusPill>
+              </div>
+              <div className="readiness-issue-strip">
+                {readiness.blockingIssues.length === 0 ? (
+                  <StatusPill tone="success">没有 MP4 必需阻塞</StatusPill>
+                ) : (
+                  readiness.blockingIssues.map(({ stage, endpoint, label, setting, tone }) => (
+                    <div className="readiness-issue" key={stage.id}>
+                      <strong>{stage.label}</strong>
+                      <StatusPill tone={tone}>阻塞</StatusPill>
+                      <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
+                      <button
+                        className="secondary-button compact-button readiness-action-button"
+                        type="button"
+                        onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                      >
+                        {getReadinessActionLabel(label, setting, endpoint)}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="readiness-group optional">
+              <div className="readiness-group-header">
+                <div>
+                  <strong>提醒事项 / 可选增强</strong>
+                  <span>BGM、Seedance 影片片段、YouTube 私密上传、GCS 归档不会阻止先生成 MP4；成本单价缺失也只影响成本精度。</span>
+                </div>
+                <StatusPill tone={readiness.attentionCount === 0 ? "success" : "warning"}>{readiness.attentionCount === 0 ? "无提醒" : `${readiness.attentionCount} 项提醒`}</StatusPill>
+              </div>
+              <div className="readiness-issue-strip optional">
+                {readiness.attentionCount === 0 ? (
+                  <StatusPill tone="success">没有低风险提醒</StatusPill>
+                ) : (
+                  [...readiness.optionalIssues, ...readiness.attentionItems].map(({ stage, endpoint, label, setting, tone }) => (
+                    <div className="readiness-issue" key={stage.id}>
+                      <strong>{stage.label}</strong>
+                      <StatusPill tone={tone}>{stage.id === "publish" || stage.id === "archive" || stage.id === "video" || stage.id === "bgm" ? "可选" : "需检查"}</StatusPill>
+                      <span>{label} / {setting ? `${setting.provider} ${setting.model}` : endpoint?.provider ?? "未绑定工具"}</span>
+                      <button
+                        className="secondary-button compact-button readiness-action-button"
+                        type="button"
+                        onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                      >
+                        {getReadinessActionLabel(label, setting, endpoint)}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
           </div>
           <div className="workflow-readiness-list">
-            {readiness.rows.map(({ stage, endpoint, label, setting, tone }) => (
+            {readiness.rows.map(({ stage, endpoint, label, setting, tone, required }) => (
               <article className="workflow-readiness-row" key={stage.id}>
                 <span className="step-index">{stage.order}</span>
                 <div>
                   <strong>{stage.label}</strong>
                   <span>{stage.defaultInput}</span>
+                </div>
+                <div>
+                  <span className="column-label">类型</span>
+                  <strong>{required ? "MP4 必需" : "可选增强"}</strong>
                 </div>
                 <div>
                   <span className="column-label">负责人</span>
@@ -404,6 +514,13 @@ export function WorkflowPage(props: WorkflowPageProps) {
                   <strong>{endpoint?.queueName ?? stage.queueName}</strong>
                 </div>
                 <StatusPill tone={tone}>{label}</StatusPill>
+                <button
+                  className="secondary-button compact-button readiness-row-action"
+                  type="button"
+                  onClick={() => handleReadinessAction({ endpoint, label, setting, stageId: stage.id })}
+                >
+                  {getReadinessActionLabel(label, setting, endpoint)}
+                </button>
               </article>
             ))}
           </div>
@@ -574,7 +691,7 @@ function ToolProviderEditor(props: {
           </select>
         </Field>
         <Field label="模型">
-          <select value={modelSelectValue} onChange={(event) => patch({ model: event.target.value === customToolModelValue ? "" : event.target.value })}>
+          <select value={modelSelectValue} onChange={(event) => editor.setDraft(applyToolModelPricing(setting, event.target.value === customToolModelValue ? "" : event.target.value))}>
             {modelOptions.map((model) => (
               <option key={model} value={model}>
                 {model}
@@ -636,15 +753,19 @@ function ToolProviderEditor(props: {
 
       <div className="three-column-fields">
         <Field label="输入单价 RM">
-          <input type="number" min={0} step="0.0001" value={setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.000001" value={setting.inputUnitPriceRM} onChange={(event) => patch({ inputUnitPriceRM: Number(event.target.value), pricingSource: "manual" })} />
         </Field>
         <Field label="输出单价 RM">
-          <input type="number" min={0} step="0.0001" value={setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.000001" value={setting.outputUnitPriceRM} onChange={(event) => patch({ outputUnitPriceRM: Number(event.target.value), pricingSource: "manual" })} />
         </Field>
         <Field label="保底成本 RM">
-          <input type="number" min={0} step="0.0001" value={setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value) })} />
+          <input type="number" min={0} step="0.000001" value={setting.fallbackCostRM} onChange={(event) => patch({ fallbackCostRM: Number(event.target.value), pricingSource: "manual" })} />
         </Field>
       </div>
+
+      <Field label="价格来源">
+        <input value={setting.pricingSource} onChange={(event) => patch({ pricingSource: event.target.value })} placeholder="manual / official pricing URL / internal cost note" />
+      </Field>
 
       <label className="toggle-line endpoint-enabled-line">
         <input type="checkbox" checked={setting.allowAutopilot} onChange={(event) => patch({ allowAutopilot: event.target.checked })} />
@@ -702,6 +823,13 @@ function coerceParamValue(value: string): boolean | number | string {
 
   const numericValue = Number(value);
   return value.trim() !== "" && Number.isFinite(numericValue) ? numericValue : value;
+}
+
+function getReadinessActionLabel(label: string, setting: ToolProviderSettings | null, endpoint: AiToolEndpoint | null): string {
+  if (label.includes("密钥")) return "打开密钥";
+  if (label.includes("Agent")) return "打开 Agent";
+  if (label.includes("路由") || (!setting && !endpoint)) return "检查路由";
+  return "打开工具";
 }
 
 function WorkflowStat(props: { label: string; value: string; tone: PillTone }) {

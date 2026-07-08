@@ -116,7 +116,7 @@ async function generateWithOpenAI(
   let totalOutputTokens = 0;
   let finalContent: GeneratedScriptStoryContent | null = null;
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     const response = await fetch(`${options.baseUrl.replace(/\/$/u, "")}/responses`, {
       body: JSON.stringify({
         input: buildOpenAIPrompt(input, qualityFeedback),
@@ -166,7 +166,7 @@ async function generateWithOpenAI(
     throw new Error("OpenAI script generation returned no content.");
   }
 
-  const estimatedCostRM = estimateOpenAICostRM(options.model, totalInputTokens, totalOutputTokens, options.usdToMyrRate);
+  const estimatedCostRM = estimateOpenAICostRM(options.model, totalInputTokens, totalOutputTokens, options.usdToMyrRate, input.cost);
   const costRM = applyScriptCostOverride(estimatedCostRM, input);
   const usage = {
     inputTokens: totalInputTokens,
@@ -264,6 +264,7 @@ function normalizeInput(input: GenerateScriptStoryRequest): NormalizedScriptStor
     durationSeconds: input.durationSeconds ?? 45,
     language: input.language,
     prompt,
+    productionBrief: input.productionBrief,
     sceneCount: Math.max(3, Math.min(7, Math.round(input.sceneCount))),
     templateType: input.templateType,
     topic
@@ -290,6 +291,7 @@ function buildOpenAIPrompt(input: NormalizedScriptStoryInput, qualityFeedback = 
     `Raw idea is generic: ${isGeneric ? "yes" : "no"}`,
     `Requested video type / genre: ${input.genre?.trim() || "auto-detect from topic and brief"}`,
     `Optional production brief: ${input.prompt}`,
+    formatProductionBriefForPrompt(input),
     `Internal routing template: ${input.templateType}`,
     `Internal routing guidance, only use when it fits the user's idea: ${getTemplateInstruction(input.templateType)}`,
     `Language: ${input.language}`,
@@ -303,6 +305,13 @@ function buildOpenAIPrompt(input: NormalizedScriptStoryInput, qualityFeedback = 
     "The 45 second voiceover must have protagonist, goal, anomaly/inciting event, rule or limit, escalation, twist, and an ending hook.",
     "Every storyboard scene must be a visible action: who is in frame, what object changes, what the camera sees. Avoid abstract-only descriptions such as a feeling, mood, atmosphere, or sound entering a mind.",
     "Create one visualBible for the whole case. It must define one fictional adult protagonist, stable wardrobe, face/hair/body details, recurring props, environment, lighting, palette, and negative prompt rules.",
+    "If productionBrief.selectedCharacters is present, treat them as the approved reusable cast library. Use the episode-relevant selected character assets, preserve their names/roles/identity notes/wardrobe/silhouette/props, and never replace a character or fruit/person identity that is named in the episode, continuity rules, or prompt.",
+    "Do not rename selected assets into unrelated generic names. If the episode names a role such as a fruit-person CEO or secret shop clerk, map it to the closest selected asset label/role and keep that identity visible in the title, voiceover, visualBible, and storyboard.",
+    "If productionBrief.selectedScenes or storyWorldContext is present, treat them as the approved reusable location/style library. Use the episode-relevant selected scene assets, preserve their spatial rules/props/lighting/palette/world rules, and do not require every library location to appear in one episode.",
+    "If productionBrief.lessonOrTheme is present, the story must make that theme visible through character choices and conflict, not a generic lecture.",
+    "If productionBrief.seriesContext.narrativeMode is serialized, write this as one episode of an ongoing serial: preserve continuity rules, use the episode's continuityNote/serialHook when present, and end with a safe next-episode hook instead of fully resetting the premise.",
+    "If productionBrief.seriesContext.narrativeMode is standalone, resolve this episode's main conflict inside the short.",
+    "If productionBrief.seriesContext.dramaIntensity is high or melodrama, use safe but strong drama: misunderstanding, secret, betrayal, reversal, public confrontation, emotional choice, and cliffhanger. Do not use explicit sexual content, gore, real people, or targeted humiliation.",
     "The storyboard imagePrompt fields must describe single cinematic stills only. Do not ask for text, captions, comic panels, UI, table layouts, or storyboard sheets.",
     "Each storyboard scene must reuse the visualBible character and environment unless the user explicitly asks for a scene change.",
     "Also return a backgroundMusic brief for optional BGM generation: style, tempo, mood, instrumentation, and a provider-ready prompt.",
@@ -313,6 +322,79 @@ function buildOpenAIPrompt(input: NormalizedScriptStoryInput, qualityFeedback = 
     lines.push("Previous outline failed quality checks. Rewrite from scratch and fix these issues:");
     lines.push(qualityFeedback);
   }
+
+  return lines.join("\n");
+}
+
+function formatProductionBriefForPrompt(input: NormalizedScriptStoryInput): string {
+  const brief = input.productionBrief;
+
+  if (!brief) {
+    return "Structured productionBrief: none. Use topic and optional production brief only.";
+  }
+
+  const lines = [
+    "Structured productionBrief is authoritative for selected series, story world, characters, scenes, and episode theme.",
+    brief.seriesContext ? `Series context: ${[
+      brief.seriesContext.name,
+      brief.seriesContext.contentType,
+      brief.seriesContext.audience,
+      brief.seriesContext.description,
+      brief.seriesContext.values,
+      brief.seriesContext.narrativeMode ? `Narrative mode: ${brief.seriesContext.narrativeMode}` : "",
+      brief.seriesContext.dramaIntensity ? `Drama intensity: ${brief.seriesContext.dramaIntensity}` : "",
+      brief.seriesContext.continuityRules ? `Continuity rules: ${brief.seriesContext.continuityRules}` : "",
+      brief.seriesContext.tone,
+      brief.seriesContext.visualStyle,
+      brief.seriesContext.musicStyle,
+      brief.seriesContext.safetyRules
+    ].filter(Boolean).join(" | ")}` : "",
+    brief.episodeContext ? `Episode context: ${[
+      brief.episodeContext.episodeNo ? `Episode ${brief.episodeContext.episodeNo}` : "",
+      brief.episodeContext.title,
+      brief.episodeContext.lessonOrTheme,
+      brief.episodeContext.synopsis,
+      brief.episodeContext.promptSeed,
+      brief.episodeContext.continuityNote,
+      brief.episodeContext.serialHook,
+      brief.episodeContext.interactiveEnding
+    ].filter(Boolean).join(" | ")}` : "",
+    brief.storyWorldContext ? `Story world context: ${[
+      brief.storyWorldContext.name,
+      brief.storyWorldContext.description,
+      brief.storyWorldContext.relationshipMap,
+      brief.storyWorldContext.visualStyle,
+      brief.storyWorldContext.safetyRules
+    ].filter(Boolean).join(" | ")}` : "",
+    brief.lessonOrTheme ? `Episode lesson/theme: ${brief.lessonOrTheme}` : "",
+    brief.goal ? `Episode goal: ${brief.goal}` : "",
+    brief.conflict ? `Episode conflict: ${brief.conflict}` : "",
+    brief.tone ? `Requested tone: ${brief.tone}` : "",
+    brief.selectedCharacters?.length ? `Selected character assets: ${brief.selectedCharacters.map((character) => [
+      character.label,
+      character.role,
+      character.visualIdentity,
+      character.notes
+    ].filter(Boolean).join(" / ")).join(" || ")}` : "",
+    brief.selectedScenes?.length ? `Selected scene assets: ${brief.selectedScenes.map((scene) => [
+      scene.label,
+      scene.location,
+      scene.visualRules,
+      scene.notes
+    ].filter(Boolean).join(" / ")).join(" || ")}` : "",
+    brief.selectedCharacters?.length || brief.selectedScenes?.length
+      ? "Selected assets are a reusable library. Use the assets relevant to this episode, but when you use one, visible output must keep its selected label or role. Do not rename selected fruit/person assets into unrelated names such as Leo or Luna unless those names were explicitly supplied by the user."
+      : "",
+    brief.selectedCharacters?.length
+      ? `Allowed visible cast labels/roles: ${brief.selectedCharacters.map((character) => [
+        character.label,
+        character.role
+      ].filter(Boolean).join(" / ")).join(" || ")}. If the episode needs a CEO, clerk, rival, assistant, teacher, parent, or other named role, map it to this selected cast list. Do not invent unrelated named cast members outside this list.`
+      : "",
+    brief.requiredBeats?.length ? `Required beats: ${brief.requiredBeats.join(" | ")}` : "",
+    brief.visualContinuityRules?.length ? `Visual continuity rules: ${brief.visualContinuityRules.join(" | ")}` : "",
+    "Do not copy asset prompt-engineering instructions into visible output. Use only visual facts, story rules, and selected names/locations."
+  ].filter(Boolean);
 
   return lines.join("\n");
 }
@@ -801,15 +883,19 @@ function runOutlineQualityCheck(input: NormalizedScriptStoryInput, content: Gene
     checkVisibleScaffolding(content),
     checkStoryStructure(content),
     checkShootableScenes(content.storyboard),
-    checkGenreTone(input, content)
+    checkGenreTone(input, content),
+    checkProductionBriefAlignment(input, content)
   ];
   const failed = checks.filter((check) => check.status === "fail");
+  const blockingFailed = failed.filter((check) => check.label !== "shootable_scenes");
 
   return createOutlineQc(
-    failed.length > 0 ? "needs_review" : "pass",
+    blockingFailed.length > 0 ? "needs_review" : "pass",
     checks,
-    failed.length > 0
-      ? `Outline needs review: ${failed.map((check) => check.label).join(", ")}.`
+    blockingFailed.length > 0
+      ? `Outline needs review: ${blockingFailed.map((check) => check.label).join(", ")}.`
+      : failed.length > 0
+        ? `Outline is usable. Non-blocking warnings: ${failed.map((check) => check.label).join(", ")}. Scene image prompts will be used as the production source.`
       : "Outline is concrete, clean, and shootable."
   );
 }
@@ -863,14 +949,14 @@ function checkVisibleScaffolding(content: GeneratedScriptStoryContent): Generate
 function checkStoryStructure(content: GeneratedScriptStoryContent): GeneratedOutlineQualityCheck["checks"][number] {
   const idea = content.interpretedIdea;
   const missing = [
-    ["protagonist", idea.protagonist],
-    ["conflict", idea.conflict],
-    ["rule/limit", idea.ruleOrConstraint],
-    ["escalation", idea.escalation],
-    ["twist", idea.twist],
-    ["ending hook", idea.endingHook]
+    ["protagonist", idea.protagonist, 2],
+    ["conflict", idea.conflict, 5],
+    ["rule/limit", idea.ruleOrConstraint, 5],
+    ["escalation", idea.escalation, 5],
+    ["twist", idea.twist, 5],
+    ["ending hook", idea.endingHook, 5]
   ]
-    .filter(([, value]) => !value || String(value).trim().length < 5)
+    .filter(([, value, minLength]) => !value || String(value).trim().length < Number(minLength))
     .map(([label]) => label);
   const voiceoverHasPacing = content.script.voiceover.length >= 80 && content.script.hook.length >= 12;
 
@@ -885,11 +971,14 @@ function checkShootableScenes(storyboard: GeneratedStoryboardScene[]): Generated
   const failedScenes = storyboard
     .filter((scene) => !isShootableScene(scene))
     .map((scene) => `Scene ${scene.sceneId}`);
+  const shouldBlock = failedScenes.length >= Math.max(1, Math.ceil(storyboard.length / 2));
 
   return {
-    detail: failedScenes.length > 0 ? `${failedScenes.join(", ")} needs visible subject/action/object.` : "Every scene has visible action and image-ready prompt text.",
+    detail: failedScenes.length > 0
+      ? `${failedScenes.join(", ")} needs visible subject/action/object.${shouldBlock ? "" : " Minor scene weakness does not block this outline."}`
+      : "Every scene has visible action and image-ready prompt text.",
     label: "shootable_scenes",
-    status: failedScenes.length > 0 ? "fail" : "pass"
+    status: shouldBlock ? "fail" : "pass"
   };
 }
 
@@ -909,11 +998,182 @@ function checkGenreTone(input: NormalizedScriptStoryInput, content: GeneratedScr
   };
 }
 
+function checkProductionBriefAlignment(input: NormalizedScriptStoryInput, content: GeneratedScriptStoryContent): GeneratedOutlineQualityCheck["checks"][number] {
+  const brief = input.productionBrief;
+
+  if (!brief) {
+    return {
+      detail: "No structured production brief was supplied.",
+      label: "production_brief_alignment",
+      status: "pass"
+    };
+  }
+
+  const visibleText = collectVisibleTexts(content).join("\n").toLowerCase();
+  const briefText = collectProductionBriefTexts(brief).join("\n").toLowerCase();
+  const selectedCharacters = brief.selectedCharacters ?? [];
+  const selectedScenes = brief.selectedScenes ?? [];
+  const isReusableCastLibrary = selectedCharacters.length > 3;
+  const isReusableSceneLibrary = selectedScenes.length > 3;
+  const requiredCharacters = selectedCharacters
+    .filter((character) => !isReusableCastLibrary && hasMeaningfulRequiredTerm(character.label) && assetLabelAppearsInText(character.label, briefText));
+  const requiredScenes = (brief.selectedScenes ?? [])
+    .filter((scene) => !isReusableSceneLibrary && hasMeaningfulRequiredTerm(scene.label) && assetLabelAppearsInText(scene.label, briefText));
+  const missingCharacters = requiredCharacters
+    .filter((character) => !assetLabelAppearsInText(character.label, visibleText))
+    .map((character) => character.label);
+  const missingScenes = requiredScenes
+    .filter((scene) => !assetLabelAppearsInText(scene.label, visibleText))
+    .map((scene) => scene.label);
+  const missingCharacterLibraryUse = selectedCharacters.length > 0
+    && !selectedCharacters.some((character) => assetLabelAppearsInText(character.label, visibleText))
+    ? "no selected character asset is visible in the outline"
+    : "";
+  const missingSceneLibraryUse = selectedScenes.length > 0
+    && !selectedScenes.some((scene) => assetLabelAppearsInText(scene.label, visibleText))
+    ? "no selected scene asset is visible in the outline"
+    : "";
+  const missingTheme = brief.lessonOrTheme && hasMeaningfulRequiredTerm(brief.lessonOrTheme) && !meaningfulTermsAppearInText(brief.lessonOrTheme, visibleText)
+    ? brief.lessonOrTheme
+    : "";
+  const problems = [
+    ...missingCharacters.map((label) => `missing selected character: ${label}`),
+    ...missingScenes.map((label) => `missing selected scene: ${label}`),
+    missingCharacterLibraryUse,
+    missingSceneLibraryUse,
+    missingTheme ? `missing episode theme: ${missingTheme}` : ""
+  ].filter(Boolean);
+
+  return {
+    detail: problems.length > 0
+      ? problems.join("; ")
+      : "The outline uses selected characters, selected scenes, story world/series context, and episode theme when provided.",
+    label: "production_brief_alignment",
+    status: problems.length > 0 ? "fail" : "pass"
+  };
+}
+
+function hasMeaningfulRequiredTerm(value: string | undefined): value is string {
+  return Boolean(value && value.trim().length >= 2 && !/^(new|untitled|未命名|参考|角色|场景|scene|character)$/iu.test(value.trim()));
+}
+
+function collectProductionBriefTexts(brief: NonNullable<NormalizedScriptStoryInput["productionBrief"]>): string[] {
+  return [
+    brief.goal,
+    brief.conflict,
+    brief.lessonOrTheme,
+    brief.episodeContext?.title,
+    brief.episodeContext?.lessonOrTheme,
+    brief.episodeContext?.synopsis,
+    brief.episodeContext?.promptSeed,
+    brief.episodeContext?.continuityNote,
+    brief.episodeContext?.serialHook,
+    brief.episodeContext?.interactiveEnding,
+    ...(brief.requiredBeats ?? []),
+    ...(brief.visualContinuityRules ?? []).filter((rule) => !isReferenceAssetLibraryRule(rule))
+  ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+function isReferenceAssetLibraryRule(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("approved design asset")
+    || normalized.includes("preserve character identity")
+    || normalized.includes("preserve environment layout")
+    || normalized.includes("角色参考：")
+    || normalized.includes("背景参考：");
+}
+
+function assetLabelAppearsInText(label: string | undefined, text: string): boolean {
+  if (!label || !text) {
+    return false;
+  }
+
+  return buildSearchTerms(label).some((term) => text.includes(term));
+}
+
+function meaningfulTermsAppearInText(value: string, text: string): boolean {
+  const terms = buildSearchTerms(value);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  return terms.some((term) => text.includes(term));
+}
+
+function buildSearchTerms(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  const genericTerms = new Set([
+    "asset",
+    "case",
+    "character",
+    "design",
+    "reference",
+    "scene",
+    "style",
+    "三视图",
+    "人物",
+    "参考",
+    "场景",
+    "总裁",
+    "素材",
+    "角色",
+    "设定",
+    "设计"
+  ]);
+  const normalized = value
+    .toLowerCase()
+    .replace(/[_/|,，。:：;；()（）【】<>《》"'“”‘’]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = normalized
+    .split(" ")
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 2 && !genericTerms.has(word));
+  const cjkCompact = normalized.replace(/[^\p{Script=Han}]/gu, "");
+  const cjkTerms = new Set<string>();
+
+  if (cjkCompact.length >= 2) {
+    cjkTerms.add(cjkCompact);
+
+    for (let size = 3; size >= 2; size -= 1) {
+      for (let index = 0; index <= cjkCompact.length - size; index += 1) {
+        const term = cjkCompact.slice(index, index + size);
+
+        if (!genericTerms.has(term)) {
+          cjkTerms.add(term);
+        }
+      }
+    }
+  }
+
+  return [...new Set([...words, ...cjkTerms])].filter((term) => term.length >= 2);
+}
+
 function buildOutlineRewriteFeedback(outlineQc: GeneratedOutlineQualityCheck): string {
-  return outlineQc.checks
+  const correctiveRules = outlineQc.checks
     .filter((check) => check.status === "fail")
-    .map((check) => `- ${check.label}: ${check.detail}`)
-    .join("\n");
+    .map((check) => {
+      if (check.label === "shootable_scenes") {
+        return `- ${check.label}: ${check.detail} Rewrite every failed storyboard scene as visible physical action: exact character/subject + exact location + object + action verb. Use concrete verbs such as 打开, 拿起, 递给, 推开, 发现, 翻开, 站在, 坐在, 看见. Avoid abstract phrases such as 真相爆发, 命运裂变, 风暴, 情绪, 氛围.`;
+      }
+
+      if (check.label === "production_brief_alignment") {
+        return `- ${check.label}: ${check.detail} Use the selected asset labels/roles that are relevant to this episode in visible output. Do not rename selected fruit/person assets into unrelated English names. If the brief says banana CEO, keep it visible as 香蕉总裁/香蕉人 instead of Leo. If it says secret dessert clerk, map it to the selected dessert/fruit character label when available.`;
+      }
+
+      return `- ${check.label}: ${check.detail}`;
+    });
+
+  return [
+    "Rewrite the outline from scratch and satisfy every failed check below.",
+    "Keep the same user topic, series continuity, selected asset library, and episode premise.",
+    ...correctiveRules
+  ].join("\n");
 }
 
 function collectVisibleTexts(content: GeneratedScriptStoryContent): string[] {
@@ -1365,10 +1625,39 @@ function getLocalSceneVoiceText(script: GeneratedScript, sceneId: number): strin
   return parts[(sceneId - 1) % parts.length]?.trim() || script.voiceover;
 }
 
-function estimateOpenAICostRM(model: string, inputTokens: number, outputTokens: number, usdToMyrRate: number): number {
-  const pricing = model === "gpt-4.1-mini" ? { inputPerMillionUSD: 0.4, outputPerMillionUSD: 1.6 } : { inputPerMillionUSD: 0, outputPerMillionUSD: 0 };
+function estimateOpenAICostRM(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  usdToMyrRate: number,
+  costOverride?: NormalizedScriptStoryInput["cost"]
+): number {
+  if ((costOverride?.inputUnitPriceRM ?? 0) > 0 || (costOverride?.outputUnitPriceRM ?? 0) > 0) {
+    return Number((inputTokens * (costOverride?.inputUnitPriceRM ?? 0) + outputTokens * (costOverride?.outputUnitPriceRM ?? 0)).toFixed(4));
+  }
+
+  const pricing = getOpenAITextPricingUSD(model);
   const usd = (inputTokens / 1_000_000) * pricing.inputPerMillionUSD + (outputTokens / 1_000_000) * pricing.outputPerMillionUSD;
   return Number((usd * usdToMyrRate).toFixed(4));
+}
+
+function getOpenAITextPricingUSD(model: string): { inputPerMillionUSD: number; outputPerMillionUSD: number } {
+  const table: Record<string, { inputPerMillionUSD: number; outputPerMillionUSD: number }> = {
+    "gpt-4.1": { inputPerMillionUSD: 2, outputPerMillionUSD: 8 },
+    "gpt-4.1-mini": { inputPerMillionUSD: 0.4, outputPerMillionUSD: 1.6 },
+    "gpt-4o-mini": { inputPerMillionUSD: 0.15, outputPerMillionUSD: 0.6 },
+    "gpt-5": { inputPerMillionUSD: 1.25, outputPerMillionUSD: 10 },
+    "gpt-5-mini": { inputPerMillionUSD: 0.25, outputPerMillionUSD: 2 },
+    "gpt-5-nano": { inputPerMillionUSD: 0.05, outputPerMillionUSD: 0.4 },
+    "gpt-5.4": { inputPerMillionUSD: 2.5, outputPerMillionUSD: 15 },
+    "gpt-5.4-mini": { inputPerMillionUSD: 0.75, outputPerMillionUSD: 4.5 },
+    "gpt-5.4-nano": { inputPerMillionUSD: 0.2, outputPerMillionUSD: 1.25 },
+    "gpt-5.4-pro": { inputPerMillionUSD: 30, outputPerMillionUSD: 180 },
+    "gpt-5.5": { inputPerMillionUSD: 5, outputPerMillionUSD: 30 },
+    "gpt-5.5-pro": { inputPerMillionUSD: 30, outputPerMillionUSD: 180 }
+  };
+
+  return table[model] ?? { inputPerMillionUSD: 0, outputPerMillionUSD: 0 };
 }
 
 function toGeneratedObject(object: StoredObject): GenerateScriptStoryResponse["artifacts"]["script"] {

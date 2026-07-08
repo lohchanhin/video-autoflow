@@ -45,6 +45,37 @@ describe("cost logging", () => {
     }));
   });
 
+  it("records real provider usage after draft outline generation", async () => {
+    const costLogsRepository = createCostLogsRepositoryMock();
+    const scriptStoryService = {
+      generateScriptStory: vi.fn().mockResolvedValue(createScriptResponse({ jobId: "job_draft_cost" }))
+    } as unknown as ScriptStoryService;
+
+    await request(createApp({ costLogsRepository, scriptStoryService }))
+      .post("/cases/draft-outline")
+      .send({
+        costLimitRM: 7.5,
+        language: "zh-CN",
+        prompt: "Create an original short outline.",
+        sceneCount: 5,
+        templateType: "urban_legend",
+        topic: "rainy convenience store"
+      })
+      .expect(201);
+
+    expect(costLogsRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      costRM: 0.0063,
+      jobId: "job_draft_cost",
+      model: "gpt-4.1-mini",
+      operation: "cases.draft_outline",
+      provider: "openai",
+      pricingStatus: "actual_usage",
+      quantity: 300,
+      service: "script",
+      unit: "tokens"
+    }));
+  });
+
   it("marks OpenAI script calls as pricing_missing when a model has token usage but no configured price", async () => {
     const costLogsRepository = createCostLogsRepositoryMock();
     const scriptStoryService = {

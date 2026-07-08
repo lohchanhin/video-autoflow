@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Collection, type Db, type Document, type Filter, type MongoClientOptions } from "mongodb";
 import type {
+  AppStateEntry,
   ContentSeries,
+  ContentSeriesDramaIntensity,
+  ContentSeriesNarrativeMode,
   ContentSeriesStatus,
   CostLog,
   CostLogPricingStatus,
+  CostLogToolType,
   CostLogUsage,
   ProductionAsset,
   ProductionAssetProvider,
@@ -12,7 +16,8 @@ import type {
   ProductionAssetStatus,
   ProductionAssetType,
   SeriesEpisodeIdea,
-  SeriesEpisodeIdeaStatus
+  SeriesEpisodeIdeaStatus,
+  StoryWorld
 } from "@ai-content-factory/shared-types";
 
 export interface MongoDatabaseConfig {
@@ -90,6 +95,62 @@ export function getDatabaseNameFromMongoUri(mongoUri: string, fallback = "ai_con
 }
 
 export type CostLogDocument = CostLog & Document;
+export type AppStateDocument = AppStateEntry & Document;
+
+export interface AppStateRepository {
+  ensureIndexes(): Promise<void>;
+  list(prefix?: string | undefined): Promise<AppStateEntry[]>;
+  upsert(key: string, value: string): Promise<AppStateEntry>;
+  upsertMany(entries: Array<{ key: string; value: string }>): Promise<AppStateEntry[]>;
+}
+
+export function createAppStateRepository(connection: MongoDatabaseConnection): AppStateRepository {
+  const collection = connection.collection<AppStateDocument>("app_state");
+
+  return {
+    async ensureIndexes(): Promise<void> {
+      await collection.createIndex({ key: 1 }, { unique: true });
+    },
+
+    async list(prefix?: string | undefined): Promise<AppStateEntry[]> {
+      await this.ensureIndexes();
+
+      const query: Filter<AppStateDocument> = prefix ? { key: { $regex: `^${escapeRegExp(prefix)}` } } as Filter<AppStateDocument> : {};
+      const rows = await collection.find(query).sort({ key: 1 }).toArray();
+      return rows.map(stripAppStateDocument);
+    },
+
+    async upsert(key: string, value: string): Promise<AppStateEntry> {
+      await this.ensureIndexes();
+
+      const now = new Date().toISOString();
+      const existing = await collection.findOne({ key } as Filter<AppStateDocument>);
+      const entry: AppStateEntry = {
+        key,
+        updatedAt: now,
+        value
+      };
+
+      if (existing) {
+        await collection.findOneAndUpdate({ key } as Filter<AppStateDocument>, { $set: entry });
+        return entry;
+      }
+
+      await collection.insertOne({ _id: key, ...entry } as unknown as AppStateDocument);
+      return entry;
+    },
+
+    async upsertMany(entries: Array<{ key: string; value: string }>): Promise<AppStateEntry[]> {
+      const saved: AppStateEntry[] = [];
+
+      for (const entry of entries) {
+        saved.push(await this.upsert(entry.key, entry.value));
+      }
+
+      return saved;
+    }
+  };
+}
 
 export interface CostLogCreateInput {
   costRM: number;
@@ -104,8 +165,21 @@ export interface CostLogCreateInput {
   pricingStatus: CostLogPricingStatus;
   quantity: number;
   service: CostLog["service"];
+  toolType: CostLogToolType;
   unit: string;
   usage?: CostLogUsage | undefined;
+}
+
+function stripAppStateDocument(document: AppStateDocument): AppStateEntry {
+  return {
+    key: document.key,
+    updatedAt: document.updatedAt,
+    value: document.value
+  };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 export interface CostLogListFilter {
@@ -184,20 +258,25 @@ export function createCostLogsRepository(connection: MongoDatabaseConnection): C
 
 export type ContentSeriesDocument = ContentSeries & Document;
 export type SeriesEpisodeIdeaDocument = SeriesEpisodeIdea & Document;
+export type StoryWorldDocument = StoryWorld & Document;
 
 export interface ContentSeriesCreateInput {
   audience?: string | undefined;
+  continuityRules?: string | undefined;
   contentType?: string | undefined;
   description?: string | undefined;
+  dramaIntensity?: ContentSeriesDramaIntensity | undefined;
   durationSeconds?: number | undefined;
   id?: string | undefined;
   language?: ContentSeries["language"] | undefined;
   musicStyle?: string | undefined;
   name: string;
+  narrativeMode?: ContentSeriesNarrativeMode | undefined;
   referenceAssetIds?: string[] | undefined;
   safetyRules?: string | undefined;
   sceneCount?: number | undefined;
   status?: ContentSeriesStatus | undefined;
+  storyWorldId?: string | null | undefined;
   tone?: string | undefined;
   values?: string | undefined;
   visualStyle?: string | undefined;
@@ -205,16 +284,20 @@ export interface ContentSeriesCreateInput {
 
 export interface ContentSeriesPatchInput {
   audience?: string | undefined;
+  continuityRules?: string | undefined;
   contentType?: string | undefined;
   description?: string | undefined;
+  dramaIntensity?: ContentSeriesDramaIntensity | undefined;
   durationSeconds?: number | undefined;
   language?: ContentSeries["language"] | undefined;
   musicStyle?: string | undefined;
   name?: string | undefined;
+  narrativeMode?: ContentSeriesNarrativeMode | undefined;
   referenceAssetIds?: string[] | undefined;
   safetyRules?: string | undefined;
   sceneCount?: number | undefined;
   status?: ContentSeriesStatus | undefined;
+  storyWorldId?: string | null | undefined;
   tone?: string | undefined;
   values?: string | undefined;
   visualStyle?: string | undefined;
@@ -223,10 +306,17 @@ export interface ContentSeriesPatchInput {
 export interface SeriesEpisodeIdeaCreateInput {
   ageRange?: string | undefined;
   caseId?: string | null | undefined;
+  continuityNote?: string | undefined;
+  episodeNo?: number | null | undefined;
   id?: string | undefined;
+  interactiveEnding?: string | undefined;
+  lessonOrTheme?: string | undefined;
   moralLesson: string;
   promptSeed: string;
   riskNotes?: string | undefined;
+  serialHook?: string | undefined;
+  selectedCharacterAssetIds?: string[] | undefined;
+  selectedSceneAssetIds?: string[] | undefined;
   seriesId?: string | undefined;
   sourceStory?: string | undefined;
   status?: SeriesEpisodeIdeaStatus | undefined;
@@ -237,9 +327,16 @@ export interface SeriesEpisodeIdeaCreateInput {
 export interface SeriesEpisodeIdeaPatchInput {
   ageRange?: string | undefined;
   caseId?: string | null | undefined;
+  continuityNote?: string | undefined;
+  episodeNo?: number | null | undefined;
+  interactiveEnding?: string | undefined;
+  lessonOrTheme?: string | undefined;
   moralLesson?: string | undefined;
   promptSeed?: string | undefined;
   riskNotes?: string | undefined;
+  serialHook?: string | undefined;
+  selectedCharacterAssetIds?: string[] | undefined;
+  selectedSceneAssetIds?: string[] | undefined;
   sourceStory?: string | undefined;
   status?: SeriesEpisodeIdeaStatus | undefined;
   synopsis?: string | undefined;
@@ -249,6 +346,7 @@ export interface SeriesEpisodeIdeaPatchInput {
 export interface ContentSeriesRepository {
   createSeries(input: ContentSeriesCreateInput): Promise<ContentSeries>;
   createEpisodeIdeas(seriesId: string, ideas: SeriesEpisodeIdeaCreateInput[]): Promise<SeriesEpisodeIdea[]>;
+  deleteEpisodeIdea(seriesId: string, episodeId: string): Promise<boolean>;
   deleteSeries(id: string): Promise<boolean>;
   ensureIndexes(): Promise<void>;
   findEpisodeIdea(seriesId: string, episodeId: string): Promise<SeriesEpisodeIdea | null>;
@@ -257,6 +355,40 @@ export interface ContentSeriesRepository {
   listSeries(): Promise<ContentSeries[]>;
   patchEpisodeIdea(seriesId: string, episodeId: string, patch: SeriesEpisodeIdeaPatchInput): Promise<SeriesEpisodeIdea | null>;
   patchSeries(id: string, patch: ContentSeriesPatchInput): Promise<ContentSeries | null>;
+}
+
+export interface StoryWorldCreateInput {
+  defaultSceneAssetIds?: string[] | undefined;
+  description?: string | undefined;
+  id?: string | undefined;
+  name: string;
+  recurringCharacterAssetIds?: string[] | undefined;
+  relationshipMap?: string | undefined;
+  safetyRules?: string | undefined;
+  seriesIds?: string[] | undefined;
+  status?: StoryWorld["status"] | undefined;
+  visualStyle?: string | undefined;
+}
+
+export interface StoryWorldPatchInput {
+  defaultSceneAssetIds?: string[] | undefined;
+  description?: string | undefined;
+  name?: string | undefined;
+  recurringCharacterAssetIds?: string[] | undefined;
+  relationshipMap?: string | undefined;
+  safetyRules?: string | undefined;
+  seriesIds?: string[] | undefined;
+  status?: StoryWorld["status"] | undefined;
+  visualStyle?: string | undefined;
+}
+
+export interface StoryWorldsRepository {
+  create(input: StoryWorldCreateInput): Promise<StoryWorld>;
+  delete(id: string): Promise<boolean>;
+  ensureIndexes(): Promise<void>;
+  findById(id: string): Promise<StoryWorld | null>;
+  list(): Promise<StoryWorld[]>;
+  patch(id: string, patch: StoryWorldPatchInput): Promise<StoryWorld | null>;
 }
 
 export function createContentSeriesRepository(connection: MongoDatabaseConnection): ContentSeriesRepository {
@@ -283,6 +415,11 @@ export function createContentSeriesRepository(connection: MongoDatabaseConnectio
       }
 
       return episodes;
+    },
+
+    async deleteEpisodeIdea(seriesId: string, episodeId: string): Promise<boolean> {
+      const result = await episodesCollection.deleteOne({ _id: episodeId, seriesId } as Filter<SeriesEpisodeIdeaDocument>);
+      return result.deletedCount === 1;
     },
 
     async deleteSeries(id: string): Promise<boolean> {
@@ -357,6 +494,58 @@ export function createContentSeriesRepository(connection: MongoDatabaseConnectio
         { returnDocument: "after" }
       );
       return result ? stripContentSeriesDocument(result) : null;
+    }
+  };
+}
+
+export function createStoryWorldsRepository(connection: MongoDatabaseConnection): StoryWorldsRepository {
+  const collection = connection.collection<StoryWorldDocument>("story_worlds");
+
+  return {
+    async create(input: StoryWorldCreateInput): Promise<StoryWorld> {
+      await this.ensureIndexes();
+
+      const storyWorld = normalizeStoryWorld(input);
+      await collection.insertOne(storyWorld as StoryWorldDocument);
+      return storyWorld;
+    },
+
+    async delete(id: string): Promise<boolean> {
+      const result = await collection.deleteOne({ _id: id } as Filter<StoryWorldDocument>);
+      return result.deletedCount === 1;
+    },
+
+    async ensureIndexes(): Promise<void> {
+      await Promise.all([
+        collection.createIndex({ status: 1, updatedAt: -1 }),
+        collection.createIndex({ name: 1 }),
+        collection.createIndex({ seriesIds: 1 })
+      ]);
+    },
+
+    async findById(id: string): Promise<StoryWorld | null> {
+      const storyWorld = await collection.findOne({ _id: id } as Filter<StoryWorldDocument>);
+      return storyWorld ? stripStoryWorldDocument(storyWorld) : null;
+    },
+
+    async list(): Promise<StoryWorld[]> {
+      const storyWorlds = await collection.find({}).sort({ updatedAt: -1 }).toArray();
+      return storyWorlds.map(stripStoryWorldDocument);
+    },
+
+    async patch(id: string, patch: StoryWorldPatchInput): Promise<StoryWorld | null> {
+      const update = normalizeStoryWorldPatch(patch);
+
+      if (Object.keys(update).length === 0) {
+        return this.findById(id);
+      }
+
+      const result = await collection.findOneAndUpdate(
+        { _id: id } as Filter<StoryWorldDocument>,
+        { $set: { ...update, updatedAt: new Date().toISOString() } as Document },
+        { returnDocument: "after" }
+      );
+      return result ? stripStoryWorldDocument(result) : null;
     }
   };
 }
@@ -555,41 +744,7 @@ export function createProductionAssetsRepository(connection: MongoDatabaseConnec
 }
 
 function buildPlannedProductionAssets(input: BootstrapProductionAssetsInput): ProductionAssetCreateInput[] {
-  const sceneCount = Math.max(1, Math.min(20, Math.round(input.sceneCount)));
   const basePrompt = input.prompt?.trim() || `Asset plan for ${input.topic}`;
-  const sceneAssets = Array.from({ length: sceneCount }, (_, index): ProductionAssetCreateInput => {
-    const sceneId = index + 1;
-
-    return {
-      jobId: input.jobId,
-      label: `Scene ${sceneId} first frame`,
-      folderName: `Case ${input.jobId}`,
-      prompt: `${basePrompt}\nCreate the approved first-frame still for scene ${sceneId}.`,
-      provider: "openai",
-      role: "first_frame",
-      sceneId,
-      scope: "scene",
-      status: "planned",
-      type: "first_frame"
-    };
-  });
-  const optionalLastFrames = input.includeLastFrames
-    ? Array.from({ length: sceneCount }, (_, index): ProductionAssetCreateInput => {
-      const sceneId = index + 1;
-      return {
-        jobId: input.jobId,
-        label: `Scene ${sceneId} last frame`,
-        folderName: `Case ${input.jobId}`,
-        prompt: `${basePrompt}\nCreate the optional last-frame still for scene ${sceneId}.`,
-        provider: "openai",
-        role: "last_frame",
-        sceneId,
-        scope: "scene",
-        status: "planned",
-        type: "last_frame"
-      };
-    })
-    : [];
 
   return [
     {
@@ -627,9 +782,7 @@ function buildPlannedProductionAssets(input: BootstrapProductionAssetsInput): Pr
       scope: "case",
       status: "planned",
       type: "style_reference"
-    },
-    ...sceneAssets,
-    ...optionalLastFrames
+    }
   ];
 }
 
@@ -760,13 +913,16 @@ function normalizeProductionAssetRole(value: string): ProductionAssetRole {
 function normalizeContentSeries(input: ContentSeriesCreateInput, now = new Date().toISOString()): ContentSeries {
   return {
     _id: input.id ?? `series_${randomUUID()}`,
+    continuityRules: normalizeText(input.continuityRules, ""),
     audience: normalizeText(input.audience, "未指定目标观众"),
     contentType: normalizeText(input.contentType, "自定义内容类型"),
     createdAt: now,
     description: normalizeText(input.description, ""),
+    dramaIntensity: normalizeContentSeriesDramaIntensity(input.dramaIntensity ?? "medium"),
     durationSeconds: Math.max(15, Math.min(180, Math.round(numberOrDefault(input.durationSeconds, 45)))),
     language: normalizeSeriesLanguage(input.language),
     musicStyle: normalizeText(input.musicStyle, ""),
+    narrativeMode: normalizeContentSeriesNarrativeMode(input.narrativeMode ?? "standalone"),
     name: normalizeText(input.name, "未命名系列"),
     referenceAssetIds: normalizeStringList(input.referenceAssetIds, 50),
     safetyRules: normalizeText(
@@ -775,6 +931,7 @@ function normalizeContentSeries(input: ContentSeriesCreateInput, now = new Date(
     ),
     sceneCount: Math.max(3, Math.min(12, Math.round(numberOrDefault(input.sceneCount, 5)))),
     status: normalizeContentSeriesStatus(input.status ?? "draft"),
+    storyWorldId: normalizeNullableText(input.storyWorldId),
     tone: normalizeText(input.tone, ""),
     updatedAt: now,
     values: normalizeText(input.values, ""),
@@ -786,16 +943,20 @@ function normalizeContentSeriesPatch(patch: ContentSeriesPatchInput): ContentSer
   const normalized: ContentSeriesPatchInput = {};
 
   if (patch.audience !== undefined) normalized.audience = normalizeText(patch.audience, "");
+  if (patch.continuityRules !== undefined) normalized.continuityRules = normalizeText(patch.continuityRules, "");
   if (patch.contentType !== undefined) normalized.contentType = normalizeText(patch.contentType, "");
   if (patch.description !== undefined) normalized.description = normalizeText(patch.description, "");
+  if (patch.dramaIntensity !== undefined) normalized.dramaIntensity = normalizeContentSeriesDramaIntensity(patch.dramaIntensity);
   if (patch.durationSeconds !== undefined) normalized.durationSeconds = Math.max(15, Math.min(180, Math.round(numberOrDefault(patch.durationSeconds, 45))));
   if (patch.language !== undefined) normalized.language = normalizeSeriesLanguage(patch.language);
   if (patch.musicStyle !== undefined) normalized.musicStyle = normalizeText(patch.musicStyle, "");
+  if (patch.narrativeMode !== undefined) normalized.narrativeMode = normalizeContentSeriesNarrativeMode(patch.narrativeMode);
   if (patch.name !== undefined) normalized.name = normalizeText(patch.name, "未命名系列");
   if (patch.referenceAssetIds !== undefined) normalized.referenceAssetIds = normalizeStringList(patch.referenceAssetIds, 50);
   if (patch.safetyRules !== undefined) normalized.safetyRules = normalizeText(patch.safetyRules, "");
   if (patch.sceneCount !== undefined) normalized.sceneCount = Math.max(3, Math.min(12, Math.round(numberOrDefault(patch.sceneCount, 5))));
   if (patch.status !== undefined) normalized.status = normalizeContentSeriesStatus(patch.status);
+  if (patch.storyWorldId !== undefined) normalized.storyWorldId = normalizeNullableText(patch.storyWorldId);
   if (patch.tone !== undefined) normalized.tone = normalizeText(patch.tone, "");
   if (patch.values !== undefined) normalized.values = normalizeText(patch.values, "");
   if (patch.visualStyle !== undefined) normalized.visualStyle = normalizeText(patch.visualStyle, "");
@@ -808,10 +969,17 @@ function normalizeSeriesEpisodeIdea(input: SeriesEpisodeIdeaCreateInput, now = n
     _id: input.id ?? `episode_${randomUUID()}`,
     ageRange: normalizeText(input.ageRange, ""),
     caseId: input.caseId === undefined || input.caseId === null ? null : normalizeText(input.caseId, ""),
+    continuityNote: normalizeText(input.continuityNote, ""),
     createdAt: now,
+    episodeNo: input.episodeNo === undefined || input.episodeNo === null ? null : Math.max(1, Math.round(numberOrDefault(input.episodeNo, 1))),
+    interactiveEnding: normalizeText(input.interactiveEnding, ""),
+    lessonOrTheme: normalizeText(input.lessonOrTheme, input.moralLesson),
     moralLesson: normalizeText(input.moralLesson, "核心看点待补充"),
     promptSeed: normalizeText(input.promptSeed, input.synopsis),
+    serialHook: normalizeText(input.serialHook, ""),
     riskNotes: normalizeText(input.riskNotes, "按系列安全规则复核。"),
+    selectedCharacterAssetIds: normalizeStringList(input.selectedCharacterAssetIds, 20),
+    selectedSceneAssetIds: normalizeStringList(input.selectedSceneAssetIds, 20),
     seriesId: normalizeText(input.seriesId, ""),
     sourceStory: normalizeText(input.sourceStory, "原创灵感"),
     status: normalizeSeriesEpisodeIdeaStatus(input.status ?? "draft"),
@@ -826,9 +994,16 @@ function normalizeSeriesEpisodeIdeaPatch(patch: SeriesEpisodeIdeaPatchInput): Se
 
   if (patch.ageRange !== undefined) normalized.ageRange = normalizeText(patch.ageRange, "");
   if (patch.caseId !== undefined) normalized.caseId = patch.caseId === null ? null : normalizeText(patch.caseId, "");
+  if (patch.continuityNote !== undefined) normalized.continuityNote = normalizeText(patch.continuityNote, "");
+  if (patch.episodeNo !== undefined) normalized.episodeNo = patch.episodeNo === null ? null : Math.max(1, Math.round(numberOrDefault(patch.episodeNo, 1)));
+  if (patch.interactiveEnding !== undefined) normalized.interactiveEnding = normalizeText(patch.interactiveEnding, "");
+  if (patch.lessonOrTheme !== undefined) normalized.lessonOrTheme = normalizeText(patch.lessonOrTheme, "");
   if (patch.moralLesson !== undefined) normalized.moralLesson = normalizeText(patch.moralLesson, "");
   if (patch.promptSeed !== undefined) normalized.promptSeed = normalizeText(patch.promptSeed, "");
+  if (patch.serialHook !== undefined) normalized.serialHook = normalizeText(patch.serialHook, "");
   if (patch.riskNotes !== undefined) normalized.riskNotes = normalizeText(patch.riskNotes, "");
+  if (patch.selectedCharacterAssetIds !== undefined) normalized.selectedCharacterAssetIds = normalizeStringList(patch.selectedCharacterAssetIds, 20);
+  if (patch.selectedSceneAssetIds !== undefined) normalized.selectedSceneAssetIds = normalizeStringList(patch.selectedSceneAssetIds, 20);
   if (patch.sourceStory !== undefined) normalized.sourceStory = normalizeText(patch.sourceStory, "");
   if (patch.status !== undefined) normalized.status = normalizeSeriesEpisodeIdeaStatus(patch.status);
   if (patch.synopsis !== undefined) normalized.synopsis = normalizeText(patch.synopsis, "");
@@ -840,17 +1015,21 @@ function normalizeSeriesEpisodeIdeaPatch(patch: SeriesEpisodeIdeaPatchInput): Se
 function stripContentSeriesDocument(series: ContentSeriesDocument): ContentSeries {
   const normalized = normalizeContentSeries({
     audience: series.audience,
+    continuityRules: series.continuityRules,
     contentType: series.contentType,
     description: series.description,
+    dramaIntensity: series.dramaIntensity,
     durationSeconds: series.durationSeconds,
     id: String(series._id),
     language: normalizeSeriesLanguage(series.language),
     musicStyle: series.musicStyle,
     name: series.name,
+    narrativeMode: series.narrativeMode,
     referenceAssetIds: normalizeStringList(series.referenceAssetIds, 50),
     safetyRules: series.safetyRules,
     sceneCount: series.sceneCount,
     status: normalizeContentSeriesStatus(series.status),
+    storyWorldId: series.storyWorldId ?? null,
     tone: series.tone,
     values: series.values,
     visualStyle: series.visualStyle
@@ -866,10 +1045,17 @@ function stripSeriesEpisodeIdeaDocument(episode: SeriesEpisodeIdeaDocument): Ser
   const normalized = normalizeSeriesEpisodeIdea({
     ageRange: episode.ageRange,
     caseId: episode.caseId ?? null,
+    continuityNote: episode.continuityNote,
+    episodeNo: episode.episodeNo ?? null,
     id: String(episode._id),
+    interactiveEnding: episode.interactiveEnding,
+    lessonOrTheme: episode.lessonOrTheme,
     moralLesson: episode.moralLesson,
     promptSeed: episode.promptSeed,
     riskNotes: episode.riskNotes,
+    serialHook: episode.serialHook,
+    selectedCharacterAssetIds: normalizeStringList(episode.selectedCharacterAssetIds, 20),
+    selectedSceneAssetIds: normalizeStringList(episode.selectedSceneAssetIds, 20),
     seriesId: episode.seriesId,
     sourceStory: episode.sourceStory,
     status: normalizeSeriesEpisodeIdeaStatus(episode.status),
@@ -883,8 +1069,81 @@ function stripSeriesEpisodeIdeaDocument(episode: SeriesEpisodeIdeaDocument): Ser
   };
 }
 
+function normalizeStoryWorld(input: StoryWorldCreateInput, now = new Date().toISOString()): StoryWorld {
+  return {
+    _id: input.id ?? `world_${randomUUID()}`,
+    createdAt: now,
+    defaultSceneAssetIds: normalizeStringList(input.defaultSceneAssetIds, 50),
+    description: normalizeText(input.description, ""),
+    name: normalizeText(input.name, "未命名世界观"),
+    recurringCharacterAssetIds: normalizeStringList(input.recurringCharacterAssetIds, 50),
+    relationshipMap: normalizeText(input.relationshipMap, ""),
+    safetyRules: normalizeText(input.safetyRules, ""),
+    seriesIds: normalizeStringList(input.seriesIds, 50),
+    status: normalizeStoryWorldStatus(input.status ?? "draft"),
+    updatedAt: now,
+    visualStyle: normalizeText(input.visualStyle, "")
+  };
+}
+
+function normalizeStoryWorldPatch(patch: StoryWorldPatchInput): StoryWorldPatchInput {
+  const normalized: StoryWorldPatchInput = {};
+
+  if (patch.defaultSceneAssetIds !== undefined) normalized.defaultSceneAssetIds = normalizeStringList(patch.defaultSceneAssetIds, 50);
+  if (patch.description !== undefined) normalized.description = normalizeText(patch.description, "");
+  if (patch.name !== undefined) normalized.name = normalizeText(patch.name, "未命名世界观");
+  if (patch.recurringCharacterAssetIds !== undefined) normalized.recurringCharacterAssetIds = normalizeStringList(patch.recurringCharacterAssetIds, 50);
+  if (patch.relationshipMap !== undefined) normalized.relationshipMap = normalizeText(patch.relationshipMap, "");
+  if (patch.safetyRules !== undefined) normalized.safetyRules = normalizeText(patch.safetyRules, "");
+  if (patch.seriesIds !== undefined) normalized.seriesIds = normalizeStringList(patch.seriesIds, 50);
+  if (patch.status !== undefined) normalized.status = normalizeStoryWorldStatus(patch.status);
+  if (patch.visualStyle !== undefined) normalized.visualStyle = normalizeText(patch.visualStyle, "");
+
+  return normalized;
+}
+
+function stripStoryWorldDocument(storyWorld: StoryWorldDocument): StoryWorld {
+  const normalized = normalizeStoryWorld({
+    defaultSceneAssetIds: normalizeStringList(storyWorld.defaultSceneAssetIds, 50),
+    description: storyWorld.description,
+    id: String(storyWorld._id),
+    name: storyWorld.name,
+    recurringCharacterAssetIds: normalizeStringList(storyWorld.recurringCharacterAssetIds, 50),
+    relationshipMap: storyWorld.relationshipMap,
+    safetyRules: storyWorld.safetyRules,
+    seriesIds: normalizeStringList(storyWorld.seriesIds, 50),
+    status: normalizeStoryWorldStatus(storyWorld.status),
+    visualStyle: storyWorld.visualStyle
+  }, storyWorld.createdAt);
+
+  return {
+    ...normalized,
+    updatedAt: storyWorld.updatedAt ?? normalized.updatedAt
+  };
+}
+
 function normalizeContentSeriesStatus(value: string): ContentSeriesStatus {
   if (value === "active" || value === "paused" || value === "archived") {
+    return value;
+  }
+
+  return "draft";
+}
+
+function normalizeContentSeriesNarrativeMode(value: unknown): ContentSeriesNarrativeMode {
+  return value === "serialized" ? "serialized" : "standalone";
+}
+
+function normalizeContentSeriesDramaIntensity(value: unknown): ContentSeriesDramaIntensity {
+  if (value === "low" || value === "high" || value === "melodrama") {
+    return value;
+  }
+
+  return "medium";
+}
+
+function normalizeStoryWorldStatus(value: string): StoryWorld["status"] {
+  if (value === "active" || value === "archived") {
     return value;
   }
 
@@ -905,6 +1164,10 @@ function normalizeSeriesLanguage(value: unknown): ContentSeries["language"] {
 
 function normalizeText(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeNullableText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeStringList(value: unknown, limit: number): string[] {
@@ -941,6 +1204,7 @@ function normalizeCostLog(input: CostLogCreateInput, now = new Date().toISOStrin
     pricingStatus: normalizePricingStatus(input.pricingStatus),
     quantity: round6(numberOrDefault(input.quantity, 0)),
     service: normalizeCostService(input.service),
+    toolType: normalizeCostToolType(input.toolType, input.service),
     unit: input.unit.trim() || "unit",
     usage: normalizeCostUsage(input.usage)
   };
@@ -960,6 +1224,7 @@ function stripCostLogDocument(log: CostLogDocument): CostLog {
     pricingStatus: normalizePricingStatus(log.pricingStatus),
     quantity: numberOrDefault(log.quantity, 0),
     service: normalizeCostService(log.service),
+    toolType: normalizeCostToolType(log.toolType, log.service),
     unit: log.unit,
     usage: normalizeCostUsage(log.usage)
   }, log.createdAt);
@@ -973,6 +1238,33 @@ function normalizeCostService(value: string): CostLog["service"] {
   if (value === "script" || value === "image" || value === "reference_design" || value === "tts" || value === "bgm" || value === "video" || value === "compose" || value === "qc") {
     return value;
   }
+
+  return "other";
+}
+
+function normalizeCostToolType(value: string | undefined, service: string): CostLogToolType {
+  if (
+    value === "llm" ||
+    value === "image" ||
+    value === "design_image" ||
+    value === "tts" ||
+    value === "bgm" ||
+    value === "video" ||
+    value === "subtitle" ||
+    value === "compose" ||
+    value === "storage" ||
+    value === "youtube"
+  ) {
+    return value;
+  }
+
+  if (service === "script") return "llm";
+  if (service === "reference_design") return "design_image";
+  if (service === "image") return "image";
+  if (service === "tts") return "tts";
+  if (service === "bgm") return "bgm";
+  if (service === "video") return "video";
+  if (service === "compose") return "compose";
 
   return "other";
 }

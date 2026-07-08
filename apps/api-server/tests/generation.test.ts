@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import { createTtsGenerationService, type TtsGenerationService } from "../src/mo
 import type { VideoClipGenerationService } from "../src/modules/generation/video-clip-service.js";
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -414,6 +416,85 @@ describe("POST /generation/tts", () => {
 });
 
 describe("POST /generation/bgm", () => {
+  it("applies BGM tool provider overrides from workflow settings", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-bgm-override-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const fetchMock = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+      const urlValue = String(url);
+
+      if (urlValue.includes("/user/subscription")) {
+        return new Response(JSON.stringify({ character_count: 10, character_limit: 1000 }), {
+          headers: { "content-type": "application/json" },
+          status: 200
+        });
+      }
+
+      if (urlValue.includes("/music")) {
+        return new Response(Buffer.from("fake music"), {
+          headers: {
+            "content-type": "audio/mpeg",
+            "song-id": "song_override"
+          },
+          status: 200
+        });
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const bgmGenerationService = createBgmGenerationService({
+      elevenlabs: {
+        apiKey: "test-key",
+        baseUrl: "https://api.elevenlabs.io/v1",
+        costRMPerMinute: 0,
+        model: "music_v1",
+        outputFormat: "mp3_44100_128"
+      },
+      storage
+    });
+
+    const response = await bgmGenerationService.generateBgm({
+      baseUrl: "https://custom-music.example/v1",
+      cost: {
+        costMode: "second",
+        outputUnitPriceRM: 0.2
+      },
+      costLimitRM: 7.5,
+      durationSeconds: 12,
+      jobId: "job_bgm_override",
+      language: "zh-CN",
+      model: "music_custom_v2",
+      params: {
+        outputFormat: "mp3_22050_64"
+      },
+      prompt: "gentle forest music",
+      provider: "elevenlabs-compatible",
+      sceneCount: 3,
+      templateType: "fairy_tale",
+      topic: "forest lesson"
+    });
+
+    const musicCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/music"));
+    expect(String(musicCall?.[0])).toBe("https://custom-music.example/v1/music?output_format=mp3_22050_64");
+    expect(JSON.parse(String(musicCall?.[1]?.body))).toMatchObject({
+      force_instrumental: true,
+      model_id: "music_custom_v2",
+      music_length_ms: 12000
+    });
+    expect(response).toMatchObject({
+      costRM: 0.04,
+      durationSeconds: 12,
+      format: "mp3",
+      model: "music_custom_v2",
+      provider: "elevenlabs-compatible",
+      songId: "song_override"
+    });
+  });
+
   it("stores generated ElevenLabs background music through the storage adapter", async () => {
     const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-bgm-test-"));
     const storage = createStorageAdapter({
@@ -520,6 +601,73 @@ describe("POST /generation/bgm", () => {
 
     expect(response.body.error.message).toContain("body.music_length_ms: Input should be greater than or equal to 3000");
     expect(response.body.error.message).not.toContain("[object Object]");
+  });
+
+  it("explains ElevenLabs API key quota errors separately from account balance", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-bgm-quota-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+    const bgmGenerationService = createBgmGenerationService({
+      elevenlabs: {
+        apiKey: "test-key",
+        baseUrl: "https://api.elevenlabs.io/v1",
+        costRMPerMinute: 0,
+        model: "music_v1",
+        outputFormat: "mp3_44100_128"
+      },
+      storage
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = input.toString();
+
+        if (url.includes("/user/subscription")) {
+          return new Response(JSON.stringify({ character_count: 680, character_limit: 1000 }), {
+            headers: {
+              "content-type": "application/json"
+            },
+            status: 200
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            detail: {
+              message: "This request exceeds your API key (factory) quota of 1000. You have 320 credits remaining, while 619 credits are required for this request."
+            }
+          }),
+          {
+            headers: {
+              "content-type": "application/json"
+            },
+            status: 401,
+            statusText: "Unauthorized"
+          }
+        );
+      })
+    );
+
+    const response = await request(createApp({ bgmGenerationService, storage }))
+      .post("/generation/bgm")
+      .send({
+        costLimitRM: 7.5,
+        durationSeconds: 45,
+        jobId: "job_bgm_quota_test",
+        language: "en-US",
+        prompt: "Create a comedy short.",
+        sceneCount: 5,
+        templateType: "comedy_sketch",
+        topic: "office coffee misunderstanding"
+      })
+      .expect(502);
+
+    expect(response.body.error.message).toContain("API key「factory」自己的用量上限");
+    expect(response.body.error.message).toContain("不是账户 top-up balance");
+    expect(response.body.error.message).toContain("Monthly credits 调高或设为 Unlimited");
   });
 });
 
@@ -634,6 +782,15 @@ describe("POST /generation/images", () => {
         jobId: "job_visual_bible_image",
         language: "en-US",
         prompt: "Output title, full script, storyboard, and image prompts.",
+        references: [
+          {
+            label: "Mimi rabbit",
+            prompt: "white rabbit girl, pink dress, blue vest, warm smile, fixed pastel palette",
+            role: "reference_image",
+            type: "character_design",
+            url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          }
+        ],
         sceneCount: 1,
         templateType: "comedy_sketch",
         topic: "kitchen comedy"
@@ -641,13 +798,168 @@ describe("POST /generation/images", () => {
       .expect(201);
 
     expect(response.body.images).toHaveLength(1);
+    expect(response.body.images[0].prompt).toContain("MANDATORY CAST LOCK");
+    expect(response.body.images[0].prompt).toContain("Mimi rabbit");
+    expect(response.body.images[0].prompt).toContain("white rabbit girl");
     expect(response.body.images[0].prompt).toContain("Fixed protagonist identity");
     expect(response.body.images[0].prompt).toContain("Alex");
     expect(response.body.images[0].prompt).not.toContain("Production brief");
     expect(response.body.images[0].prompt).not.toContain("Output title");
-    expect(response.body.referenceImage.publicUrl).toBe("http://localhost:4000/uploads/jobs/job_visual_bible_image/references/character_reference.svg");
+    expect(response.body.referenceImage.publicUrl).toMatch(/^data:image\/png/u);
     expect(response.body.visualBible.character.name).toBe("Alex");
     expect(response.body.requiresReview).toBe(false);
+  });
+
+  it("blocks image generation when a selected character reference image cannot be loaded", async () => {
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-selected-reference-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+
+    await storage.writeFile(
+      "jobs/job_selected_reference_block/storyboard.json",
+      JSON.stringify({
+        scenes: [
+          {
+            camera: "medium shot",
+            durationSeconds: 8,
+            imagePrompt: "The selected character opens the office door.",
+            sceneId: 1,
+            sfx: ["door"],
+            visual: "The selected character enters the office.",
+            voiceText: "The door opened."
+          }
+        ]
+      })
+    );
+
+    const imageGenerationService = createImageGenerationService({
+      allowLocalFallback: true,
+      openai: {
+        apiKey: undefined,
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-image-1",
+        quality: "medium",
+        size: "1024x1536",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await request(createApp({ imageGenerationService, storage }))
+      .post("/generation/images/scene")
+      .send({
+        costLimitRM: 7.5,
+        jobId: "job_selected_reference_block",
+        language: "en-US",
+        prompt: "Create a scene using the selected character.",
+        references: [
+          {
+            label: "Banana CEO",
+            prompt: "anthropomorphic banana CEO in a black suit, fixed face and wardrobe",
+            role: "reference_image",
+            type: "character_design",
+            url: "http://127.0.0.1:9/missing-reference.png"
+          }
+        ],
+        sceneCount: 1,
+        sceneId: 1,
+        templateType: "comedy_sketch",
+        topic: "office drama"
+      })
+      .expect(409);
+
+    expect(response.body.error.message).toContain("Selected reference image");
+    expect(response.body.error.message).toContain("Banana CEO");
+    expect(response.body.error.message).toContain("stopped before the model could invent a different character");
+  });
+
+  it("blocks reference composite diagnostics from being saved as scene images when OpenAI times out", async () => {
+    const originalFetch = globalThis.fetch;
+    const uploadsDir = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-reference-composite-test-"));
+    const storage = createStorageAdapter({
+      apiPublicBaseUrl: "http://localhost:4000",
+      uploadsDir
+    });
+
+    await storage.writeFile(
+      "jobs/job_reference_composite/storyboard.json",
+      JSON.stringify({
+        scenes: [
+          {
+            camera: "medium shot",
+            durationSeconds: 8,
+            imagePrompt: "The peach dessert clerk looks at the banana CEO in a luxury dessert shop.",
+            sceneId: 1,
+            sfx: ["room tone"],
+            visual: "The peach dessert clerk stands inside the dessert shop while the banana CEO arrives.",
+            voiceText: "Luna froze when the banana CEO walked in."
+          }
+        ]
+      })
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url.includes("/images/edits") || url.includes("/images/generations")) {
+        return new Response(JSON.stringify({ error: { message: "Gateway Timeout" } }), {
+          headers: { "Content-Type": "application/json" },
+          status: 504,
+          statusText: "Gateway Timeout"
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    const imageGenerationService = createImageGenerationService({
+      openai: {
+        apiKey: "test-openai-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-image-1-mini",
+        quality: "low",
+        size: "1024x1536",
+        usdToMyrRate: 3.95
+      },
+      storage
+    });
+
+    const response = await request(createApp({ imageGenerationService, storage }))
+      .post("/generation/images/scene")
+      .send({
+        costLimitRM: 7.5,
+        jobId: "job_reference_composite",
+        language: "zh-CN",
+        prompt: "水果人豪门连续剧",
+        references: [
+          {
+            label: "水蜜桃Luna",
+            prompt: "peach dessert clerk, pastel dress, gentle eyes",
+            role: "reference_image",
+            type: "character_design",
+            url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          },
+          {
+            label: "水蜜桃甜品店",
+            prompt: "luxury dessert shop with warm lighting",
+            role: "reference_image",
+            type: "scene_design",
+            url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          }
+        ],
+        sceneCount: 1,
+        sceneId: 1,
+        templateType: "romance_story",
+        topic: "命运揭幕：秘密的甜品店员"
+      })
+      .expect(409);
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(response.body.error.message).toContain("Scene 1 image did not pass the production quality gate");
+    expect(response.body.error.message).toContain("No scene image was saved");
+    expect(existsSync(path.join(uploadsDir, "jobs/job_reference_composite/images/scene_01.png"))).toBe(false);
   });
 
   it("regenerates one scene image with an override prompt", async () => {

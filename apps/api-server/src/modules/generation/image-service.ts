@@ -1,5 +1,9 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
 import type {
   ContentTemplateType,
   GenerateImagesRequest,
@@ -103,7 +107,16 @@ interface GeneratedOpenAIImage {
   usage?: Record<string, number | string> | undefined;
 }
 
+interface LoadedReferenceImage {
+  buffer?: Buffer | undefined;
+  isSelected: boolean;
+  label?: string | undefined;
+  mimeType?: string | undefined;
+  object: GeneratedStorageObject;
+}
+
 const maxImageQcRetries = 2;
+const referenceCompositePricingMode = "reference_composite_fallback";
 
 export function createImageGenerationService(options: ImageGenerationServiceOptions): ImageGenerationService {
   return {
@@ -333,19 +346,29 @@ function buildScenePrompt(
   const character = input.character
     ? `${input.character.name}. ${input.character.visualIdentity}. ${input.character.referenceNotes ?? ""}`.trim()
     : formatVisualBibleCharacter(visualBible);
+  const characterReferenceLock = formatReferencesByType(input.references, ["character_design"]);
+  const environmentReferenceLock = formatReferencesByType(input.references, ["scene_design", "style_reference"]);
 
   return [
     `Create one single vertical 9:16 cinematic still for scene ${scene.sceneId}.`,
+    characterReferenceLock
+      ? `MANDATORY CAST LOCK: The visible character identity, face, silhouette, species/body type, hairstyle, wardrobe, color palette, and fixed props must match these selected character reference assets exactly. Do not replace them with a new actor or a generic character. ${characterReferenceLock}`
+      : "",
+    environmentReferenceLock
+      ? `MANDATORY SET / STYLE LOCK: The location, layout, key props, lighting, palette, camera zones, and style must follow these selected scene/style reference assets. ${environmentReferenceLock}`
+      : "",
     `User topic: ${input.topic}.`,
     `Scene action: ${scene.visual}`,
     `Scene narration context: ${scene.voiceText}`,
     `Approved scene image brief: ${basePrompt}`,
     `Fixed protagonist identity: ${character}`,
     `Fixed environment: ${formatVisualBibleEnvironment(visualBible)}`,
-    input.references?.length ? `Selected production reference assets: ${formatGenerationReferences(input.references)}` : "",
+    input.references?.length ? `Reference routing: use only these ${input.references.length} selected production reference asset(s) for this scene. Ignore unrelated cast or locations. ${formatGenerationReferences(input.references)}` : "",
     `Camera and motion intent: ${scene.camera}.`,
     `Visual style: ${visualBible.style || getTemplateVisualStyle(input.templateType)}.`,
-    `Continuity rule: keep the same protagonist face, hair, body type, wardrobe, props, location logic, palette, and lighting as the visual bible and reference image.`,
+    characterReferenceLock
+      ? "Continuity rule: selected character reference assets override the visual bible when there is any conflict."
+      : "Continuity rule: keep the same protagonist face, hair, body type, wardrobe, props, location logic, palette, and lighting as the visual bible and reference image.",
     "Composition rule: one coherent scene, one protagonist unless the scene explicitly requires another person, no split screen, no panel layout.",
     `Negative prompt: ${visualBible.negativePrompt}`,
     "Forbidden: text, captions, subtitles, letters with readable text, logos, watermarks, UI, tables, storyboard sheets, comic panels, contact sheets, collage, duplicated protagonist, different actor, different outfit, unrelated scene."
@@ -357,7 +380,7 @@ async function loadOrCreateReferenceImage(
   jobId: string,
   input: NormalizedImageInput,
   visualBible: GeneratedVisualBible
-): Promise<{ buffer?: Buffer | undefined; mimeType?: string | undefined; object: GeneratedStorageObject } | null> {
+): Promise<LoadedReferenceImage | null> {
   const selectedReference = await loadSelectedReferenceImage(input);
 
   if (selectedReference) {
@@ -371,6 +394,7 @@ async function loadOrCreateReferenceImage(
     const buffer = referencePath.endsWith(".png") ? await readFile(existingPath) : undefined;
     return {
       buffer,
+      isSelected: false,
       mimeType: buffer ? "image/png" : undefined,
       object: toGeneratedObject(options.storage.getFile(referencePath))
     };
@@ -385,6 +409,7 @@ async function loadOrCreateReferenceImage(
 
     const referenceObject = await options.storage.writeFile(referencePath, createLocalReferenceSvg(input.topic, visualBible));
     return {
+      isSelected: false,
       object: toGeneratedObject(referenceObject)
     };
   }
@@ -394,12 +419,13 @@ async function loadOrCreateReferenceImage(
 
   return {
     buffer: generated.buffer,
+    isSelected: false,
     mimeType: "image/png",
     object: toGeneratedObject(referenceObject)
   };
 }
 
-async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<{ buffer?: Buffer | undefined; mimeType?: string | undefined; object: GeneratedStorageObject } | null> {
+async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<LoadedReferenceImage | null> {
   const primaryReference = input.references
     ?.filter((reference) => reference.url.trim())
     .sort((left, right) => referencePriority(left.type) - referencePriority(right.type))[0];
@@ -413,6 +439,8 @@ async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<
 
     return {
       buffer,
+      isSelected: true,
+      label: primaryReference.label,
       mimeType: "image/png",
       object: {
         driver: "local",
@@ -420,8 +448,15 @@ async function loadSelectedReferenceImage(input: NormalizedImageInput): Promise<
         storagePath: primaryReference.url
       }
     };
-  } catch {
-    return null;
+  } catch (error) {
+    throw new MissingGenerationDependencyError(
+      [
+        `Selected reference image "${primaryReference.label}" could not be loaded, so image generation was stopped before the model could invent a different character.`,
+        `Reference URL: ${primaryReference.url}`,
+        `Original error: ${error instanceof Error ? error.message : "unknown fetch error"}`,
+        "Fix the asset URL/storage path or regenerate/save the character design asset, then retry this scene."
+      ].join(" ")
+    );
   }
 }
 
@@ -429,7 +464,6 @@ function referencePriority(type: NonNullable<GenerateImagesRequest["references"]
   if (type === "character_design") return 0;
   if (type === "scene_design") return 1;
   if (type === "style_reference") return 2;
-  if (type === "first_frame") return 3;
   return 9;
 }
 
@@ -455,6 +489,25 @@ function formatGenerationReferences(references: NonNullable<GenerateImagesReques
       ].filter(Boolean).join("; ")
     )
     .join(" | ");
+}
+
+function formatReferencesByType(
+  references: GenerateImagesRequest["references"] | undefined,
+  types: Array<NonNullable<GenerateImagesRequest["references"]>[number]["type"]>
+): string {
+  const typeSet = new Set(types);
+  const selected = references?.filter((reference) => typeSet.has(reference.type)) ?? [];
+
+  if (selected.length === 0) {
+    return "";
+  }
+
+  return selected.map((reference) => [
+    `${reference.type}: ${reference.label}`,
+    reference.prompt ? `visual facts=${reference.prompt}` : "",
+    reference.notes ? `continuity contract=${reference.notes}` : "",
+    `reference URL=${reference.url}`
+  ].filter(Boolean).join("; ")).join(" | ");
 }
 
 function buildReferenceDesignPrompt(
@@ -516,7 +569,7 @@ async function generateSceneAssetWithRetries(
   input: NormalizedImageInput,
   scenePrompt: SceneImagePrompt,
   visualBible: GeneratedVisualBible,
-  reference: { buffer?: Buffer | undefined; mimeType?: string | undefined; object: GeneratedStorageObject } | null
+  reference: LoadedReferenceImage | null
 ): Promise<GeneratedImageAsset> {
   let totalCostRM = 0;
   let lastGenerated: { buffer: Buffer; extension: "png" | "svg"; revisedPrompt?: string | undefined; usage?: Record<string, number | string> | undefined } | null = null;
@@ -526,7 +579,7 @@ async function generateSceneAssetWithRetries(
   for (let retryCount = 0; retryCount <= maxImageQcRetries; retryCount += 1) {
     const prompt = retryCount === 0 ? scenePrompt.prompt : buildRepairPrompt(scenePrompt.prompt, lastCheck);
     const generated = options.openai.apiKey
-      ? await generateWithOpenAI(prompt, options.openai, reference?.buffer ? { buffer: reference.buffer, filename: "character_reference.png", mimeType: reference.mimeType ?? "image/png" } : undefined)
+      ? await generateWithOpenAIWithCompositeFallback(prompt, options, input, scenePrompt, visualBible, reference)
       : options.allowLocalFallback
         ? {
           buffer: Buffer.from(createLocalSvg(scenePrompt.sceneId, input.topic, prompt, visualBible)),
@@ -540,7 +593,9 @@ async function generateSceneAssetWithRetries(
     totalCostRM = Number((totalCostRM + generated.costRM).toFixed(4));
     lastGenerated = generated;
     lastPrompt = prompt;
-    lastCheck = await runImageQualityCheck(generated.buffer, scenePrompt, visualBible, options.openai, retryCount);
+    lastCheck = isReferenceCompositeFallback(generated)
+      ? buildReferenceCompositeQualityCheck(scenePrompt, generated.revisedPrompt, retryCount)
+      : await runImageQualityCheck(generated.buffer, scenePrompt, visualBible, options.openai, retryCount);
 
     if (lastCheck.status !== "fail") {
       break;
@@ -549,6 +604,21 @@ async function generateSceneAssetWithRetries(
 
   if (!lastGenerated) {
     missingOpenAIKey();
+  }
+
+  if (lastCheck?.status === "fail") {
+    const fallbackDetail = isReferenceCompositeFallback(lastGenerated)
+      ? "OpenAI image generation timed out and only a reference composite diagnostic image was available."
+      : "Generated image failed visual quality checks.";
+
+    throw new MissingGenerationDependencyError(
+      [
+        `Scene ${scenePrompt.sceneId} image did not pass the production quality gate.`,
+        fallbackDetail,
+        lastCheck.summary,
+        "No scene image was saved; regenerate this scene before Seedance or MP4 composition."
+      ].filter(Boolean).join(" ")
+    );
   }
 
   const imageObject = await options.storage.writeFile(`jobs/${jobId}/images/scene_${String(scenePrompt.sceneId).padStart(2, "0")}.${lastGenerated.extension}`, lastGenerated.buffer);
@@ -562,6 +632,219 @@ async function generateSceneAssetWithRetries(
     revisedPrompt: lastGenerated.revisedPrompt,
     sceneId: scenePrompt.sceneId,
     usage: lastGenerated.usage
+  };
+}
+
+async function generateWithOpenAIWithCompositeFallback(
+  prompt: string,
+  options: ImageGenerationServiceOptions,
+  input: NormalizedImageInput,
+  scenePrompt: SceneImagePrompt,
+  visualBible: GeneratedVisualBible,
+  reference: LoadedReferenceImage | null
+): Promise<GeneratedOpenAIImage> {
+  try {
+    return await generateWithOpenAI(
+      prompt,
+      options.openai,
+      reference?.buffer
+        ? {
+          buffer: reference.buffer,
+          filename: "character_reference.png",
+          isSelected: reference.isSelected,
+          label: reference.label,
+          mimeType: reference.mimeType ?? "image/png"
+        }
+        : undefined
+    );
+  } catch (error) {
+    if (!isRecoverableImageTimeout(error) || !hasUsableCompositeReferences(input, reference)) {
+      throw error;
+    }
+
+    return generateReferenceCompositeFallback(scenePrompt, input, visualBible, reference, error);
+  }
+}
+
+function isReferenceCompositeFallback(generated: { usage?: Record<string, number | string> | undefined }): boolean {
+  return generated.usage?.pricingMode === referenceCompositePricingMode;
+}
+
+function isRecoverableImageTimeout(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /504|Gateway Timeout|timed out|TimeoutError|AbortError|fetch failed/iu.test(message);
+}
+
+function hasUsableCompositeReferences(input: NormalizedImageInput, reference: LoadedReferenceImage | null): boolean {
+  return Boolean(reference?.buffer || pickCompositeReference(input.references, ["scene_design", "style_reference"], 1));
+}
+
+async function generateReferenceCompositeFallback(
+  scenePrompt: SceneImagePrompt,
+  input: NormalizedImageInput,
+  visualBible: GeneratedVisualBible,
+  reference: LoadedReferenceImage | null,
+  error: unknown
+): Promise<GeneratedOpenAIImage> {
+  const backgroundReference = pickCompositeReference(input.references, ["scene_design", "style_reference"], scenePrompt.sceneId);
+  const backgroundBuffer = backgroundReference ? await fetchImageUrl(backgroundReference.url) : undefined;
+  const characterBuffer = reference?.buffer;
+
+  if (!backgroundBuffer && !characterBuffer) {
+    throw error;
+  }
+
+  const buffer = await renderReferenceCompositePng({
+    backgroundBuffer,
+    characterBuffer,
+    sceneId: scenePrompt.sceneId
+  });
+  const originalMessage = error instanceof Error ? error.message : String(error);
+  const revisedPrompt = [
+    "External OpenAI image generation timed out, so this production image was built from approved reference assets.",
+    backgroundReference ? `Background reference: ${backgroundReference.label}.` : "",
+    reference?.label ? `Character reference: ${reference.label}.` : "",
+    `Scene action: ${scenePrompt.scene.visual}`,
+    `Visual continuity: ${formatVisualBibleCharacter(visualBible)}`
+  ].filter(Boolean).join(" ");
+
+  return {
+    buffer,
+    costRM: 0,
+    extension: "png",
+    revisedPrompt: `${revisedPrompt} Original provider error: ${originalMessage}`,
+    usage: {
+      pricingMode: referenceCompositePricingMode,
+      providerError: originalMessage,
+      sceneId: scenePrompt.sceneId,
+      size: "1080x1920"
+    }
+  };
+}
+
+function pickCompositeReference(
+  references: NormalizedImageInput["references"],
+  types: Array<NonNullable<GenerateImagesRequest["references"]>[number]["type"]>,
+  sceneId: number
+): NonNullable<GenerateImagesRequest["references"]>[number] | undefined {
+  const typeSet = new Set(types);
+  const candidates = references?.filter((reference) => typeSet.has(reference.type) && reference.url.trim()) ?? [];
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  return candidates[(Math.max(1, sceneId) - 1) % candidates.length];
+}
+
+async function renderReferenceCompositePng(input: {
+  backgroundBuffer?: Buffer | undefined;
+  characterBuffer?: Buffer | undefined;
+  sceneId: number;
+}): Promise<Buffer> {
+  const ffmpegPath = resolveFfmpegPath();
+
+  if (!ffmpegPath) {
+    throw new Error("ffmpeg-static did not provide an FFmpeg binary path for reference composite image generation.");
+  }
+
+  const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "ai-content-factory-image-"));
+  const outputPath = path.join(tempDirectory, `scene_${String(input.sceneId).padStart(2, "0")}.png`);
+
+  try {
+    if (input.backgroundBuffer) {
+      await writeFile(path.join(tempDirectory, "background.image"), input.backgroundBuffer);
+    }
+
+    if (input.characterBuffer) {
+      await writeFile(path.join(tempDirectory, "character.image"), input.characterBuffer);
+    }
+
+    const args = buildReferenceCompositeFfmpegArgs({
+      backgroundPath: input.backgroundBuffer ? path.join(tempDirectory, "background.image") : undefined,
+      characterPath: input.characterBuffer ? path.join(tempDirectory, "character.image") : undefined,
+      outputPath
+    });
+
+    await runProcess(ffmpegPath, args);
+    return await readFile(outputPath);
+  } finally {
+    await rm(tempDirectory, { force: true, recursive: true });
+  }
+}
+
+function buildReferenceCompositeFfmpegArgs(input: {
+  backgroundPath?: string | undefined;
+  characterPath?: string | undefined;
+  outputPath: string;
+}): string[] {
+  if (input.backgroundPath && input.characterPath) {
+    return [
+      "-y",
+      "-i",
+      input.backgroundPath,
+      "-i",
+      input.characterPath,
+      "-frames:v",
+      "1",
+      "-filter_complex",
+      [
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.04:contrast=1.03:brightness=-0.015[bg]",
+        "[1:v]scale=660:-1:force_original_aspect_ratio=decrease[fg]",
+        "[bg][fg]overlay=(W-w)/2:H-h-96:format=auto,format=rgb24"
+      ].join(";"),
+      input.outputPath
+    ];
+  }
+
+  if (input.backgroundPath) {
+    return [
+      "-y",
+      "-i",
+      input.backgroundPath,
+      "-frames:v",
+      "1",
+      "-vf",
+      "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=rgb24",
+      input.outputPath
+    ];
+  }
+
+  if (input.characterPath) {
+    return [
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=0x101827:s=1080x1920:d=1",
+      "-i",
+      input.characterPath,
+      "-frames:v",
+      "1",
+      "-filter_complex",
+      "[1:v]scale=720:-1:force_original_aspect_ratio=decrease[fg];[0:v][fg]overlay=(W-w)/2:H-h-120:format=auto,format=rgb24",
+      input.outputPath
+    ];
+  }
+
+  throw new Error("At least one reference image is required for reference composite image generation.");
+}
+
+function buildReferenceCompositeQualityCheck(
+  scenePrompt: SceneImagePrompt,
+  summary: string | undefined,
+  retryCount: number
+): GeneratedImageQualityCheck {
+  return {
+    checkedAt: new Date().toISOString(),
+    issues: [
+      "OpenAI image generation timed out; scene image was composed from approved reference assets.",
+      "This local reference composite is not production-ready and must not be sent to Seedance or final MP4 composition."
+    ],
+    model: "local-reference-composite",
+    retryCount,
+    status: "fail",
+    summary: summary ?? `Scene ${scenePrompt.sceneId} uses a local reference composite fallback. Regenerate this scene image before video generation.`
   };
 }
 
@@ -579,14 +862,25 @@ function buildRepairPrompt(originalPrompt: string, qualityCheck: GeneratedImageQ
 async function generateWithOpenAI(
   prompt: string,
   options: OpenAIImageClientOptions,
-  reference?: { buffer: Buffer; filename: string; mimeType: string } | undefined
+  reference?: { buffer: Buffer; filename: string; isSelected?: boolean | undefined; label?: string | undefined; mimeType: string } | undefined
 ): Promise<GeneratedOpenAIImage> {
   if (reference) {
     try {
       const edited = await generateEditWithOpenAI(prompt, options, reference);
       return edited;
-    } catch {
-      // Fallback stays with a real OpenAI image call; it just cannot use the reference image endpoint.
+    } catch (error) {
+      if (reference.isSelected) {
+        throw new Error(
+          [
+            `Selected character reference "${reference.label ?? reference.filename}" could not be used by the current image model/API.`,
+            "Generation stopped to avoid producing a different character.",
+            `Original error: ${error instanceof Error ? error.message : "unknown reference edit error"}`,
+            "Use an image model/API style that supports reference image edits, or regenerate the reference as a reachable PNG/JPG/WebP asset."
+          ].join(" ")
+        );
+      }
+
+      // Auto-created internal references are helpful but not authoritative; plain generation is still acceptable when no user-selected asset is being enforced.
     }
   }
 
@@ -601,7 +895,10 @@ async function generateWithOpenAI(
       Authorization: `Bearer ${options.apiKey}`,
       "Content-Type": "application/json"
     },
-    method: "POST"
+    method: "POST",
+    signal: createOpenAIImageTimeoutSignal()
+  }).catch((error: unknown) => {
+    throw normalizeOpenAIImageFetchError(error);
   });
   const body = (await response.json().catch(() => ({}))) as OpenAIImageResponseBody;
 
@@ -642,7 +939,10 @@ async function generateEditWithOpenAI(
     headers: {
       Authorization: `Bearer ${options.apiKey}`
     },
-    method: "POST"
+    method: "POST",
+    signal: createOpenAIImageTimeoutSignal()
+  }).catch((error: unknown) => {
+    throw normalizeOpenAIImageFetchError(error);
   });
   const body = (await response.json().catch(() => ({}))) as OpenAIImageResponseBody;
 
@@ -751,12 +1051,13 @@ async function runImageQualityCheck(
 function buildImageQcPrompt(scenePrompt: SceneImagePrompt, visualBible: GeneratedVisualBible): string {
   return [
     "Evaluate whether this generated image is production-ready for the requested scene.",
-    "Return pass only if the image is a single coherent vertical cinematic still, has no visible text/UI/table/panel/collage, matches the scene action, and preserves the same protagonist identity.",
+    "Return pass only if the image is a single coherent vertical cinematic still, has no visible text/UI/table/panel/collage, matches the scene action, and preserves the same selected reference character identity.",
     `Scene ${scenePrompt.sceneId}: ${scenePrompt.scene.visual}`,
     `Narration: ${scenePrompt.scene.voiceText}`,
+    `Generation constraints: ${scenePrompt.prompt}`,
     `Expected protagonist: ${formatVisualBibleCharacter(visualBible)}`,
     `Expected environment: ${formatVisualBibleEnvironment(visualBible)}`,
-    "If the image contains storyboard sheets, readable text, multiple unrelated panels, wrong setting, wrong protagonist, or inconsistent wardrobe/face, return fail."
+    "If the image contains storyboard sheets, readable text, multiple unrelated panels, wrong setting, wrong selected character, wrong species/body type, wrong hair/wardrobe/color palette, or inconsistent face, return fail."
   ].join("\n");
 }
 
@@ -820,6 +1121,59 @@ async function fetchImageUrl(url: string): Promise<Buffer> {
   }
 
   return Buffer.from(await response.arrayBuffer());
+}
+
+function createOpenAIImageTimeoutSignal(): AbortSignal {
+  return AbortSignal.timeout(readOpenAIImageTimeoutMs());
+}
+
+function readOpenAIImageTimeoutMs(): number {
+  const parsed = Number.parseInt(process.env.OPENAI_IMAGE_TIMEOUT_MS ?? "45000", 10);
+
+  if (!Number.isFinite(parsed)) {
+    return 45000;
+  }
+
+  return Math.max(15000, Math.min(parsed, 240000));
+}
+
+function normalizeOpenAIImageFetchError(error: unknown): Error {
+  if (error instanceof Error && /AbortError|TimeoutError/iu.test(error.name)) {
+    return new Error(`OpenAI image request timed out after ${readOpenAIImageTimeoutMs()}ms.`);
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(String(error));
+}
+
+function resolveFfmpegPath(): string | null {
+  const require = createRequire(import.meta.url);
+  return require("ffmpeg-static") as string | null;
+}
+
+async function runProcess(command: string, args: string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    const stderr: string[] = [];
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr.push(chunk.toString("utf8"));
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`FFmpeg exited with code ${code ?? "unknown"}: ${stderr.join("").slice(-800)}`));
+    });
+  });
 }
 
 function normalizeInput(input: GenerateImagesRequest): NormalizedImageInput {

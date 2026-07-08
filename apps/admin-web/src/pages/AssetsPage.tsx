@@ -11,12 +11,13 @@ import {
   type ProductionAssetStatus,
   type ProductionAssetType
 } from "@ai-content-factory/shared-types";
-import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { getProductionAssetDesignSpec } from "../lib/asset-design-specs.js";
 import { evaluateProductionAssetReadiness, type ProductionAssetReadiness } from "../lib/asset-readiness.js";
 import { buildDesignPromptForType, designHintForType, designPromptPlaceholderForType, examplePromptForType } from "../lib/design-prompts.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
 import type { AdminJob } from "../lib/jobs.js";
+import { resolveProductionAssetPreviewUrl, resolveProductionAssetPreviewUrls } from "../lib/production-asset-media.js";
 
 type AssetStudioTab = "generate" | "library" | "case-plan";
 
@@ -98,6 +99,7 @@ export function AssetsPage(props: AssetsPageProps) {
   const readyFrames = libraryVisibleAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && (asset.role === "first_frame" || asset.role === "last_frame") && isGeneratedDesignAsset(asset)).length;
   const blockedAssets = libraryVisibleAssets.filter((asset) => asset.status === "failed" || asset.status === "rejected").length;
   const generatingDraft = selectedAsset ? props.generatingAssetIds.includes(selectedAsset._id) : false;
+  const designDraftTypes = productionAssetTypes.filter((type) => type !== "bgm_reference");
 
   useEffect(() => {
     setAssetSaveMessage(null);
@@ -282,10 +284,28 @@ export function AssetsPage(props: AssetsPageProps) {
         <section className="design-generator-grid">
           <section className="design-generator-panel panel">
             <SectionHeader eyebrow="OpenAI 设计草稿" title="输入需求，生成可保存的设计图" />
+            <div className="asset-type-starter-grid" aria-label="选择要生成的设计资产类型">
+              {designDraftTypes.map((type) => {
+                const spec = getProductionAssetDesignSpec(type);
+
+                return (
+                  <button
+                    className={`asset-type-starter ${draftType === type ? "active" : ""}`}
+                    key={type}
+                    type="button"
+                    onClick={() => updateDraftType(type)}
+                  >
+                    <span>{assetTypeLabel(type)}</span>
+                    <strong>{spec.title}</strong>
+                    <small>{spec.purpose}</small>
+                  </button>
+                );
+              })}
+            </div>
             <div className="asset-two-col">
               <Field label="设计类型">
                 <select value={draftType} onChange={(event) => updateDraftType(event.target.value as ProductionAssetType)}>
-                  {productionAssetTypes.filter((type) => type !== "bgm_reference").map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
+                  {designDraftTypes.map((type) => <option key={type} value={type}>{assetTypeLabel(type)}</option>)}
                 </select>
               </Field>
               <Field label="文件夹">
@@ -393,7 +413,7 @@ export function AssetsPage(props: AssetsPageProps) {
                   {libraryVisibleAssets.map((asset) => (
                     <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                       <div className="asset-gallery-thumb">
-                        {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
+                        {assetPreviewUrls(asset).length > 0 ? <MediaImage src={assetPreviewUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
                       </div>
                       <strong>{asset.label}</strong>
                       <span>{formatAssetCardMeta(asset)}</span>
@@ -454,7 +474,7 @@ export function AssetsPage(props: AssetsPageProps) {
                 {casePlanDisplayAssets.map((asset) => (
                   <button className={`asset-gallery-card ${selectedAsset?._id === asset._id ? "selected" : ""}`} key={asset._id} type="button" onClick={() => selectAssetSafely(asset._id)}>
                     <div className="asset-gallery-thumb">
-                      {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <ImageIcon size={26} />}
+                      {assetPreviewUrls(asset).length > 0 ? <MediaImage src={assetPreviewUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" /> : <MediaFallback iconSize={26} label="无预览" />}
                     </div>
                     <strong>{asset.label}</strong>
                     <span>{formatAssetCardMeta(asset)}</span>
@@ -525,6 +545,7 @@ function AssetInspector(props: {
   }
 
   const asset = props.asset;
+  const previewUrls = assetPreviewUrls(asset);
   const approvedLibraryAsset = Boolean(props.protectRegenerate && asset.status === "approved");
   const readiness = evaluateProductionAssetReadiness(asset);
 
@@ -532,7 +553,7 @@ function AssetInspector(props: {
     <section className="asset-inspector panel">
       <SectionHeader eyebrow="设计检查" title={asset.label} action={<StatusPill tone={assetStatusTone(asset.status)}>{assetStatusLabel(asset.status)}</StatusPill>} />
       <div className="asset-preview-frame">
-        {isImagePath(asset.url) ? <img src={asset.url} alt={asset.label} /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
+        {previewUrls.length > 0 ? <MediaImage src={previewUrls} alt={asset.label} fallbackLabel="预览不可用" /> : <div><ImageIcon size={30} /><span>尚未生成预览图</span></div>}
       </div>
       <AssetReadinessPanel readiness={readiness} />
       <AssetDesignSpecPanel type={asset.type} compact />
@@ -810,10 +831,14 @@ function assetStatusTone(status: ProductionAssetStatus): "active" | "danger" | "
   return "neutral";
 }
 
-function isImagePath(value: string | undefined): boolean {
-  return /\.(png|jpe?g|webp|gif|svg)(\?|$)/iu.test(value ?? "");
+function assetPreviewUrl(asset: ProductionAsset): string {
+  return resolveProductionAssetPreviewUrl(asset);
+}
+
+function assetPreviewUrls(asset: ProductionAsset): string[] {
+  return resolveProductionAssetPreviewUrls(asset);
 }
 
 function isGeneratedDesignAsset(asset: ProductionAsset): boolean {
-  return isImagePath(asset.url) || isImagePath(asset.storagePath);
+  return Boolean(assetPreviewUrl(asset));
 }

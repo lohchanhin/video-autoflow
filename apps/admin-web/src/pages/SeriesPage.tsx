@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Loader2, Plus, RefreshCw, Sparkles, Trash2, XCircle } from "lucide-react";
-import type { ContentSeries, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus } from "@ai-content-factory/shared-types";
-import { EditableActionBar, EmptyState, Field, SectionHeader, StatusPill } from "../components/ui.js";
+import { AlertTriangle, BookOpen, CheckCircle2, FileVideo, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
+import type { ContentSeries, ContentSeriesDramaIntensity, ContentSeriesNarrativeMode, ContentSeriesStatus, ProductionAsset, SeriesEpisodeIdea, SeriesEpisodeIdeaStatus, StoryWorld } from "@ai-content-factory/shared-types";
+import { EditableActionBar, EmptyState, Field, MediaFallback, MediaImage, SectionHeader, StatusPill } from "../components/ui.js";
 import { confirmDiscardDirtyDraft, createDraftPatch, useEditableDraft } from "../lib/editable-draft.js";
+import { isReusableDraftReferenceAsset, isSelectableDraftReferenceAsset } from "../lib/draft-reference-assets.js";
 import type { AdminJob } from "../lib/jobs.js";
+import { resolveProductionAssetPreviewUrls } from "../lib/production-asset-media.js";
 import { formatDateTime } from "../lib/view-helpers.js";
 
 interface SeriesPageProps {
   assets: ProductionAsset[];
   convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
   createSeries: () => void;
+  createStoryWorld: (input: Omit<StoryWorld, "_id" | "createdAt" | "updatedAt">) => Promise<StoryWorld | null>;
+  deleteEpisode: (seriesId: string, episodeId: string) => void;
   deleteSeries: (id: string) => void;
   episodes: SeriesEpisodeIdea[];
   error: string | null;
@@ -22,22 +26,36 @@ interface SeriesPageProps {
   selectSeries: (id: string | null) => void;
   selectedSeriesId: string | null;
   series: ContentSeries[];
+  storyWorlds: StoryWorld[];
   updateEpisode: (seriesId: string, episodeId: string, patch: Partial<Omit<SeriesEpisodeIdea, "_id" | "createdAt" | "seriesId" | "updatedAt">>) => Promise<void> | void;
   updateSeries: (id: string, patch: Partial<Omit<ContentSeries, "_id" | "createdAt" | "updatedAt">>) => Promise<void> | void;
   openCase: (id: string) => void;
 }
 
 const seriesStatusOptions: ContentSeriesStatus[] = ["draft", "active", "paused", "archived"];
+const narrativeModeOptions: ContentSeriesNarrativeMode[] = ["standalone", "serialized"];
+const dramaIntensityOptions: ContentSeriesDramaIntensity[] = ["low", "medium", "high", "melodrama"];
 const episodeStatusOptions: SeriesEpisodeIdeaStatus[] = ["draft", "approved", "converted_to_case", "rejected"];
+type SeriesWorkspaceTab = "settings" | "assets" | "episodes" | "cases";
+
+const seriesWorkspaceTabs: SeriesWorkspaceTab[] = ["settings", "assets", "episodes", "cases"];
 
 export function SeriesPage(props: SeriesPageProps) {
+  const [activeTab, setActiveTab] = useState<SeriesWorkspaceTab>("settings");
   const [ideaCount, setIdeaCount] = useState(10);
+  const [storyWorldDraft, setStoryWorldDraft] = useState({
+    description: "",
+    name: "",
+    relationshipMap: "",
+    safetyRules: "",
+    visualStyle: ""
+  });
+  const [isSavingStoryWorld, setIsSavingStoryWorld] = useState(false);
   const selectedSeries = props.series.find((series) => series._id === props.selectedSeriesId) ?? props.series[0] ?? null;
   const seriesEditor = useEditableDraft(selectedSeries, selectedSeries ? `${selectedSeries._id}:${selectedSeries.updatedAt}` : null);
   const seriesDraft = seriesEditor.draft;
   const selectedSeriesJobs = selectedSeries ? props.jobs.filter((job) => job.seriesId === selectedSeries._id) : [];
-  const generatedAssets = props.assets.filter((asset) => Boolean(asset.url.trim()) && (asset.status === "ready" || asset.status === "approved"));
-  const selectedReferenceIds = new Set(seriesDraft?.referenceAssetIds ?? []);
+  const generatedAssets = props.assets.filter((asset) => isSelectableDraftReferenceAsset(asset) && isReusableDraftReferenceAsset(asset));
   const approvedEpisodes = props.episodes.filter((episode) => episode.status === "approved").length;
   const convertedEpisodes = props.episodes.filter((episode) => episode.status === "converted_to_case").length;
   const generating = selectedSeries ? props.generatingSeriesIds.includes(selectedSeries._id) : false;
@@ -51,6 +69,45 @@ export function SeriesPage(props: SeriesPageProps) {
 
   function patchSeriesDraft(patch: Partial<ContentSeries>) {
     seriesEditor.setDraftPatch(patch);
+  }
+
+  function patchStoryWorldDraft(patch: Partial<typeof storyWorldDraft>) {
+    setStoryWorldDraft((currentDraft) => ({ ...currentDraft, ...patch }));
+  }
+
+  async function saveStoryWorldDraft() {
+    const name = storyWorldDraft.name.trim();
+
+    if (!name) {
+      return;
+    }
+
+    setIsSavingStoryWorld(true);
+    try {
+      const created = await props.createStoryWorld({
+        defaultSceneAssetIds: [],
+        description: storyWorldDraft.description.trim(),
+        name,
+        recurringCharacterAssetIds: [],
+        relationshipMap: storyWorldDraft.relationshipMap.trim(),
+        safetyRules: storyWorldDraft.safetyRules.trim(),
+        seriesIds: selectedSeries ? [selectedSeries._id] : [],
+        status: "draft",
+        visualStyle: storyWorldDraft.visualStyle.trim()
+      });
+
+      if (created) {
+        setStoryWorldDraft({
+          description: "",
+          name: "",
+          relationshipMap: "",
+          safetyRules: "",
+          visualStyle: ""
+        });
+      }
+    } finally {
+      setIsSavingStoryWorld(false);
+    }
   }
 
   async function saveSeriesDraft() {
@@ -90,12 +147,21 @@ export function SeriesPage(props: SeriesPageProps) {
     props.createSeries();
   }
 
+  const boundReferenceAssets = seriesDraft
+    ? seriesDraft.referenceAssetIds
+      .map((id) => generatedAssets.find((asset) => asset._id === id) ?? null)
+      .filter((asset): asset is ProductionAsset => Boolean(asset))
+    : [];
+  const missingReferenceAssetIds = seriesDraft
+    ? seriesDraft.referenceAssetIds.filter((id) => !generatedAssets.some((asset) => asset._id === id))
+    : [];
+
   return (
     <section className="series-page">
       <section className="series-toolbar panel">
         <div>
           <p className="eyebrow">系列内容库</p>
-          <h2>Series Library / 内容产品线</h2>
+          <h2>系列内容库 / 内容产品线</h2>
           <span>先定义一个可持续生产的内容系列，再批量生成选题；人工批准后才转成影片 Case。</span>
         </div>
         <div className="asset-board-actions">
@@ -139,11 +205,11 @@ export function SeriesPage(props: SeriesPageProps) {
           )}
         </aside>
 
-        <section className="panel series-editor-panel">
+        <section className="panel series-workspace-panel">
           {selectedSeries && seriesDraft ? (
             <>
               <SectionHeader
-                eyebrow="系列设定"
+                eyebrow="系列工作台"
                 title={seriesDraft.name}
                 action={
                   <button className="danger-button" type="button" onClick={() => window.confirm(`确定删除系列「${selectedSeries.name}」？`) && props.deleteSeries(selectedSeries._id)}>
@@ -152,6 +218,26 @@ export function SeriesPage(props: SeriesPageProps) {
                   </button>
                 }
               />
+              <div className="series-workbench-tabs" role="tablist" aria-label="系列工作台页签">
+                {seriesWorkspaceTabs.map((tab) => (
+                  <button
+                    aria-selected={activeTab === tab}
+                    className={activeTab === tab ? "active" : ""}
+                    key={tab}
+                    role="tab"
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {seriesWorkspaceTabLabel(tab)}
+                    {tab === "assets" ? <span>{boundReferenceAssets.length}</span> : null}
+                    {tab === "episodes" ? <span>{props.episodes.length}</span> : null}
+                    {tab === "cases" ? <span>{selectedSeriesJobs.length}</span> : null}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === "settings" ? (
+                <section className="series-tab-panel">
               <div className="series-form-grid">
                 <Field label="系列名称">
                   <input value={seriesDraft.name} onChange={(event) => patchSeriesDraft({ name: event.target.value })} />
@@ -164,7 +250,7 @@ export function SeriesPage(props: SeriesPageProps) {
                 <Field label="语言">
                   <select value={seriesDraft.language} onChange={(event) => patchSeriesDraft({ language: event.target.value as ContentSeries["language"] })}>
                     <option value="zh-CN">中文</option>
-                    <option value="en-US">English</option>
+                    <option value="en-US">英文</option>
                   </select>
                 </Field>
                 <Field label="目标观众 / 市场">
@@ -172,6 +258,12 @@ export function SeriesPage(props: SeriesPageProps) {
                 </Field>
                 <Field label="内容类型 / 影片类型">
                   <input value={seriesDraft.contentType} onChange={(event) => patchSeriesDraft({ contentType: event.target.value })} />
+                </Field>
+                <Field label="背景故事 / 世界观">
+                  <select value={seriesDraft.storyWorldId ?? ""} onChange={(event) => patchSeriesDraft({ storyWorldId: event.target.value || null })}>
+                    <option value="">不绑定世界观</option>
+                    {props.storyWorlds.map((storyWorld) => <option key={storyWorld._id} value={storyWorld._id}>{storyWorld.name}</option>)}
+                  </select>
                 </Field>
                 <Field label="片长秒数">
                   <input min={15} max={180} type="number" value={seriesDraft.durationSeconds} onChange={(event) => patchSeriesDraft({ durationSeconds: Number(event.target.value) })} />
@@ -197,38 +289,141 @@ export function SeriesPage(props: SeriesPageProps) {
                 <Field label="禁忌 / 合规规则">
                   <textarea rows={3} value={seriesDraft.safetyRules} onChange={(event) => patchSeriesDraft({ safetyRules: event.target.value })} />
                 </Field>
+                <Field label="叙事模式">
+                  <select value={seriesDraft.narrativeMode} onChange={(event) => patchSeriesDraft({ narrativeMode: event.target.value as ContentSeriesNarrativeMode })}>
+                    {narrativeModeOptions.map((mode) => <option key={mode} value={mode}>{narrativeModeLabel(mode)}</option>)}
+                  </select>
+                </Field>
+                <Field label="狗血 / 抓马强度">
+                  <select value={seriesDraft.dramaIntensity} onChange={(event) => patchSeriesDraft({ dramaIntensity: event.target.value as ContentSeriesDramaIntensity })}>
+                    {dramaIntensityOptions.map((intensity) => <option key={intensity} value={intensity}>{dramaIntensityLabel(intensity)}</option>)}
+                  </select>
+                </Field>
+                <Field className="wide" label="连续剧规则 / 前情关系">
+                  <textarea rows={3} value={seriesDraft.continuityRules} onChange={(event) => patchSeriesDraft({ continuityRules: event.target.value })} placeholder="例如：每集延续上一集误会；主角关系持续拉扯；每集结尾留下下一集悬念。" />
+                </Field>
               </div>
               <EditableActionBar
                 isDirty={seriesEditor.isDirty}
                 onCancel={seriesEditor.resetDraft}
                 onSave={saveSeriesDraft}
               />
+                  <section className="series-story-world-card">
+                    <SectionHeader eyebrow="背景故事" title="新增背景故事" />
+                    <div className="series-form-grid">
+                      <Field label="世界观名称">
+                        <input value={storyWorldDraft.name} onChange={(event) => patchStoryWorldDraft({ name: event.target.value })} placeholder="例如：彩虹森林、森林小学、未来便利店" />
+                      </Field>
+                      <Field label="视觉风格">
+                        <input value={storyWorldDraft.visualStyle} onChange={(event) => patchStoryWorldDraft({ visualStyle: event.target.value })} placeholder="例如：柔和童话、低饱和写实、赛博夜景" />
+                      </Field>
+                      <Field className="wide" label="世界设定">
+                        <textarea rows={3} value={storyWorldDraft.description} onChange={(event) => patchStoryWorldDraft({ description: event.target.value })} placeholder="这个世界发生在哪里、常驻地点是什么、观众应该一眼记住什么。" />
+                      </Field>
+                      <Field label="角色关系">
+                        <textarea rows={3} value={storyWorldDraft.relationshipMap} onChange={(event) => patchStoryWorldDraft({ relationshipMap: event.target.value })} placeholder="常驻角色之间的关系、班级/家庭/团队结构。" />
+                      </Field>
+                      <Field label="禁忌规则">
+                        <textarea rows={3} value={storyWorldDraft.safetyRules} onChange={(event) => patchStoryWorldDraft({ safetyRules: event.target.value })} placeholder="这个系列中不允许出现的内容、语气或视觉限制。" />
+                      </Field>
+                    </div>
+                    <div className="editable-action-bar">
+                      <span>{storyWorldDraft.name.trim() ? "待保存背景故事" : "输入名称后可保存为可复用世界观"}</span>
+                      <button className="secondary-button" type="button" onClick={() => setStoryWorldDraft({ description: "", name: "", relationshipMap: "", safetyRules: "", visualStyle: "" })}>
+                        取消修改
+                      </button>
+                      <button className="primary-button" type="button" disabled={!storyWorldDraft.name.trim() || isSavingStoryWorld} onClick={() => void saveStoryWorldDraft()}>
+                        {isSavingStoryWorld ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+                        保存背景故事
+                      </button>
+                    </div>
+                  </section>
+                </section>
+              ) : null}
 
+              {activeTab === "assets" ? (
               <section className="series-asset-binding">
-                <SectionHeader eyebrow="资产绑定" title="固定角色 / 场景 / 风格参考" />
+                <SectionHeader
+                  eyebrow="资产绑定"
+                  title="固定角色 / 场景 / 风格参考"
+                  action={
+                    <div className="series-asset-binding-status">
+                      <StatusPill tone={boundReferenceAssets.length > 0 ? "active" : "neutral"}>{boundReferenceAssets.length} 可用</StatusPill>
+                      {missingReferenceAssetIds.length > 0 ? <StatusPill tone="warning">{missingReferenceAssetIds.length} 失效</StatusPill> : null}
+                    </div>
+                  }
+                />
+                {missingReferenceAssetIds.length > 0 ? (
+                  <div className="asset-binding-missing-note">
+                    <AlertTriangle size={16} />
+                    <span>有 {missingReferenceAssetIds.length} 个已绑定资产已不存在、不属于资产库，或缺少可预览图。已从选择器隐藏，但不会静默修改你的系列设定。</span>
+                    <button
+                      className="secondary-button compact-button"
+                      type="button"
+                      onClick={() => patchSeriesDraft({ referenceAssetIds: boundReferenceAssets.map((asset) => asset._id) })}
+                    >
+                      移除失效绑定
+                    </button>
+                  </div>
+                ) : null}
                 {generatedAssets.length === 0 ? (
                   <EmptyState title="还没有可绑定资产" body="先到设计资产中心生成并保存角色三视图、场景设定表或风格参考，再回到这里绑定。" />
                 ) : (
-                  <div className="series-asset-grid">
-                    {generatedAssets.map((asset) => (
-                      <label key={asset._id} className={`series-asset-option ${selectedReferenceIds.has(asset._id) ? "selected" : ""}`}>
-                        <input
-                          checked={selectedReferenceIds.has(asset._id)}
-                          type="checkbox"
-                          onChange={(event) => patchSeriesDraft({
-                            referenceAssetIds: event.target.checked
-                              ? [...selectedReferenceIds, asset._id]
-                              : seriesDraft.referenceAssetIds.filter((id) => id !== asset._id)
-                          })}
-                        />
-                        <span>{asset.url ? <img src={asset.url} alt={asset.label} /> : null}</span>
-                        <strong>{asset.label}</strong>
-                        <small>{assetTypeLabel(asset.type)} / {asset.folderName}</small>
-                      </label>
-                    ))}
-                  </div>
+                  <AssetBindingPicker
+                    assets={generatedAssets}
+                    description="绑定到系列后，AI 生成选题和 Case 会继承这些固定角色、场景与风格参考。这里是选择器，不是审图页。"
+                    label="固定角色 / 场景 / 风格参考"
+                    selectedIds={seriesDraft.referenceAssetIds}
+                    onChange={(ids) => patchSeriesDraft({ referenceAssetIds: ids })}
+                  />
                 )}
+                <EditableActionBar
+                  isDirty={seriesEditor.isDirty}
+                  onCancel={seriesEditor.resetDraft}
+                  onSave={saveSeriesDraft}
+                />
               </section>
+              ) : null}
+
+              {activeTab === "episodes" ? (
+                <SeriesEpisodeBoard
+                  assets={generatedAssets}
+                  convertEpisodeToCase={props.convertEpisodeToCase}
+                  deleteEpisode={props.deleteEpisode}
+                  episodes={props.episodes}
+                  generateIdeas={props.generateIdeas}
+                  generating={generating}
+                  ideaCount={ideaCount}
+                  jobs={props.jobs}
+                  openCase={props.openCase}
+                  reportDirtyState={props.reportDirtyState}
+                  selectedSeries={selectedSeries}
+                  setIdeaCount={setIdeaCount}
+                  updateEpisode={props.updateEpisode}
+                />
+              ) : null}
+
+              {activeTab === "cases" ? (
+                <section className="series-tab-panel">
+                  <SectionHeader eyebrow="Case 档案" title="已转入生产的影片" />
+                  {selectedSeriesJobs.length > 0 ? (
+                    <div className="series-case-grid">
+                      {selectedSeriesJobs.map((job) => (
+                        <button key={job.id} className="series-case-card" type="button" onClick={() => props.openCase(job.id)}>
+                          <FileVideo size={18} />
+                          <span>
+                            <strong>{job.topic}</strong>
+                            <small>{job.id} / {job.status}</small>
+                          </span>
+                          <StatusPill tone={job.status === "COMPLETED" || job.status === "PUBLISHED" ? "success" : "neutral"}>{job.status}</StatusPill>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="还没有 Case" body="批准选题后点击转 Case，这里会显示该系列所有生产记录。" />
+                  )}
+                </section>
+              ) : null}
             </>
           ) : (
             <EmptyState title="选择或创建一个系列" body="系列会保存定位、题材、资产、风格和选题库，后续再批量转成 Case。" />
@@ -241,7 +436,7 @@ export function SeriesPage(props: SeriesPageProps) {
             <div><span>选题数量</span><strong>{props.episodes.length}</strong></div>
             <div><span>已批准</span><strong>{approvedEpisodes}</strong></div>
             <div><span>已转 Case</span><strong>{convertedEpisodes}</strong></div>
-            <div><span>绑定资产</span><strong>{selectedSeries?.referenceAssetIds.length ?? 0}</strong></div>
+            <div><span>绑定资产</span><strong>{selectedSeries?._id === seriesDraft?._id ? boundReferenceAssets.length : selectedSeries?.referenceAssetIds.length ?? 0}</strong></div>
           </div>
           {selectedSeriesJobs.length > 0 ? (
             <div className="series-linked-cases">
@@ -260,54 +455,75 @@ export function SeriesPage(props: SeriesPageProps) {
         </aside>
       </section>
 
-      <section className="panel episode-board">
-        <SectionHeader
-          eyebrow="Episode Ideas"
-          title="AI 选题库"
-          action={
-            <div className="episode-actions">
-              <input min={1} max={30} type="number" value={ideaCount} onChange={(event) => setIdeaCount(Number(event.target.value))} />
-              <button className="primary-button" disabled={!selectedSeries || generating} type="button" onClick={() => selectedSeries && props.generateIdeas(selectedSeries._id, ideaCount)}>
-                {generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-                AI 生成选题
-              </button>
-            </div>
-          }
-        />
-        {!selectedSeries ? (
-          <EmptyState title="先选择系列" body="选题会根据系列定位、内容类型、目标观众、合规规则和绑定资产生成。" />
-        ) : props.episodes.length === 0 ? (
-          <EmptyState title="还没有选题" body="点击 AI 生成选题，一次生成 10-30 条单集方向，然后人工批准。" />
-        ) : (
-          <div className="episode-table">
-            <div className="episode-table-head">
-              <span>题目 / 核心看点</span>
-              <span>来源 / 灵感</span>
-              <span>风险</span>
-              <span>状态</span>
-              <span>操作</span>
-            </div>
-            {props.episodes.map((episode) => (
-              <EpisodeRow
-                key={episode._id}
-                episode={episode}
-                linkedJob={props.jobs.find((job) => job.id === episode.caseId) ?? null}
-                openCase={props.openCase}
-                selectedSeries={selectedSeries}
-                reportDirtyState={props.reportDirtyState}
-                updateEpisode={props.updateEpisode}
-                convertEpisodeToCase={props.convertEpisodeToCase}
-              />
-            ))}
+    </section>
+  );
+}
+
+function SeriesEpisodeBoard(props: {
+  assets: ProductionAsset[];
+  convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
+  deleteEpisode: SeriesPageProps["deleteEpisode"];
+  episodes: SeriesEpisodeIdea[];
+  generateIdeas: (seriesId: string, count: number) => void;
+  generating: boolean;
+  ideaCount: number;
+  jobs: AdminJob[];
+  openCase: (id: string) => void;
+  reportDirtyState?: SeriesPageProps["reportDirtyState"];
+  selectedSeries: ContentSeries;
+  setIdeaCount: (count: number) => void;
+  updateEpisode: SeriesPageProps["updateEpisode"];
+}) {
+  return (
+    <section className="series-tab-panel episode-board">
+      <SectionHeader
+        eyebrow="Episode Ideas"
+        title="AI 选题库"
+        action={
+          <div className="episode-actions">
+            <input min={1} max={30} type="number" value={props.ideaCount} onChange={(event) => props.setIdeaCount(Number(event.target.value))} />
+            <button className="primary-button" disabled={props.generating} type="button" onClick={() => props.generateIdeas(props.selectedSeries._id, props.ideaCount)}>
+              {props.generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+              AI 生成选题
+            </button>
           </div>
-        )}
-      </section>
+        }
+      />
+      {props.episodes.length === 0 ? (
+        <EmptyState title="还没有选题" body="点击 AI 生成选题，一次生成 10-30 条单集方向，然后人工批准。" />
+      ) : (
+        <div className="episode-table">
+          <div className="episode-table-head">
+            <span>题目 / 核心看点</span>
+            <span>来源 / 灵感</span>
+            <span>风险</span>
+            <span>状态</span>
+            <span>操作</span>
+          </div>
+          {props.episodes.map((episode) => (
+            <EpisodeRow
+              assets={props.assets}
+              key={episode._id}
+              episode={episode}
+              linkedJob={props.jobs.find((job) => job.id === episode.caseId) ?? null}
+              openCase={props.openCase}
+              selectedSeries={props.selectedSeries}
+              reportDirtyState={props.reportDirtyState}
+              updateEpisode={props.updateEpisode}
+              deleteEpisode={props.deleteEpisode}
+              convertEpisodeToCase={props.convertEpisodeToCase}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
 function EpisodeRow(props: {
+  assets: ProductionAsset[];
   convertEpisodeToCase: (series: ContentSeries, episode: SeriesEpisodeIdea) => void;
+  deleteEpisode: SeriesPageProps["deleteEpisode"];
   episode: SeriesEpisodeIdea;
   linkedJob: AdminJob | null;
   openCase: (id: string) => void;
@@ -318,7 +534,10 @@ function EpisodeRow(props: {
   const [expanded, setExpanded] = useState(false);
   const episodeEditor = useEditableDraft(props.episode, `${props.episode._id}:${props.episode.updatedAt}`);
   const episodeDraft = episodeEditor.draft ?? props.episode;
-  const canConvert = props.episode.status === "approved";
+  const characterAssets = props.assets.filter((asset) => asset.type === "character_design");
+  const sceneAssets = props.assets.filter((asset) => asset.type === "scene_design" || asset.type === "style_reference");
+  const canRebuildConvertedCase = props.episode.status === "converted_to_case" && !props.linkedJob;
+  const canConvert = props.episode.status === "approved" || canRebuildConvertedCase;
   const reportDirtyState = props.reportDirtyState;
   const episodeId = props.episode._id;
 
@@ -342,6 +561,18 @@ function EpisodeRow(props: {
     episodeEditor.markSaved(nextDraft);
   }
 
+  function deleteEpisode() {
+    if (!confirmDiscardDirtyDraft(episodeEditor.isDirty)) {
+      return;
+    }
+
+    if (!window.confirm(`确定删除题库「${props.episode.title}」？这只会移除题库记录，不会删除已经转出的 Case。`)) {
+      return;
+    }
+
+    props.deleteEpisode(props.selectedSeries._id, props.episode._id);
+  }
+
   return (
     <div className={`episode-row ${expanded ? "expanded" : ""}`}>
       <button className="episode-title-cell" type="button" onClick={() => setExpanded(!expanded)}>
@@ -359,9 +590,9 @@ function EpisodeRow(props: {
           <CheckCircle2 size={15} />
           批准
         </button>
-        <button className="secondary-button" type="button" onClick={() => saveEpisodeDraft({ status: "rejected" })}>
-          <XCircle size={15} />
-          拒绝
+        <button aria-label="删除题库" className="danger-button episode-delete-button" type="button" onClick={deleteEpisode}>
+          <Trash2 size={15} />
+          删除
         </button>
         {props.linkedJob ? (
           <button className="primary-button" type="button" onClick={() => props.openCase(props.linkedJob!.id)}>
@@ -369,7 +600,7 @@ function EpisodeRow(props: {
           </button>
         ) : (
           <button className="primary-button" disabled={!canConvert} type="button" onClick={() => props.convertEpisodeToCase(props.selectedSeries, props.episode)}>
-            转 Case
+            {canRebuildConvertedCase ? "重建 Case" : "转 Case"}
           </button>
         )}
       </div>
@@ -377,6 +608,12 @@ function EpisodeRow(props: {
         <div className="episode-detail">
           <Field label="题目">
             <input value={episodeDraft.title} onChange={(event) => patchEpisodeDraft({ title: event.target.value })} />
+          </Field>
+          <Field label="集数">
+            <input min={1} type="number" value={episodeDraft.episodeNo ?? ""} onChange={(event) => patchEpisodeDraft({ episodeNo: event.target.value ? Number(event.target.value) : null })} />
+          </Field>
+          <Field label="本集主题">
+            <input value={episodeDraft.lessonOrTheme} onChange={(event) => patchEpisodeDraft({ lessonOrTheme: event.target.value })} />
           </Field>
           <Field label="核心看点 / 道理">
             <input value={episodeDraft.moralLesson} onChange={(event) => patchEpisodeDraft({ moralLesson: event.target.value })} />
@@ -396,6 +633,27 @@ function EpisodeRow(props: {
           <Field label="风险提示">
             <input value={episodeDraft.riskNotes} onChange={(event) => patchEpisodeDraft({ riskNotes: event.target.value })} />
           </Field>
+          <Field label="互动结尾">
+            <textarea rows={2} value={episodeDraft.interactiveEnding} onChange={(event) => patchEpisodeDraft({ interactiveEnding: event.target.value })} />
+          </Field>
+          <Field label="连续剧钩子 / 下一集悬念">
+            <textarea rows={2} value={episodeDraft.serialHook} onChange={(event) => patchEpisodeDraft({ serialHook: event.target.value })} />
+          </Field>
+          <Field label="连续性说明">
+            <textarea rows={2} value={episodeDraft.continuityNote} onChange={(event) => patchEpisodeDraft({ continuityNote: event.target.value })} />
+          </Field>
+          <AssetCheckboxGroup
+            assets={characterAssets}
+            label="本集出场角色"
+            selectedIds={episodeDraft.selectedCharacterAssetIds}
+            onChange={(ids) => patchEpisodeDraft({ selectedCharacterAssetIds: ids })}
+          />
+          <AssetCheckboxGroup
+            assets={sceneAssets}
+            label="本集使用场景"
+            selectedIds={episodeDraft.selectedSceneAssetIds}
+            onChange={(ids) => patchEpisodeDraft({ selectedSceneAssetIds: ids })}
+          />
           <EditableActionBar
             isDirty={episodeEditor.isDirty}
             onCancel={episodeEditor.resetDraft}
@@ -405,6 +663,198 @@ function EpisodeRow(props: {
       ) : null}
     </div>
   );
+}
+
+function AssetCheckboxGroup(props: { assets: ProductionAsset[]; label: string; onChange: (ids: string[]) => void; selectedIds: string[] }) {
+  return (
+    <div className="series-asset-binding episode-asset-binding">
+      {props.assets.length === 0 ? (
+        <span className="muted">还没有可用资产。先到设计资产中心生成并保存。</span>
+      ) : (
+        <AssetBindingPicker
+          assets={props.assets}
+          compact
+          description="只影响这一集；保存后转 Case 会带入所选资产。"
+          label={props.label}
+          selectedIds={props.selectedIds}
+          onChange={props.onChange}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssetBindingPicker(props: {
+  assets: ProductionAsset[];
+  compact?: boolean;
+  description: string;
+  label: string;
+  onChange: (ids: string[]) => void;
+  selectedIds: string[];
+}) {
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<ProductionAsset["type"] | "all">("all");
+  const [libraryOpen, setLibraryOpen] = useState(props.selectedIds.length === 0);
+  const [unavailableAssetIds, setUnavailableAssetIds] = useState<string[]>([]);
+  const unavailableAssetIdSet = new Set(unavailableAssetIds);
+  const assetMediaKey = props.assets.map((asset) => `${asset._id}:${assetBindingThumbUrls(asset).join("|")}`).join("\n");
+  const selectedAssets = props.selectedIds
+    .map((id) => props.assets.find((asset) => asset._id === id) ?? null)
+    .filter((asset): asset is ProductionAsset => Boolean(asset));
+  const bindingBreakdown = formatAssetBindingBreakdown(selectedAssets);
+  const availableTypes = assetPickerTypeOrder.filter((type) => props.assets.some((asset) => asset.type === type));
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredAssets = props.assets.filter((asset) => {
+    if (unavailableAssetIdSet.has(asset._id)) {
+      return false;
+    }
+
+    const matchesType = typeFilter === "all" || asset.type === typeFilter;
+    const searchable = [asset.label, asset.folderName, asset.prompt, asset.notes, assetTypeLabel(asset.type)].join(" ").toLowerCase();
+
+    return matchesType && (!normalizedQuery || searchable.includes(normalizedQuery));
+  });
+  const hiddenUnavailableCount = unavailableAssetIds.filter((id) => props.assets.some((asset) => asset._id === id)).length;
+
+  useEffect(() => {
+    setUnavailableAssetIds([]);
+  }, [assetMediaKey]);
+
+  useEffect(() => {
+    if (selectedAssets.length === 0) {
+      setLibraryOpen(true);
+    }
+  }, [selectedAssets.length]);
+
+  function toggle(id: string) {
+    props.onChange(props.selectedIds.includes(id) ? props.selectedIds.filter((currentId) => currentId !== id) : [...props.selectedIds, id]);
+  }
+
+  function remove(id: string) {
+    props.onChange(props.selectedIds.filter((currentId) => currentId !== id));
+  }
+
+  function markAssetUnavailable(id: string) {
+    setUnavailableAssetIds((currentIds) => (currentIds.includes(id) ? currentIds : [...currentIds, id]));
+  }
+
+  return (
+    <div className={`asset-binding-picker ${props.compact ? "compact" : ""}`}>
+      <div className="asset-binding-header">
+        <div>
+          <strong>{props.label}</strong>
+          <span>{props.description}</span>
+        </div>
+        <div className="asset-binding-actions">
+          <em>{selectedAssets.length} 已绑定</em>
+          <button className="secondary-button compact-button" type="button" onClick={() => setLibraryOpen((isOpen) => !isOpen)}>
+            {libraryOpen ? "收起资产库" : "选择资产"}
+          </button>
+        </div>
+      </div>
+
+      <div className="asset-binding-section-heading">
+        <strong>已绑定资产</strong>
+        <span>{bindingBreakdown || "尚未绑定，生成 Case 时可由 AI 自动设计。"}</span>
+      </div>
+
+      <div className="asset-selected-gallery" aria-label="已绑定资产">
+        {selectedAssets.length > 0 ? (
+          selectedAssets.map((asset) => (
+            <article className="asset-selected-card" key={asset._id}>
+              <button className="asset-selected-remove" type="button" onClick={() => remove(asset._id)} title={`移除 ${asset.label}`}>
+                <X size={14} />
+              </button>
+              <span className="asset-selected-thumb">
+                {assetBindingThumbUrls(asset).length > 0 ? <MediaImage alt={asset.label} src={assetBindingThumbUrls(asset)} fallbackLabel="预览不可用" onUnavailable={() => markAssetUnavailable(asset._id)} /> : <MediaFallback iconSize={18} label="无预览" />}
+              </span>
+              <strong>{asset.label}</strong>
+              <small>{assetTypeLabel(asset.type)} / {asset.folderName || "未分类"}</small>
+            </article>
+          ))
+        ) : (
+          <div className="asset-selected-empty">
+            <ImageIcon size={18} />
+            <span>还没有绑定资产。可以保持为空让 AI 自动设计，或展开资产库选择固定角色、场景、风格参考。</span>
+          </div>
+        )}
+      </div>
+
+      {libraryOpen ? (
+        <div className="asset-picker-library">
+          <div className="asset-binding-section-heading">
+            <strong>资产库</strong>
+            <span>从已保存的设计资产中逐张选择，保存系列后才会生效。</span>
+          </div>
+          <div className="asset-picker-controls">
+            <label className="asset-picker-search">
+              <Search size={16} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、文件夹、prompt" />
+            </label>
+            <div className="asset-type-filter">
+              <button className={typeFilter === "all" ? "active" : ""} type="button" onClick={() => setTypeFilter("all")}>
+                全部
+              </button>
+              {availableTypes.map((type) => (
+                <button key={type} className={typeFilter === type ? "active" : ""} type="button" onClick={() => setTypeFilter(type)}>
+                  {assetTypeLabel(type)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredAssets.length === 0 ? (
+            <EmptyState
+              title="没有符合筛选的资产"
+              body={hiddenUnavailableCount > 0 ? `已隐藏 ${hiddenUnavailableCount} 个预览失效资产，请到设计资产中心重新生成。` : "换一个类型或搜索关键词。"}
+            />
+          ) : (
+            <div className="asset-picker-grid">
+              {filteredAssets.map((asset) => {
+                const selected = props.selectedIds.includes(asset._id);
+
+                return (
+                  <button key={asset._id} className={`asset-picker-tile ${selected ? "selected" : ""}`} type="button" onClick={() => toggle(asset._id)} title={`${asset.label} / ${assetTypeLabel(asset.type)} / ${asset.folderName}`}>
+                    <span className="asset-picker-thumb">
+                      {assetBindingThumbUrls(asset).length > 0 ? <MediaImage src={assetBindingThumbUrls(asset)} alt={asset.label} fallbackLabel="预览不可用" onUnavailable={() => markAssetUnavailable(asset._id)} /> : <MediaFallback label="无预览" />}
+                      <span className="asset-picker-check">{selected ? <CheckCircle2 size={17} /> : null}</span>
+                    </span>
+                    <strong>{asset.label}</strong>
+                    <small>{assetTypeLabel(asset.type)} · {asset.folderName || "未分类"}</small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatAssetBindingBreakdown(assets: ProductionAsset[]): string {
+  const characters = assets.filter((asset) => asset.type === "character_design").length;
+  const scenes = assets.filter((asset) => asset.type === "scene_design").length;
+  const style = assets.filter((asset) => asset.type === "style_reference").length;
+  const bgm = assets.filter((asset) => asset.type === "bgm_reference").length;
+  const parts = [
+    characters > 0 ? `角色 ${characters}` : "",
+    scenes > 0 ? `场景 ${scenes}` : "",
+    style > 0 ? `风格 ${style}` : "",
+    bgm > 0 ? `BGM ${bgm}` : ""
+  ].filter(Boolean);
+
+  return parts.join(" · ");
+}
+
+function seriesWorkspaceTabLabel(tab: SeriesWorkspaceTab): string {
+  const labels: Record<SeriesWorkspaceTab, string> = {
+    assets: "资产绑定",
+    cases: "Case 档案",
+    episodes: "题库",
+    settings: "系列设定"
+  };
+  return labels[tab];
 }
 
 function seriesStatusLabel(status: ContentSeriesStatus): string {
@@ -417,6 +867,24 @@ function seriesStatusLabel(status: ContentSeriesStatus): string {
   return labels[status];
 }
 
+function narrativeModeLabel(mode: ContentSeriesNarrativeMode): string {
+  const labels: Record<ContentSeriesNarrativeMode, string> = {
+    serialized: "连续剧",
+    standalone: "单集"
+  };
+  return labels[mode];
+}
+
+function dramaIntensityLabel(intensity: ContentSeriesDramaIntensity): string {
+  const labels: Record<ContentSeriesDramaIntensity, string> = {
+    high: "强抓马",
+    low: "轻冲突",
+    medium: "标准冲突",
+    melodrama: "狗血连续剧"
+  };
+  return labels[intensity];
+}
+
 function episodeStatusLabel(status: SeriesEpisodeIdeaStatus): string {
   const labels: Record<SeriesEpisodeIdeaStatus, string> = {
     approved: "已批准",
@@ -425,6 +893,10 @@ function episodeStatusLabel(status: SeriesEpisodeIdeaStatus): string {
     rejected: "已拒绝"
   };
   return labels[status];
+}
+
+function assetBindingThumbUrls(asset: ProductionAsset): string[] {
+  return resolveProductionAssetPreviewUrls(asset);
 }
 
 function assetTypeLabel(type: ProductionAsset["type"]): string {
@@ -438,3 +910,10 @@ function assetTypeLabel(type: ProductionAsset["type"]): string {
   };
   return labels[type];
 }
+
+const assetPickerTypeOrder: ProductionAsset["type"][] = [
+  "character_design",
+  "scene_design",
+  "style_reference",
+  "bgm_reference"
+];

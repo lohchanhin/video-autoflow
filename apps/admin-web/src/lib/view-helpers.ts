@@ -1,43 +1,43 @@
 import type { JobStatus } from "@ai-content-factory/shared-types";
-import type { ProcessRecordStatus } from "./jobs.js";
+import type { ProcessRecordStatus, SceneReviewItem } from "./jobs.js";
 
 export const statusLabels: Record<JobStatus, string> = {
-  PENDING: "Pending",
-  SCRIPT_GENERATING: "Script",
-  SCRIPT_DONE: "Script done",
-  STORYBOARD_GENERATING: "Storyboard",
-  STORYBOARD_DONE: "Storyboard done",
-  IMAGE_GENERATING: "Images",
-  IMAGE_DONE: "Images done",
-  VIDEO_GENERATING: "Video API",
-  VIDEO_DONE: "Video done",
+  PENDING: "待处理",
+  SCRIPT_GENERATING: "生成脚本中",
+  SCRIPT_DONE: "脚本完成",
+  STORYBOARD_GENERATING: "生成分镜中",
+  STORYBOARD_DONE: "分镜完成",
+  IMAGE_GENERATING: "生成图片中",
+  IMAGE_DONE: "图片完成",
+  VIDEO_GENERATING: "生成视频片段中",
+  VIDEO_DONE: "视频片段完成",
   TTS_GENERATING: "TTS",
-  TTS_DONE: "TTS done",
-  BGM_GENERATING: "BGM",
-  BGM_DONE: "BGM done",
-  COMPOSING: "Composing",
-  COMPOSED: "Composed",
-  QC_CHECKING: "QC",
-  QC_PASSED: "QC passed",
-  READY_TO_UPLOAD: "Ready",
-  UPLOADING: "Uploading",
-  UPLOADED_PRIVATE: "Private",
-  SCHEDULED: "Scheduled",
-  PUBLISHED: "Published",
-  ANALYTICS_COLLECTING: "Analytics",
-  COMPLETED: "Complete",
-  FAILED: "Failed"
+  TTS_DONE: "配音完成",
+  BGM_GENERATING: "生成 BGM 中",
+  BGM_DONE: "BGM 完成",
+  COMPOSING: "合成中",
+  COMPOSED: "已合成",
+  QC_CHECKING: "QC 检查中",
+  QC_PASSED: "QC 通过",
+  READY_TO_UPLOAD: "待上传",
+  UPLOADING: "上传中",
+  UPLOADED_PRIVATE: "已私密上传",
+  SCHEDULED: "已排程",
+  PUBLISHED: "已发布",
+  ANALYTICS_COLLECTING: "收集数据中",
+  COMPLETED: "已完成",
+  FAILED: "失败"
 };
 
 export function formatTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
+  return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
 }
 
 export function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
+  return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -77,6 +77,40 @@ export function getRecordTone(status: ProcessRecordStatus): "neutral" | "active"
   return "neutral";
 }
 
+export function formatProcessRecordStatus(status: ProcessRecordStatus): string {
+  const labels: Record<ProcessRecordStatus, string> = {
+    done: "已完成",
+    failed: "失败",
+    pending: "待处理",
+    skipped: "已跳过",
+    working: "处理中"
+  };
+
+  return labels[status];
+}
+
+export function formatSceneReviewStatus(status: SceneReviewItem["status"]): string {
+  const labels: Record<SceneReviewItem["status"], string> = {
+    approved: "已批准",
+    generated: "待审核",
+    needs_review: "需复核",
+    rejected: "已拒绝"
+  };
+
+  return labels[status];
+}
+
+export function formatSceneQcStatus(status: SceneReviewItem["qcStatus"]): string {
+  const labels: Record<SceneReviewItem["qcStatus"], string> = {
+    fail: "未通过",
+    not_checked: "未检查",
+    pass: "通过",
+    warning: "需注意"
+  };
+
+  return labels[status];
+}
+
 export function formatList(values: string[]): string {
-  return values.length > 0 ? values.join(", ") : "None";
+  return values.length > 0 ? values.join(", ") : "无";
 }

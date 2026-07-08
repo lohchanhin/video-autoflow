@@ -1,7 +1,12 @@
 import type { GenerationReferenceAsset, ProductionAsset } from "@ai-content-factory/shared-types";
+import { resolveFirstMediaUrl } from "./media-url.js";
 
 export function isReadyReferenceAsset(asset: ProductionAsset): boolean {
-  return Boolean(asset.url.trim()) && (asset.status === "approved" || asset.status === "ready");
+  return Boolean(getProductionAssetMediaUrl(asset)) && (asset.status === "approved" || asset.status === "ready");
+}
+
+export function getProductionAssetMediaUrl(asset: ProductionAsset): string {
+  return resolveFirstMediaUrl([asset.storagePath, asset.url]);
 }
 
 export function isCharacterDesignAsset(asset: ProductionAsset): boolean {
@@ -9,7 +14,62 @@ export function isCharacterDesignAsset(asset: ProductionAsset): boolean {
 }
 
 export function isBackgroundDesignAsset(asset: ProductionAsset): boolean {
-  return asset.type === "scene_design" || asset.type === "style_reference" || asset.type === "first_frame";
+  return asset.type === "scene_design" || asset.type === "style_reference";
+}
+
+export function findReadyReferenceAssetsByIds(assets: ProductionAsset[], assetIds: Array<string | string[] | null | undefined>): ProductionAsset[] {
+  const ids = assetIds
+    .flatMap((id) => Array.isArray(id) ? id : [id])
+    .filter((id): id is string => Boolean(id));
+
+  return ids
+    .map((id) => assets.find((asset) => asset._id === id) ?? null)
+    .filter((asset, index, selectedAssets) => Boolean(asset) && selectedAssets.findIndex((candidate) => candidate?._id === asset?._id) === index)
+    .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
+}
+
+export interface CaseReferenceAssetSelection {
+  backgroundAssetId?: string | null;
+  characterAssetId?: string | null;
+  characterAssetIds?: string[];
+  id: string;
+  referenceAssetIds?: string[];
+  sceneAssetIds?: string[];
+}
+
+export function getProductionAssetsForCase(job: CaseReferenceAssetSelection, assets: ProductionAsset[]): ProductionAsset[] {
+  const selectedAssetIds = new Set([
+    job.characterAssetId,
+    job.backgroundAssetId,
+    ...(job.characterAssetIds ?? []),
+    ...(job.referenceAssetIds ?? []),
+    ...(job.sceneAssetIds ?? [])
+  ].filter((id): id is string => Boolean(id)));
+
+  const candidates = assets
+    .filter((asset) => asset.jobId === job.id || selectedAssetIds.has(asset._id))
+    .sort((left, right) => {
+      const leftJobPriority = left.jobId === job.id ? 0 : 1;
+      const rightJobPriority = right.jobId === job.id ? 0 : 1;
+
+      return leftJobPriority - rightJobPriority
+        || (left.sceneId ?? 0) - (right.sceneId ?? 0)
+        || left.label.localeCompare(right.label);
+    });
+
+  const seen = new Set<string>();
+
+  return candidates.filter((asset) => {
+    const mediaUrl = getProductionAssetMediaUrl(asset);
+    const dedupeKey = mediaUrl || asset._id;
+
+    if (seen.has(dedupeKey)) {
+      return false;
+    }
+
+    seen.add(dedupeKey);
+    return true;
+  });
 }
 
 export function buildAssetContextBrief(characterAsset: ProductionAsset | null, backgroundAsset: ProductionAsset | null): string {
@@ -19,7 +79,7 @@ export function buildAssetContextBrief(characterAsset: ProductionAsset | null, b
           "Selected optional character reference:",
           `- Label: ${characterAsset.label}`,
           `- Visual brief: ${cleanAssetTextForCaseBrief(characterAsset)}`,
-          characterAsset.url ? "- Use this as the protagonist identity / wardrobe / silhouette reference when compatible with the user idea." : ""
+          getProductionAssetMediaUrl(characterAsset) ? "- Use this as the protagonist identity / wardrobe / silhouette reference when compatible with the user idea." : ""
         ].filter(Boolean).join("\n")
       : "",
     backgroundAsset
@@ -27,7 +87,7 @@ export function buildAssetContextBrief(characterAsset: ProductionAsset | null, b
           "Selected optional background / scene reference:",
           `- Label: ${backgroundAsset.label}`,
           `- Visual brief: ${cleanAssetTextForCaseBrief(backgroundAsset)}`,
-          backgroundAsset.url ? "- Use this as the environment, color, lighting, and set-design reference when compatible with the user idea." : ""
+          getProductionAssetMediaUrl(backgroundAsset) ? "- Use this as the environment, color, lighting, and set-design reference when compatible with the user idea." : ""
         ].filter(Boolean).join("\n")
       : ""
   ].filter(Boolean);
@@ -43,6 +103,48 @@ export function buildAssetContextBrief(characterAsset: ProductionAsset | null, b
   ].join("\n");
 }
 
+export function buildAssetContextBriefFromAssets(assets: ProductionAsset[]): string {
+  const readyAssets = assets
+    .filter(isReadyReferenceAsset)
+    .filter((asset, index, selectedAssets) => selectedAssets.findIndex((candidate) => candidate._id === asset._id) === index);
+
+  if (readyAssets.length === 0) {
+    return "";
+  }
+
+  const characterLines = readyAssets
+    .filter(isCharacterDesignAsset)
+    .map((asset) => [
+      `- Character: ${asset.label}`,
+      `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`,
+      getProductionAssetMediaUrl(asset) ? "  Use as a fixed cast identity, wardrobe, silhouette, palette, and recurring prop reference." : ""
+    ].filter(Boolean).join("\n"));
+  const sceneLines = readyAssets
+    .filter(isBackgroundDesignAsset)
+    .map((asset) => [
+      `- Scene / style: ${asset.label}`,
+      `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`,
+      getProductionAssetMediaUrl(asset) ? "  Use as a fixed location, spatial layout, lighting, palette, and camera-zone reference." : ""
+    ].filter(Boolean).join("\n"));
+  const otherLines = readyAssets
+    .filter((asset) => !isCharacterDesignAsset(asset) && !isBackgroundDesignAsset(asset))
+    .map((asset) => [
+      `- Reference: ${asset.label}`,
+      `  Visual facts: ${cleanAssetTextForCaseBrief(asset)}`
+    ].join("\n"));
+
+  return [
+    "Selected production references for this case. These are authoritative continuity inputs for the outline, storyboard, image prompts, and video references.",
+    "Use every selected cast/location/style asset when it fits the scene. Do not copy asset-generation instructions, labels, UI words, or prompt-engineering text into viewer-facing script text.",
+    characterLines.length ? "Selected character assets:" : "",
+    ...characterLines,
+    sceneLines.length ? "Selected scene / environment / style assets:" : "",
+    ...sceneLines,
+    otherLines.length ? "Other selected references:" : "",
+    ...otherLines
+  ].filter(Boolean).join("\n");
+}
+
 export function productionAssetToGenerationReference(asset: ProductionAsset): GenerationReferenceAsset | null {
   if (!isReadyReferenceAsset(asset)) {
     return null;
@@ -56,7 +158,7 @@ export function productionAssetToGenerationReference(asset: ProductionAsset): Ge
     prompt: cleanBrief || undefined,
     role: asset.role,
     type: asset.type,
-    url: asset.url
+    url: getProductionAssetMediaUrl(asset)
   };
 }
 

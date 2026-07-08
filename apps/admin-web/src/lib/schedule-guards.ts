@@ -14,6 +14,7 @@ export interface ScheduleGuardInput {
   publishingTargets: PublishingTarget[];
   schedule: ProductionSchedule;
   settings: ToolProviderSettings[];
+  stopWhenBudgetExceeded?: boolean | undefined;
 }
 
 export interface ScheduleGuardResult {
@@ -39,7 +40,7 @@ export function evaluateScheduleRunGuard(input: ScheduleGuardInput): ScheduleGua
   const todaysCostExposureRM = roundRM(todaysScheduledJobs.reduce((sum, job) => sum + Math.max(job.actualCostRM, job.costLimitRM), 0));
   const remainingBudgetRM = roundRM(Math.max(0, input.schedule.budgetLimitRM - todaysCostExposureRM));
   const remainingDailySlots = Math.max(0, input.schedule.maxVideosPerDay - todaysScheduledJobs.length);
-  const budgetSlots = Math.max(0, Math.floor(remainingBudgetRM / caseCostRM));
+  const budgetSlots = input.stopWhenBudgetExceeded === false ? input.schedule.maxCasesPerRun : Math.max(0, Math.floor(remainingBudgetRM / caseCostRM));
   const activeTargetIds = input.schedule.targetIds.filter((targetId) => input.publishingTargets.some((target) => target.id === targetId && target.enabled));
   const disabledTargetCount = input.schedule.targetIds.length - activeTargetIds.length;
 
@@ -58,7 +59,7 @@ export function evaluateScheduleRunGuard(input: ScheduleGuardInput): ScheduleGua
   if (input.schedule.targetIds.length > 0 && activeTargetIds.length === 0) {
     blockers.push("已选择的 YouTube 发布目标都未启用。");
   } else if (input.schedule.targetIds.length === 0) {
-    warnings.push("未选择 YouTube 目标；自动排程会先产出到 MP4/QC，等待之后再绑定 private upload。");
+    warnings.push("未选择 YouTube 目标；自动排程会先产出到 MP4/QC，之后可再绑定私密上传目标。");
   } else if (disabledTargetCount > 0) {
     warnings.push(`${disabledTargetCount} 个发布目标已停用，本次会忽略。`);
   }

@@ -18,7 +18,7 @@ import {
   Workflow,
   XCircle
 } from "lucide-react";
-import type { ContentSeries, DatabaseStatusResponse, GenerateBgmResponse, GenerateImagesResponse, GenerateQcReportResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoClipResponse, GenerateVideoResponse, GenerationReferenceAsset, HealthResponse, JobStatus, ProductionAsset, ProductionAssetStatus, ProductionAssetType, SeriesEpisodeIdea, TrendIdeaSeed } from "@ai-content-factory/shared-types";
+import type { ContentSeries, DatabaseStatusResponse, GenerateBgmResponse, GeneratedImageAsset, GenerateImagesResponse, GenerateQcReportResponse, GenerateScriptStoryResponse, GenerateTtsResponse, GenerateVideoClipResponse, GenerateVideoResponse, GenerationReferenceAsset, HealthResponse, JobStatus, ProductionAsset, ProductionAssetStatus, ProductionAssetType, ProductionBrief, SeriesEpisodeIdea, StoryWorld, ToolProviderOverride, TrendIdeaSeed } from "@ai-content-factory/shared-types";
 import { AgentsPage } from "./pages/AgentsPage.js";
 import { AssetsPage } from "./pages/AssetsPage.js";
 import { AutomationPage } from "./pages/AutomationPage.js";
@@ -41,6 +41,7 @@ import {
   buildToolProviderOverride,
   findToolProviderSettings,
   loadAiToolEndpoints,
+  loadBudgetSettings,
   loadCasePublishTargets,
   loadCaseQcReports,
   loadCharacterProfiles,
@@ -57,6 +58,7 @@ import {
   resetProviderKeys,
   resetToolProviderSettings,
   saveAiToolEndpoints,
+  saveBudgetSettings,
   saveCasePublishTargets,
   saveCaseQcReports,
   saveCharacterProfiles,
@@ -70,6 +72,7 @@ import {
   saveTrendReports,
   saveYouTubeAccounts,
   type AiToolEndpoint,
+  type BudgetSettings,
   type CaseQcReport,
   type CasePublishTarget,
   type CharacterProfile,
@@ -87,7 +90,6 @@ import {
 import {
   generateScriptStory as requestScriptStoryGeneration,
   generateScriptStoryFromInput as requestDraftScriptStoryGeneration,
-  generateImages as requestImageGeneration,
   generateSceneImage as requestSceneImageGeneration,
   generateBgm as requestBgmGeneration,
   generateQcReport as requestQcReport,
@@ -99,12 +101,15 @@ import {
   convertSeriesEpisodeToCase as requestConvertSeriesEpisodeToCase,
   createContentSeries as requestCreateContentSeries,
   createProductionAsset as requestCreateProductionAsset,
+  createStoryWorld as requestCreateStoryWorld,
   deleteContentSeries as requestDeleteContentSeries,
   deleteProductionAsset as requestDeleteProductionAsset,
+  deleteSeriesEpisodeIdea as requestDeleteSeriesEpisodeIdea,
   generateSeriesEpisodeIdeas as requestGenerateSeriesEpisodeIdeas,
   generateProductionAsset as requestProductionAssetGeneration,
   getDatabaseStatus,
   getProviderSecretStatuses,
+  listStoryWorlds as requestStoryWorlds,
   listContentSeries as requestContentSeries,
   listSeriesEpisodes as requestSeriesEpisodes,
   listProductionAssets as requestProductionAssets,
@@ -118,13 +123,18 @@ import { loadStaffAgents, saveStaffAgents, type StaffAgent } from "./lib/agents.
 import { evaluateCaseBudgetGuard } from "./lib/budget-guards.js";
 import {
   buildAssetContextBrief,
+  buildAssetContextBriefFromAssets,
   buildReferenceAssetPromptContext,
+  findReadyReferenceAssetsByIds,
+  getProductionAssetsForCase,
+  getProductionAssetMediaUrl,
   isBackgroundDesignAsset,
   isCharacterDesignAsset,
   isReadyReferenceAsset,
   productionAssetToGenerationReference
 } from "./lib/case-reference-assets.js";
 import { createId } from "./lib/ids.js";
+import { isRasterImageMediaUrl, resolveMediaUrl } from "./lib/media-url.js";
 import {
   createCaseActivity,
   createSceneReviewItems,
@@ -157,10 +167,26 @@ import { tryAcquireScheduleRunLock } from "./lib/schedule-run-locks.js";
 import { buildDefaultBrief } from "./lib/topic-presets.js";
 import { inferTemplateTypeFromGenre } from "./lib/genres.js";
 import { countDirtyDrafts, updateDirtyDraftMap } from "./lib/editable-draft.js";
+import { importLocalDataSnapshot, isLocalDataMigrationMessage } from "./lib/local-data-portability.js";
+import { resolveViewFromHash, type ActiveView } from "./lib/view-routing.js";
+import {
+  isSceneReviewBlockingForProduction,
+  selectSceneGenerationReferences,
+  selectSceneProductionAssetsForGeneration
+} from "./lib/scene-reference-routing.js";
 
 type ApiState = "checking" | "online" | "offline";
 type ServiceState = "checking" | "online" | "offline" | "warning";
-type ActiveView = "dashboard" | "automation" | "trends" | "series" | "cases" | "assets" | "agents" | "workflow" | "keys" | "youtube" | "storage" | "cost";
+
+class VideoClipGenerationError extends Error {
+  readonly partialResults: GenerateVideoClipResponse[];
+
+  constructor(message: string, partialResults: GenerateVideoClipResponse[]) {
+    super(message);
+    this.name = "VideoClipGenerationError";
+    this.partialResults = partialResults;
+  }
+}
 
 export interface CaseDraftPreview {
   input: NewJobInput;
@@ -169,11 +195,22 @@ export interface CaseDraftPreview {
 
 const libraryJobId = "asset_library";
 
+function formatApiEnvironmentLabel(env: string | null | undefined): string {
+  if (env === "production") return "生产环境";
+  if (env === "development") return "开发环境";
+  if (env === "test") return "测试环境";
+  return env ? env : "在线";
+}
+
+function formatScheduleRunSource(mode: "manual" | "due"): string {
+  return mode === "manual" ? "手动立即执行" : "到点自动执行";
+}
+
 const viewTitles: Record<ActiveView, { eyebrow: string; title: string }> = {
   dashboard: { eyebrow: "运营总览", title: "内容工厂控制台" },
   automation: { eyebrow: "自动排程", title: "自动化控制" },
   trends: { eyebrow: "市场信号", title: "趋势雷达" },
-  series: { eyebrow: "系列内容库", title: "Series 题库规划" },
+  series: { eyebrow: "系列内容库", title: "系列题库规划" },
   cases: { eyebrow: "生产案件", title: "影片 Case 历史" },
   assets: { eyebrow: "设计管理", title: "设计资产中心" },
   agents: { eyebrow: "主控 Agent", title: "AI 主控 Agent" },
@@ -184,23 +221,13 @@ const viewTitles: Record<ActiveView, { eyebrow: string; title: string }> = {
   cost: { eyebrow: "预算控制", title: "成本管理" }
 };
 function getInitialView(): ActiveView {
-  const hash = window.location.hash.replace("#", "");
+  const resolvedView = resolveViewFromHash(window.location.hash);
 
-  if (hash === "jobs") {
-    window.history.replaceState(null, "", "#cases");
-    return "cases";
+  if (resolvedView.canonicalHash) {
+    window.history.replaceState(null, "", resolvedView.canonicalHash);
   }
 
-  if (hash === "characters") {
-    window.history.replaceState(null, "", "#assets");
-    return "assets";
-  }
-
-  if (hash === "dashboard" || hash === "automation" || hash === "trends" || hash === "series" || hash === "cases" || hash === "assets" || hash === "agents" || hash === "workflow" || hash === "keys" || hash === "youtube" || hash === "storage" || hash === "cost") {
-    return hash;
-  }
-
-  return "dashboard";
+  return resolvedView.view;
 }
 
 function buildGcsPath(settings: StorageSettings, job: AdminJob): string {
@@ -241,12 +268,12 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
   const artifactByStage: Partial<Record<ProductionStageId, { artifactPath: string; output: string; status: JobProcessRecord["status"] }>> = {
     archive: {
       artifactPath: result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath,
-      output: result.storage.fallbackReason ?? `Stored with ${result.storage.driver}.`,
+      output: result.storage.fallbackReason ?? `已通过 ${result.storage.driver} 存储。`,
       status: "done"
     },
     compose: {
       artifactPath: result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath,
-      output: `Generated ${result.durationSeconds.toFixed(1)}s 1080x1920 MP4 from reviewed scene images and synced voiceover audio.`,
+      output: `已用审核后的场景画面和同步配音合成 ${result.durationSeconds.toFixed(1)}s 1080x1920 MP4。`,
       status: "done"
     },
     image: {
@@ -256,12 +283,12 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
     },
     prompt: {
       artifactPath: result.artifacts.storyboard.publicUrl ?? result.artifacts.storyboard.storagePath,
-      output: result.storyboard.map((scene) => `Scene ${scene.sceneId}: ${scene.imagePrompt}`).join("\n"),
+      output: result.storyboard.map((scene) => `场景 ${scene.sceneId}: ${scene.imagePrompt}`).join("\n"),
       status: "done"
     },
     qc: {
       artifactPath: result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath,
-      output: "Local smoke QC passed: final MP4 artifact was created and stored.",
+      output: "本地基础 QC 通过：最终 MP4 已创建并存储。",
       status: "done"
     },
     script: {
@@ -271,12 +298,12 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
     },
     storyboard: {
       artifactPath: result.artifacts.storyboard.publicUrl ?? result.artifacts.storyboard.storagePath,
-      output: result.storyboard.map((scene) => `Scene ${scene.sceneId} (${scene.durationSeconds.toFixed(1)}s): ${scene.visual}`).join("\n"),
+      output: result.storyboard.map((scene) => `场景 ${scene.sceneId} (${scene.durationSeconds.toFixed(1)}s): ${scene.visual}`).join("\n"),
       status: "done"
     },
     subtitle: {
       artifactPath: result.artifacts.subtitles.publicUrl ?? result.artifacts.subtitles.storagePath,
-      output: "SRT subtitles regenerated from the same storyboard voice text used for TTS and retimed to the generated audio duration.",
+      output: "SRT 字幕已根据分镜旁白重新生成，并按配音音频时长重新校时。",
       status: "done"
     },
     tts: {
@@ -284,14 +311,14 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
         result.artifacts.voiceover.publicUrl ?? result.artifacts.voiceover.storagePath,
         result.artifacts.soundEffects.publicUrl ?? result.artifacts.soundEffects.storagePath
       ].join("\n"),
-      output: "Voiceover audio and SFX cue manifest were attached for final composition. Video/subtitle timing is synced from this audio.",
+      output: "配音音频和音效 cue 清单已接入最终合成；影片和字幕时长会跟随这段音频同步。",
       status: "done"
     },
     video: {
       artifactPath: result.artifacts.sceneClips?.map((clip) => clip.publicUrl ?? clip.storagePath).join("\n") ?? "",
       output: result.artifacts.sceneClips?.length
-        ? `Attached ${result.artifacts.sceneClips.length} Seedance scene clip(s). Final MP4 used available clips as the visual track and overlaid synced TTS/subtitles in FFmpeg.`
-        : "No Seedance scene clips were available. Final MP4 used reviewed scene images as the visual track.",
+        ? `已接入 ${result.artifacts.sceneClips.length} 个 Seedance 视频片段；最终 MP4 使用可用片段作为视觉轨，并由 FFmpeg 叠加同步配音与字幕。`
+        : "没有可用的 Seedance 视频片段；最终 MP4 使用已审核场景图片作为视觉轨。",
       status: result.artifacts.sceneClips?.length ? "done" : "skipped"
     }
   };
@@ -308,8 +335,8 @@ function applyGenerationResultToRecords(records: JobProcessRecord[], jobId: stri
         ? {
             ...record,
             output: hasUploadTargets
-              ? "Waiting for human approval before YouTube private upload."
-              : "No YouTube targets configured. Production stops at completed MP4 / QC; upload can be added later.",
+              ? "等待人工审核后再执行 YouTube 私密上传。"
+              : "未配置 YouTube 目标；生产会停在 MP4/QC 完成状态，之后可再补充上传目标。",
             status: hasUploadTargets ? "pending" : "skipped",
             updatedAt: now
           }
@@ -340,14 +367,14 @@ function applyVideoClipGenerationResultsToRecords(
   const totalDurationSeconds = results.reduce((sum, result) => sum + result.clip.durationSeconds, 0);
   const output = [
     results.length > 0
-      ? `Seedance 2.0 generated ${results.length} scene clip(s), ${totalDurationSeconds}s total. Each clip was created from the storyboard scene duration and scene text.`
-      : "No Seedance clip was generated.",
+      ? `Seedance 2.0 已生成 ${results.length} 个场景视频片段，总时长 ${totalDurationSeconds}s。每个片段都按分镜场景时长和场景文本生成。`
+      : "没有生成 Seedance 视频片段。",
     notes,
     "",
     ...results.flatMap((result) => [
-      `Scene ${result.clip.sceneId}: ${result.clip.durationSeconds}s / ${result.clip.mode} / ${result.model}`,
-      `Task: ${result.clip.taskId}`,
-      result.fallbackReason ? `Note: ${result.fallbackReason}` : "",
+      `场景 ${result.clip.sceneId}: ${result.clip.durationSeconds}s / ${result.clip.mode} / ${result.model}`,
+      `任务: ${result.clip.taskId}`,
+      result.fallbackReason ? `备注: ${result.fallbackReason}` : "",
       result.clip.prompt,
       ""
     ])
@@ -371,19 +398,40 @@ function applyVideoClipGenerationResultsToRecords(
   });
 }
 
+function invalidateComposeRecordsAfterVideoClipChange(records: JobProcessRecord[], jobId: string, now: string): JobProcessRecord[] {
+  const downstreamStages: ProductionStageId[] = ["compose", "qc", "publish", "archive"];
+
+  return records.map((record) => {
+    if (record.jobId !== jobId || !downstreamStages.includes(record.stageId)) {
+      return record;
+    }
+
+    return {
+      ...record,
+      artifactPath: "",
+      notes: "Seedance 2.0 视频片段已更新，旧 MP4 已失效。",
+      output: record.stageId === "publish"
+        ? "等待重新合成并通过审核后，才允许进入 YouTube 私密上传。"
+        : "Seedance 2.0 视频片段已更新，请重新生成完整 MP4。",
+      status: record.status === "skipped" ? "skipped" : "pending",
+      updatedAt: now
+    };
+  });
+}
+
 function describeComposedSceneImages(images: GenerateVideoResponse["artifacts"]["sceneImages"]): string {
   const paths = images.map((image) => image.publicUrl ?? image.storagePath);
   const rasterCount = paths.filter(isRasterImageArtifact).length;
 
   if (rasterCount > 0) {
-    return `${rasterCount} generated scene image(s) attached and used for MP4 composition. Review the thumbnails in Artifact Library before approval.`;
+    return `已接入 ${rasterCount} 张可审核场景图片，并用于 MP4 合成。批准前请在资产库检查缩略图。`;
   }
 
-  return `${images.length} non-raster scene image artifact(s) attached. Run Generate images first to create OpenAI PNG review assets before final approval.`;
+  return `已接入 ${images.length} 个非图片格式的场景资产。请先执行「生成图片」，建立可审核的 OpenAI PNG/JPG 场景图后再批准。`;
 }
 
 function isRasterImageArtifact(value: string | undefined): boolean {
-  return /\.(png|jpe?g|webp|bmp)(\?|$)/iu.test(value ?? "");
+  return isRasterImageMediaUrl(value);
 }
 
 function isAudioArtifact(value: string | undefined): boolean {
@@ -397,7 +445,7 @@ function hasGeneratedRasterImages(records: JobProcessRecord[], jobId: string): b
 }
 
 function hasBlockedSceneReviews(sceneReviews: SceneReviewItem[], jobId: string): boolean {
-  return sceneReviews.some((review) => review.jobId === jobId && (review.status === "needs_review" || review.status === "rejected" || review.qcStatus === "fail"));
+  return sceneReviews.some((review) => review.jobId === jobId && isSceneReviewBlockingForProduction(review));
 }
 
 function hasGeneratedVoiceoverAudio(records: JobProcessRecord[], jobId: string): boolean {
@@ -462,27 +510,35 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
   const sceneTimings = parseStoryboardSceneTimings(records, job.id);
   const scenePromptMap = parseScenePromptMap(promptRecord?.output ?? "");
   const jobReviews = sceneReviews.filter((review) => review.jobId === job.id).sort((left, right) => left.sceneId - right.sceneId);
-  const imageArtifacts = splitArtifactPaths(imageRecord?.artifactPath).filter(isRasterImageArtifact);
-  const enabledAssets = referenceAssets.filter((asset) => asset.jobId === job.id && (asset.status === "approved" || asset.status === "ready") && asset.url.trim());
+  const imageArtifacts = splitArtifactPaths(imageRecord?.artifactPath).map(resolveMediaUrl).filter(isRasterImageArtifact);
+  const enabledAssets = referenceAssets.filter((asset) => (asset.status === "approved" || asset.status === "ready") && getProductionAssetMediaUrl(asset));
   const sceneIds = collectSceneIds(job, sceneTimings, jobReviews, imageArtifacts);
 
   return sceneIds.map((sceneId) => {
     const timing = sceneTimings.get(sceneId);
     const review = jobReviews.find((candidate) => candidate.sceneId === sceneId);
+    const imagePrompt = scenePromptMap.get(sceneId) ?? review?.prompt ?? "";
+    const sceneAssets = selectSceneProductionAssetsForGeneration(enabledAssets, {
+      imagePrompt,
+      sceneId,
+      visual: timing?.visual ?? review?.prompt ?? "",
+      voiceText: timing?.voiceText ?? ""
+    });
+    const reviewIsBlocking = review ? isSceneReviewBlockingForProduction(review) : false;
     const sceneImage = imageArtifacts.find((artifact) => getSceneNumberFromArtifact(artifact) === sceneId) ?? imageArtifacts[sceneId - 1];
-    const firstFrameAsset = enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "first_frame" && asset.sceneId === null);
-    const lastFrameAsset = enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === sceneId) ?? enabledAssets.find((asset) => asset.role === "last_frame" && asset.sceneId === null);
-    const imageUrl = firstFrameAsset?.url || review?.artifactPath || sceneImage;
-    const referenceAssetsForScene = enabledAssets
-      .filter((asset) => asset.role === "reference_image" && (asset.sceneId === null || asset.sceneId === sceneId))
-      .filter((asset, index, assets) => assets.findIndex((candidate) => candidate.url === asset.url) === index)
+    const reviewImageUrl = reviewIsBlocking ? "" : resolveMediaUrl(review?.artifactPath);
+    const recordSceneImageUrl = reviewIsBlocking ? "" : resolveMediaUrl(sceneImage);
+    const imageUrl = reviewImageUrl || recordSceneImageUrl || undefined;
+    const referenceAssetsForScene = sceneAssets
+      .filter((asset) => asset.role === "reference_image")
+      .filter((asset) => asset.type !== "first_frame" && asset.type !== "last_frame")
+      .filter((asset, index, assets) => assets.findIndex((candidate) => getProductionAssetMediaUrl(candidate) === getProductionAssetMediaUrl(asset)) === index)
       .slice(0, 8);
     const referenceImageUrls = referenceAssetsForScene
-      .map((asset) => asset.url)
-      .filter((url, index, urls) => url !== imageUrl && url !== lastFrameAsset?.url && urls.indexOf(url) === index);
-    const imagePrompt = scenePromptMap.get(sceneId) ?? review?.prompt ?? "";
+      .map(getProductionAssetMediaUrl)
+      .filter((url, index, urls) => Boolean(url) && url !== imageUrl && urls.indexOf(url) === index);
     const durationSeconds = getSeedanceDurationSeconds(timing?.durationSeconds, job.durationSeconds, sceneIds.length);
-    const referenceContext = referenceAssetsForScene
+    const referenceContext = sceneAssets
       .map(buildReferenceAssetPromptContext)
       .filter(Boolean)
       .join("\n");
@@ -490,7 +546,7 @@ function getSeedanceClipInputs(records: JobProcessRecord[], sceneReviews: SceneR
     return {
       durationSeconds,
       imageUrl,
-      lastFrameImageUrl: lastFrameAsset?.url,
+      lastFrameImageUrl: undefined,
       prompt: buildSeedanceScenePrompt({
         durationSeconds,
         imagePrompt,
@@ -684,6 +740,67 @@ function hasGeneratedScriptStory(records: JobProcessRecord[], jobId: string): bo
   return Boolean(scriptRecord?.status === "done" && storyboardRecord?.status === "done" && promptRecord?.status === "done");
 }
 
+function resetDownstreamRecordsAfterScriptOverwrite(records: JobProcessRecord[], jobId: string, now: string): JobProcessRecord[] {
+  const downstreamStages: ProductionStageId[] = ["image", "video", "tts", "bgm", "subtitle", "compose", "qc", "publish", "archive"];
+
+  return records.map((record) => {
+    if (record.jobId !== jobId || !downstreamStages.includes(record.stageId)) {
+      return record;
+    }
+
+    return {
+      ...record,
+      artifactPath: "",
+      costRM: 0,
+      notes: "脚本 / 分镜已被覆盖，下游产物需要重新生成。",
+      output: "等待根据新的已确认脚本和分镜重新生成。",
+      status: record.status === "skipped" ? "skipped" : "pending",
+      updatedAt: now
+    };
+  });
+}
+
+function enrichProductionBriefWithReferenceAssets(productionBrief: ProductionBrief | null, referenceAssets: ProductionAsset[]): ProductionBrief | null {
+  if (!productionBrief || referenceAssets.length === 0) {
+    return productionBrief;
+  }
+
+  const characterAssets = referenceAssets.filter(isCharacterDesignAsset);
+  const sceneAssets = referenceAssets.filter(isBackgroundDesignAsset);
+  const referenceContinuityRules = [
+    ...characterAssets.map((asset) => `${asset.label}: preserve character identity, silhouette, wardrobe, palette, and fixed props from the approved design asset.`),
+    ...sceneAssets.map((asset) => `${asset.label}: preserve environment layout, key props, color palette, lighting direction, and reusable camera zones from the approved design asset.`)
+  ];
+
+  return {
+    ...productionBrief,
+    selectedCharacters: characterAssets.length > 0
+      ? characterAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        notes: buildReferenceAssetPromptContext(asset),
+        role: asset.type,
+        url: getProductionAssetMediaUrl(asset),
+        visualIdentity: asset.prompt || asset.notes || asset.label
+      }))
+      : productionBrief.selectedCharacters,
+    selectedScenes: sceneAssets.length > 0
+      ? sceneAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        location: asset.folderName,
+        notes: buildReferenceAssetPromptContext(asset),
+        url: getProductionAssetMediaUrl(asset),
+        visualRules: asset.prompt || asset.notes || asset.label
+      }))
+      : productionBrief.selectedScenes,
+    visualContinuityRules: [
+      ...(productionBrief.visualContinuityRules ?? []),
+      ...referenceContinuityRules
+    ].filter((value, index, values) => Boolean(value && value.trim()) && values.indexOf(value) === index)
+  };
+}
+
 function extractVoiceoverTextFromRecords(records: JobProcessRecord[], jobId: string): string {
   const storyboardRecord = records.find((record) => record.jobId === jobId && record.stageId === "storyboard");
   const storyboardVoiceText = storyboardRecord?.output
@@ -713,12 +830,18 @@ function extractVoiceoverTextFromRecords(records: JobProcessRecord[], jobId: str
   return blocks.at(-1) ?? output;
 }
 
-function applyScriptStoryResultToRecords(records: JobProcessRecord[], jobId: string, result: GenerateScriptStoryResponse, now: string): JobProcessRecord[] {
+function applyScriptStoryResultToRecords(
+  records: JobProcessRecord[],
+  jobId: string,
+  result: GenerateScriptStoryResponse,
+  now: string,
+  options: { forceApproved?: boolean } = {}
+): JobProcessRecord[] {
   const scriptUrl = result.artifacts.script.publicUrl ?? result.artifacts.script.storagePath;
   const storyboardUrl = result.artifacts.storyboard.publicUrl ?? result.artifacts.storyboard.storagePath;
   const visualBibleUrl = result.artifacts.visualBible.publicUrl ?? result.artifacts.visualBible.storagePath;
   const backgroundMusicOutput = formatBackgroundMusicBrief(result);
-  const outlineNeedsReview = result.requiresReview || result.outlineQc.status !== "pass";
+  const outlineNeedsReview = !options.forceApproved && (result.requiresReview || result.outlineQc.status !== "pass");
   const outlineNotes = outlineNeedsReview ? result.outlineQc.summary : "";
   const outlineStatus: ProcessRecordStatus = outlineNeedsReview ? "failed" : "done";
 
@@ -787,7 +910,7 @@ function applyScriptStoryResultToRecords(records: JobProcessRecord[], jobId: str
     if (record.stageId === "bgm") {
       return {
         ...record,
-        input: `Generate optional background music from this approved AI outline:\n${backgroundMusicOutput}`,
+        input: `根据已确认的大纲生成可选背景音乐：\n${backgroundMusicOutput}`,
         output: backgroundMusicOutput,
         status: "pending",
         updatedAt: now
@@ -803,7 +926,7 @@ function formatBackgroundMusicBrief(result: GenerateScriptStoryResponse): string
     enabled: true,
     instrumentation: "minimal cinematic pads, soft pulses, subtle percussion",
     mood: "cinematic, restrained, narration-friendly",
-    prompt: `Instrumental background music for "${result.script.title}". No vocals, no copyrighted melody, leave space for narration.`,
+    prompt: `为《${result.script.title}》生成无歌词背景音乐。不要使用版权旋律，给旁白留出空间。`,
     style: "cinematic underscore",
     tempo: "slow to medium"
   };
@@ -873,7 +996,7 @@ function applyImageGenerationResultToRecords(records: JobProcessRecord[], jobId:
       ...record,
       artifactPath: result.images.map((image) => image.asset.publicUrl ?? image.asset.storagePath).join("\n"),
       costRM: result.costRM,
-      notes: failedChecks.length > 0 ? `${failedChecks.length} scene image(s) failed visual QC. Review and regenerate before composing MP4.` : "",
+      notes: failedChecks.length > 0 ? `${failedChecks.length} 张场景图片未通过视觉 QC。请审核并重跑后再合成 MP4。` : "",
       output: result.images.map((image) => [
         `Scene ${image.sceneId}: ${image.prompt}`,
         image.qualityCheck ? `QC: ${image.qualityCheck.status} - ${image.qualityCheck.summary}` : "QC: not checked",
@@ -886,6 +1009,127 @@ function applyImageGenerationResultToRecords(records: JobProcessRecord[], jobId:
   });
 }
 
+interface SceneImageGenerationTarget {
+  prompt: string;
+  sceneId: number;
+}
+
+function getImageGenerationTargetsFromRecords(records: JobProcessRecord[], job: AdminJob): SceneImageGenerationTarget[] {
+  const promptRecord = records.find((record) => record.jobId === job.id && record.stageId === "prompt");
+  const promptMap = parseScenePromptMap(promptRecord?.output ?? "");
+  const timings = parseStoryboardSceneTimings(records, job.id);
+  const sceneIds = new Set<number>();
+
+  for (const sceneId of timings.keys()) {
+    sceneIds.add(sceneId);
+  }
+
+  for (const sceneId of promptMap.keys()) {
+    sceneIds.add(sceneId);
+  }
+
+  if (sceneIds.size === 0) {
+    for (let sceneId = 1; sceneId <= job.sceneCount; sceneId += 1) {
+      sceneIds.add(sceneId);
+    }
+  }
+
+  return [...sceneIds]
+    .filter((sceneId) => Number.isFinite(sceneId) && sceneId > 0)
+    .sort((left, right) => left - right)
+    .map((sceneId) => {
+      const timing = timings.get(sceneId);
+      const prompt = [
+        promptMap.get(sceneId),
+        timing?.visual ? `Visible scene: ${timing.visual}` : "",
+        timing?.voiceText ? `Voice/subtitle: ${timing.voiceText}` : ""
+      ].filter(Boolean).join("\n");
+
+      return {
+        prompt: prompt || `Scene ${sceneId} for ${job.topic}`,
+        sceneId
+      };
+    });
+}
+
+function replaceGeneratedImage(images: GeneratedImageAsset[], image: GeneratedImageAsset): GeneratedImageAsset[] {
+  return [
+    image,
+    ...images.filter((candidate) => candidate.sceneId !== image.sceneId)
+  ].sort((left, right) => left.sceneId - right.sceneId);
+}
+
+function applySceneImageProgressToRecords(
+  records: JobProcessRecord[],
+  jobId: string,
+  images: GeneratedImageAsset[],
+  totalScenes: number,
+  provider: string,
+  model: string,
+  now: string,
+  options: { errorMessage?: string | undefined; final?: boolean | undefined } = {}
+): JobProcessRecord[] {
+  const failedChecks = images.filter((image) => image.qualityCheck?.status === "fail");
+  const errorMessage = options.errorMessage?.trim() ?? "";
+  const generatedCount = images.length;
+  const providerLabel = provider === "openai" ? `OpenAI ${model}` : model || provider || "image provider";
+  const status: ProcessRecordStatus = errorMessage
+    ? "failed"
+    : options.final
+      ? failedChecks.length > 0
+        ? "failed"
+        : "done"
+      : "working";
+  const notes = errorMessage
+    ? buildReadableImageGenerationError(errorMessage, generatedCount, totalScenes)
+    : failedChecks.length > 0
+      ? `${failedChecks.length} 张场景图片未通过视觉 QC。请审核并重跑后再合成 MP4。`
+      : "";
+  const output = [
+    options.final
+      ? `逐场景图片生成完成：${generatedCount}/${totalScenes}。`
+      : `逐场景图片生成中：${generatedCount}/${totalScenes}。`,
+    "",
+    ...images.map((image) => [
+      `Scene ${image.sceneId}: ${image.prompt}`,
+      image.qualityCheck ? `QC: ${image.qualityCheck.status} - ${image.qualityCheck.summary}` : "QC: not checked",
+      image.qualityCheck?.issues.length ? `Issues: ${image.qualityCheck.issues.join("; ")}` : ""
+    ].filter(Boolean).join("\n")),
+    errorMessage ? `\n错误：${buildReadableImageGenerationError(errorMessage, generatedCount, totalScenes)}` : ""
+  ].filter(Boolean).join("\n\n");
+
+  return records.map((record) => {
+    if (record.jobId !== jobId || record.stageId !== "image") {
+      return record;
+    }
+
+    return {
+      ...record,
+      artifactPath: images.map((image) => image.asset.publicUrl ?? image.asset.storagePath).join("\n"),
+      costRM: Number(images.reduce((sum, image) => sum + image.costRM, 0).toFixed(4)),
+      notes,
+      output,
+      provider: providerLabel,
+      status,
+      updatedAt: now
+    };
+  });
+}
+
+function buildReadableImageGenerationError(message: string, generatedCount: number, totalScenes: number): string {
+  const progress = totalScenes > 0 ? `已保留 ${generatedCount}/${totalScenes} 张已成功图片。` : "";
+
+  if (/HTTP 504|Gateway Timeout/iu.test(message)) {
+    return `图片供应商或反向代理等待超时。系统现在按单个场景生成，${progress} 请在「资产」页签对失败场景单独重试。原始错误：${message}`;
+  }
+
+  return [message, progress].filter(Boolean).join(" ");
+}
+
+function isRecoverableAutopilotPause(message: string): boolean {
+  return /质检|QC|审核|图片供应商|反向代理|等待超时|单独重试|参考资产|可用参考图|视觉 QC|needs_review|seedance|场景片段|视频片段|504|timeout|quota|限额/iu.test(message);
+}
+
 function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: string, result: GenerateTtsResponse, now: string): JobProcessRecord[] {
   return records.map((record) => {
     if (record.jobId !== jobId) {
@@ -896,7 +1140,7 @@ function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       return {
         ...record,
         artifactPath: "",
-        output: "Waiting for compose. Subtitles will be regenerated from the same storyboard voice text used for TTS and retimed to the voiceover audio.",
+        output: "等待合成阶段。字幕会使用与 TTS 相同的分镜旁白重新生成，并按配音音频校时。",
         status: "pending",
         updatedAt: now
       };
@@ -906,7 +1150,7 @@ function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       return {
         ...record,
         artifactPath: "",
-        output: "Waiting for regenerated MP4 after the new voiceover audio.",
+        output: "新的配音音频已生成，等待重新合成 MP4。",
         status: "pending",
         updatedAt: now
       };
@@ -921,8 +1165,8 @@ function applyTtsGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       artifactPath: result.audio.publicUrl ?? result.audio.storagePath,
       costRM: result.costRM,
       output: [
-        `Generated voiceover audio with ${result.provider} ${result.model} / ${result.voice}. Format: ${result.format}.`,
-        "Narration source is storyboard scene voice text, so subtitles and visual timing use the same text.",
+        `已使用 ${result.provider} ${result.model} / ${result.voice} 生成配音音频。格式：${result.format}。`,
+        "旁白来源是分镜场景文本，字幕和画面节奏会使用同一份文本。",
         "",
         result.voiceoverText
       ].join("\n"),
@@ -943,7 +1187,7 @@ function applyBgmGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       return {
         ...record,
         artifactPath: "",
-        output: "Waiting for regenerated MP4 after the new background music.",
+        output: "新的背景音乐已生成，等待重新合成 MP4。",
         status: "pending",
         updatedAt: now
       };
@@ -958,7 +1202,7 @@ function applyBgmGenerationResultToRecords(records: JobProcessRecord[], jobId: s
       artifactPath: result.audio.publicUrl ?? result.audio.storagePath,
       costRM: result.costRM,
       output: [
-        `Generated instrumental background music with ${result.provider} ${result.model}. Format: ${result.format}. Duration: ${result.durationSeconds}s.`,
+        `已使用 ${result.provider} ${result.model} 生成无歌词背景音乐。格式：${result.format}，时长：${result.durationSeconds}s。`,
         result.songId ? `Song ID: ${result.songId}` : "",
         "",
         result.prompt
@@ -1031,6 +1275,15 @@ export function App() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [selectedCharacterAssetId, setSelectedCharacterAssetId] = useState<string | null>(null);
   const [selectedBackgroundAssetId, setSelectedBackgroundAssetId] = useState<string | null>(null);
+  const [selectedCharacterAssetIds, setSelectedCharacterAssetIds] = useState<string[]>([]);
+  const [selectedSceneAssetIds, setSelectedSceneAssetIds] = useState<string[]>([]);
+  const [selectedCaseSeriesId, setSelectedCaseSeriesId] = useState<string>("");
+  const [selectedCaseEpisodeId, setSelectedCaseEpisodeId] = useState<string>("");
+  const [selectedCaseStoryWorldId, setSelectedCaseStoryWorldId] = useState<string>("");
+  const [caseLessonOrTheme, setCaseLessonOrTheme] = useState("");
+  const [caseGoal, setCaseGoal] = useState("");
+  const [caseConflict, setCaseConflict] = useState("");
+  const [caseTone, setCaseTone] = useState("");
   const [sceneReviews, setSceneReviews] = useState<SceneReviewItem[]>(() => loadSceneReviews(loadJobs()));
   const [caseReferenceAssets, setCaseReferenceAssets] = useState<CaseReferenceAsset[]>(() => loadCaseReferenceAssets(loadJobs()));
   const [productionAssets, setProductionAssets] = useState<ProductionAsset[]>([]);
@@ -1045,6 +1298,7 @@ export function App() {
   const [storageSettings, setStorageSettings] = useState<StorageSettings>(() => loadStorageSettings());
   const [storedVideos, setStoredVideos] = useState<StoredVideo[]>(() => loadStoredVideos());
   const [trendReports, setTrendReports] = useState<TrendReport[]>(() => loadTrendReports());
+  const [budgetSettings, setBudgetSettings] = useState<BudgetSettings>(() => loadBudgetSettings());
   const [trendQuery, setTrendQuery] = useState("shorts story");
   const [trendRegionCode, setTrendRegionCode] = useState("MY");
   const [trendPublishedWithinDays, setTrendPublishedWithinDays] = useState(7);
@@ -1061,6 +1315,7 @@ export function App() {
   const [trendScanError, setTrendScanError] = useState<string | null>(null);
   const [contentSeries, setContentSeries] = useState<ContentSeries[]>([]);
   const [seriesEpisodes, setSeriesEpisodes] = useState<SeriesEpisodeIdea[]>([]);
+  const [storyWorlds, setStoryWorlds] = useState<StoryWorld[]>([]);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const [isLoadingSeries, setIsLoadingSeries] = useState(false);
@@ -1085,7 +1340,7 @@ export function App() {
   const [templateType, setTemplateType] = useState<AdminJob["templateType"]>("urban_legend");
   const [language, setLanguage] = useState<AdminJob["language"]>("zh-CN");
   const [sceneCount, setSceneCount] = useState(5);
-  const [costLimitRM, setCostLimitRM] = useState(7.5);
+  const [costLimitRM, setCostLimitRM] = useState(() => budgetSettings.defaultCaseBudgetRM);
 
   useEffect(() => {
     saveStaffAgents(staffAgents);
@@ -1110,6 +1365,10 @@ export function App() {
   useEffect(() => {
     saveToolProviderSettings(toolProviderSettings);
   }, [toolProviderSettings]);
+
+  useEffect(() => {
+    saveBudgetSettings(budgetSettings);
+  }, [budgetSettings]);
 
   useEffect(() => {
     saveProviderKeys(providerKeys);
@@ -1187,6 +1446,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    void refreshStoryWorlds();
+  }, []);
+
+  useEffect(() => {
     activeViewRef.current = activeView;
   }, [activeView]);
 
@@ -1207,6 +1470,37 @@ export function App() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [hasUnsavedDrafts]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent<unknown>) => {
+      if (!isLocalDataMigrationMessage(event.data)) {
+        return;
+      }
+
+      const recentlyImportedAt = Number(window.sessionStorage.getItem("ai-content-factory:last-local-data-import") ?? 0);
+
+      if (Date.now() - recentlyImportedAt < 30_000) {
+        return;
+      }
+
+      const snapshot = event.data.snapshot;
+      const shouldImport = window.confirm(
+        `检测到来自 ${snapshot.sourceOrigin} 的旧站资料迁移包，共 ${snapshot.entries.length} 项。\n\n导入会覆盖当前浏览器在 ${window.location.origin} 的本地业务资料，并刷新页面。是否继续？`
+      );
+
+      if (!shouldImport) {
+        return;
+      }
+
+      const result = importLocalDataSnapshot(snapshot, { overwrite: true });
+      window.sessionStorage.setItem("ai-content-factory:last-local-data-import", String(Date.now()));
+      window.alert(`已导入 ${result.imported} 项资料，跳过 ${result.skipped} 项。页面将刷新。`);
+      window.location.reload();
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
 
   useEffect(() => {
     function onHashChange() {
@@ -1235,7 +1529,7 @@ export function App() {
     const timer = window.setInterval(runDueProductionSchedules, 60_000);
 
     return () => window.clearInterval(timer);
-  }, [productionSchedules, publishingTargets, jobs, staffAgents, aiToolEndpoints, providerKeys, toolProviderSettings]);
+  }, [productionSchedules, publishingTargets, jobs, staffAgents, aiToolEndpoints, providerKeys, toolProviderSettings, budgetSettings]);
 
   async function refreshOperationalStatus() {
     await Promise.all([refreshHealth(), refreshDatabaseStatus(), refreshProviderSecretStatuses()]);
@@ -1404,27 +1698,62 @@ export function App() {
     return publishingTargets.filter((target) => target.enabled).map((target) => target.id);
   }
 
+  function updateBudgetSettings(nextSettings: BudgetSettings) {
+    const normalizedSettings = {
+      ...nextSettings,
+      updatedAt: new Date().toISOString()
+    };
+
+    setBudgetSettings(normalizedSettings);
+    setCostLimitRM(normalizedSettings.defaultCaseBudgetRM);
+    setProductionSchedules((currentSchedules) =>
+      currentSchedules.map((schedule) => ({
+        ...schedule,
+        budgetLimitRM: normalizedSettings.dailyBudgetRM,
+        maxCasesPerRun: normalizedSettings.maxCasesPerRun,
+        maxVideosPerDay: normalizedSettings.maxVideosPerDay,
+        nextRunAt: calculateNextRunAt({
+          daysOfWeek: schedule.daysOfWeek,
+          startTime: schedule.startTime
+        })
+      }))
+    );
+    setStaffAgents((currentAgents) =>
+      currentAgents.map((agent, index) =>
+        index === 0
+          ? {
+              ...agent,
+              costGuardRM: normalizedSettings.defaultCaseBudgetRM,
+              updatedAt: normalizedSettings.updatedAt
+            }
+          : agent
+      )
+    );
+    setCaseDraftPreview(null);
+  }
+
   function createDefaultPromptForTarget(target: PublishingTarget | undefined, runLabel: string): { prompt: string; topic: string } {
     const channel = target?.channelName ?? "Shorts Channel";
     const niche = target?.niche ?? target?.templateType ?? "general_shorts";
     const template = target?.templateType ?? "rules_horror";
 
     return {
-      prompt: `自动排程生产一支45秒中文 Shorts。频道方向：${channel}。内容类型：${niche}。模板：${template}。要求：原创虚构内容、清楚分镜、生成到 MP4 后人工审核，再 private 上传。`,
+      prompt: `自动排程生产一支45秒中文 Shorts。频道方向：${channel}。内容类型：${niche}。模板：${template}。要求：原创虚构内容、清楚分镜、生成到 MP4 后人工审核，再私密上传。`,
       topic: `${channel} 自动排程内容 ${runLabel}`
     };
   }
 
-  function createCaseInputFromSchedule(schedule: ProductionSchedule, sequence: number): NewJobInput {
+  function createCaseInputFromSchedule(schedule: ProductionSchedule, sequence: number, scheduleRunId: string): NewJobInput {
     const firstTarget = publishingTargets.find((target) => schedule.targetIds.includes(target.id)) ?? publishingTargets.find((target) => target.enabled);
     const brief = createDefaultPromptForTarget(firstTarget, `${new Date().toLocaleDateString()} #${sequence}`);
 
     return {
-      costLimitRM: 7.5,
+      costLimitRM: budgetSettings.defaultCaseBudgetRM,
       language: firstTarget?.language ?? "zh-CN",
       prompt: brief.prompt,
       sceneCount: 5,
       scheduleId: schedule.id,
+      scheduleRunId,
       source: "scheduled",
       templateType: firstTarget?.templateType ?? "rules_horror",
       topic: brief.topic
@@ -1446,7 +1775,9 @@ export function App() {
       providerKeys,
       publishingTargets,
       schedule,
-      settings: toolProviderSettings
+      settings: toolProviderSettings,
+      defaultCaseCostRM: budgetSettings.defaultCaseBudgetRM,
+      stopWhenBudgetExceeded: budgetSettings.stopWhenBudgetExceeded
     });
     const { activeTargetIds, plannedCaseCount } = guard;
 
@@ -1482,12 +1813,12 @@ export function App() {
       setScheduleRuns((currentRuns) => [run, ...currentRuns]);
 
       for (let index = 0; index < plannedCaseCount; index += 1) {
-        const draftInput = createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1);
+        const draftInput = createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1, run.id);
 
         try {
           const generatedJob = await runAutopilotPipelineFromInput(draftInput, activeTargetIds, [], {
             openCase: index === 0,
-            sourceLabel: mode === "manual" ? "Run now" : "Due schedule"
+            sourceLabel: formatScheduleRunSource(mode)
           });
           createdCaseIds.push(generatedJob.id);
         } catch (error) {
@@ -1524,17 +1855,24 @@ export function App() {
       return;
     }
 
-    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createJob(createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1)));
+    const queuedRun = createScheduleRun({
+      createdCaseIds: [],
+      plannedCaseCount,
+      scheduleId,
+      startedAt,
+      status: "queued"
+    });
+    const createdJobs = Array.from({ length: plannedCaseCount }, (_unused, index) => createJob(createCaseInputFromSchedule(schedule, guard.todaysCaseCount + index + 1, queuedRun.id)));
     const newRecords = createdJobs.flatMap((job) => createProcessRecordsForJob(job, staffAgents, aiToolEndpoints));
     const newPublishTargets = createdJobs.flatMap((job) => createCasePublishTargets(job.id, activeTargetIds));
     const newActivities = createdJobs.map((job) =>
       createCaseActivity({
         detail:
           activeTargetIds.length > 0
-            ? `${mode === "manual" ? "Run now" : "Due schedule"} queued this case for production with ${activeTargetIds.length} private upload target(s).`
-            : `${mode === "manual" ? "Run now" : "Due schedule"} queued this case for production without YouTube targets. It must reach MP4/QC before upload can be added.`,
+            ? `${formatScheduleRunSource(mode)}已将这个 Case 排入生产，并绑定 ${activeTargetIds.length} 个私密上传目标。`
+            : `${formatScheduleRunSource(mode)}已将这个 Case 排入生产；当前没有 YouTube 目标，会先停在 MP4/QC，之后可再绑定上传目标。`,
         jobId: job.id,
-        title: "Scheduled case queued",
+        title: "排程 Case 已建立",
         type: "schedule_run"
       })
     );
@@ -1546,14 +1884,11 @@ export function App() {
     setCaseActivities((currentActivities) => [...newActivities, ...currentActivities]);
     createdJobs.forEach((job) => void handleBootstrapProductionAssets(job));
     setScheduleRuns((currentRuns) => [
-      createScheduleRun({
+      {
+        ...queuedRun,
         createdCaseIds: createdJobs.map((job) => job.id),
         finishedAt: now,
-        plannedCaseCount,
-        scheduleId,
-        startedAt,
-        status: "queued"
-      }),
+      },
       ...currentRuns
     ]);
     setProductionSchedules((currentSchedules) =>
@@ -1621,6 +1956,10 @@ export function App() {
   }
 
   function getCaseBudgetBlockMessage(job: AdminJob, operationLabel: string, estimatedCostRM?: number): string | null {
+    if (!budgetSettings.stopWhenBudgetExceeded) {
+      return null;
+    }
+
     const guard = evaluateCaseBudgetGuard(job, { estimatedCostRM, operationLabel });
     return guard.canRun ? null : guard.message;
   }
@@ -1638,17 +1977,123 @@ export function App() {
   }
 
   function getSelectedDraftAssets(): { assets: ProductionAsset[]; background: ProductionAsset | null; character: ProductionAsset | null } {
-    const character = selectedCharacterAssetId
-      ? productionAssets.find((asset) => asset._id === selectedCharacterAssetId && isReadyReferenceAsset(asset) && isCharacterDesignAsset(asset)) ?? null
-      : null;
-    const background = selectedBackgroundAssetId
-      ? productionAssets.find((asset) => asset._id === selectedBackgroundAssetId && isReadyReferenceAsset(asset) && isBackgroundDesignAsset(asset)) ?? null
-      : null;
+    const characterIds = selectedCharacterAssetIds.length > 0 ? selectedCharacterAssetIds : [selectedCharacterAssetId].filter((id): id is string => Boolean(id));
+    const sceneIds = selectedSceneAssetIds.length > 0 ? selectedSceneAssetIds : [selectedBackgroundAssetId].filter((id): id is string => Boolean(id));
+    const characters = characterIds
+      .map((id) => productionAssets.find((asset) => asset._id === id && isReadyReferenceAsset(asset) && isCharacterDesignAsset(asset)) ?? null)
+      .filter((asset): asset is ProductionAsset => Boolean(asset));
+    const backgrounds = sceneIds
+      .map((id) => productionAssets.find((asset) => asset._id === id && isReadyReferenceAsset(asset) && isBackgroundDesignAsset(asset)) ?? null)
+      .filter((asset): asset is ProductionAsset => Boolean(asset));
+    const character = characters[0] ?? null;
+    const background = backgrounds[0] ?? null;
 
     return {
-      assets: [character, background].filter((asset): asset is ProductionAsset => Boolean(asset)),
+      assets: [...characters, ...backgrounds].filter((asset, index, assets) => assets.findIndex((candidate) => candidate._id === asset._id) === index),
       background,
       character
+    };
+  }
+
+  function splitReadyReferenceAssetIdsByType(assetIds: string[], assetSource = productionAssets): { characterAssetIds: string[]; sceneAssetIds: string[] } {
+    const assets = findReadyReferenceAssetsByIds(assetSource, assetIds);
+
+    return {
+      characterAssetIds: assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
+      sceneAssetIds: assets.filter(isBackgroundDesignAsset).map((asset) => asset._id)
+    };
+  }
+
+  function mergeIds(...groups: string[][]): string[] {
+    return groups.flat().filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index);
+  }
+
+  function getProductionBriefReferenceIds(brief: ProductionBrief | null | undefined): string[] {
+    return mergeIds(
+      (brief?.selectedCharacters ?? []).map((character) => character.assetId ?? ""),
+      (brief?.selectedScenes ?? []).map((scene) => scene.assetId ?? "")
+    );
+  }
+
+  function buildProductionBriefFromDraft(referenceAssets = getSelectedDraftAssets()): ProductionBrief {
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const inheritedStoryWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || "";
+    const selectedStoryWorld = inheritedStoryWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === inheritedStoryWorldId) ?? null : null;
+    const characterAssets = referenceAssets.assets.filter(isCharacterDesignAsset);
+    const sceneAssets = referenceAssets.assets.filter(isBackgroundDesignAsset);
+
+    return {
+      conflict: caseConflict.trim() || undefined,
+      episodeContext: selectedEpisode ? {
+        continuityNote: selectedEpisode.continuityNote,
+        episodeId: selectedEpisode._id,
+        episodeNo: selectedEpisode.episodeNo,
+        interactiveEnding: selectedEpisode.interactiveEnding,
+        lessonOrTheme: selectedEpisode.lessonOrTheme || selectedEpisode.moralLesson,
+        promptSeed: selectedEpisode.promptSeed,
+        serialHook: selectedEpisode.serialHook,
+        synopsis: selectedEpisode.synopsis,
+        title: selectedEpisode.title
+      } : undefined,
+      goal: caseGoal.trim() || undefined,
+      lessonOrTheme: caseLessonOrTheme.trim() || selectedEpisode?.lessonOrTheme || selectedEpisode?.moralLesson || undefined,
+      requiredBeats: [
+        selectedEpisode?.synopsis,
+        selectedEpisode?.promptSeed,
+        selectedEpisode?.continuityNote,
+        selectedEpisode?.serialHook,
+        selectedEpisode?.interactiveEnding,
+        selectedSeries?.continuityRules,
+        caseGoal.trim(),
+        caseConflict.trim()
+      ].filter((value): value is string => Boolean(value && value.trim())),
+      selectedCharacters: characterAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        notes: buildReferenceAssetPromptContext(asset),
+        role: asset.type,
+        url: getProductionAssetMediaUrl(asset),
+        visualIdentity: asset.prompt || asset.notes || asset.label
+      })),
+      selectedScenes: sceneAssets.map((asset) => ({
+        assetId: asset._id,
+        label: asset.label,
+        location: asset.folderName,
+        notes: buildReferenceAssetPromptContext(asset),
+        url: getProductionAssetMediaUrl(asset),
+        visualRules: asset.prompt || asset.notes || asset.label
+      })),
+      seriesContext: selectedSeries ? {
+        audience: selectedSeries.audience,
+        continuityRules: selectedSeries.continuityRules,
+        contentType: selectedSeries.contentType,
+        description: selectedSeries.description,
+        dramaIntensity: selectedSeries.dramaIntensity,
+        musicStyle: selectedSeries.musicStyle,
+        name: selectedSeries.name,
+        narrativeMode: selectedSeries.narrativeMode,
+        safetyRules: selectedSeries.safetyRules,
+        seriesId: selectedSeries._id,
+        tone: selectedSeries.tone,
+        values: selectedSeries.values,
+        visualStyle: selectedSeries.visualStyle
+      } : undefined,
+      storyWorldContext: selectedStoryWorld ? {
+        description: selectedStoryWorld.description,
+        name: selectedStoryWorld.name,
+        relationshipMap: selectedStoryWorld.relationshipMap,
+        safetyRules: selectedStoryWorld.safetyRules,
+        storyWorldId: selectedStoryWorld._id,
+        visualStyle: selectedStoryWorld.visualStyle
+      } : undefined,
+      tone: caseTone.trim() || selectedSeries?.tone || undefined,
+      visualContinuityRules: [
+        selectedSeries?.visualStyle,
+        selectedStoryWorld?.visualStyle,
+        ...sceneAssets.map((asset) => `${asset.label}: preserve environment bible layout, props, lighting, and reusable camera zones.`),
+        ...characterAssets.map((asset) => `${asset.label}: preserve character identity, silhouette, wardrobe, and fixed props.`)
+      ].filter((value): value is string => Boolean(value && value.trim()))
     };
   }
 
@@ -1664,9 +2109,23 @@ export function App() {
       templateType: routedTemplateType,
       topic: normalizedTopic || "short-form story idea"
     });
-    const assetContext = buildAssetContextBrief(referenceAssets.character, referenceAssets.background);
+    const assetContext = buildAssetContextBriefFromAssets(referenceAssets.assets) || buildAssetContextBrief(referenceAssets.character, referenceAssets.background);
+    const productionBrief = buildProductionBriefFromDraft(referenceAssets);
+    const structuredContext = [
+      productionBrief.seriesContext?.narrativeMode ? `Narrative mode: ${productionBrief.seriesContext.narrativeMode}` : "",
+      productionBrief.seriesContext?.dramaIntensity ? `Drama intensity: ${productionBrief.seriesContext.dramaIntensity}` : "",
+      productionBrief.seriesContext?.continuityRules ? `Continuity rules: ${productionBrief.seriesContext.continuityRules}` : "",
+      productionBrief.episodeContext?.continuityNote ? `Episode continuity: ${productionBrief.episodeContext.continuityNote}` : "",
+      productionBrief.episodeContext?.serialHook ? `Episode serial hook: ${productionBrief.episodeContext.serialHook}` : "",
+      productionBrief.seriesContext ? `系列上下文：${productionBrief.seriesContext.name} / ${productionBrief.seriesContext.description} / ${productionBrief.seriesContext.values}` : "",
+      productionBrief.episodeContext ? `单集上下文：${productionBrief.episodeContext.title} / ${productionBrief.episodeContext.lessonOrTheme} / ${productionBrief.episodeContext.synopsis}` : "",
+      productionBrief.storyWorldContext ? `世界观：${productionBrief.storyWorldContext.name} / ${productionBrief.storyWorldContext.description} / ${productionBrief.storyWorldContext.relationshipMap}` : "",
+      productionBrief.lessonOrTheme ? `本集主题：${productionBrief.lessonOrTheme}` : "",
+      productionBrief.goal ? `本集目标：${productionBrief.goal}` : "",
+      productionBrief.conflict ? `本集冲突：${productionBrief.conflict}` : ""
+    ].filter(Boolean).join("\n");
 
-    return [baseBrief, assetContext].filter(Boolean).join("\n\n");
+    return [baseBrief, structuredContext, assetContext].filter(Boolean).join("\n\n");
   }
 
   function handleCreateCase() {
@@ -1675,6 +2134,11 @@ export function App() {
     const routedTemplateType = inferTemplateTypeFromGenre(normalizedGenre || normalizedTopic);
     const selectedAssets = getSelectedDraftAssets();
     const normalizedPrompt = getEffectivePrompt(normalizedTopic, prompt, normalizedGenre, selectedAssets);
+    const productionBrief = buildProductionBriefFromDraft(selectedAssets);
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
+    const referenceAssetIds = mergeIds(selectedAssets.assets.map((asset) => asset._id));
 
     if (!normalizedTopic) {
       return;
@@ -1682,9 +2146,16 @@ export function App() {
 
     const job = createJob({
       backgroundAssetId: selectedAssets.background?._id ?? null,
+      characterAssetIds: selectedAssets.assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
       characterAssetId: selectedAssets.character?._id ?? null,
       characterId: selectedCharacterId,
+      episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
+      productionBrief,
+      referenceAssetIds,
+      sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
+      seriesId: selectedSeries?._id ?? null,
+      storyWorldId,
       topic: normalizedTopic,
       prompt: normalizedPrompt,
       templateType: routedTemplateType,
@@ -1696,14 +2167,16 @@ export function App() {
     setJobs((currentJobs) => [job, ...currentJobs]);
     setJobProcessRecords((currentRecords) => [...createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), ...currentRecords]);
     setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets]);
-    appendCaseActivity(job.id, "case_created", "Case created", "Case was created without a script preview.");
+    appendCaseActivity(job.id, "case_created", "Case 已建立", "这个 Case 是手动建立的，尚未生成脚本大纲。");
     void handleBootstrapProductionAssets(job);
-    void attachSelectedAssetsToCase(job, selectedAssets.assets);
+    void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(referenceAssetIds));
     setSelectedJobId(job.id);
     setTopic("");
     setPrompt("");
     setSelectedCharacterAssetId(null);
     setSelectedBackgroundAssetId(null);
+    setSelectedCharacterAssetIds([]);
+    setSelectedSceneAssetIds([]);
     switchView("cases");
   }
 
@@ -1713,6 +2186,11 @@ export function App() {
     const routedTemplateType = inferTemplateTypeFromGenre(normalizedGenre || normalizedTopic);
     const selectedAssets = getSelectedDraftAssets();
     const normalizedPrompt = getEffectivePrompt(normalizedTopic, prompt, normalizedGenre, selectedAssets);
+    const productionBrief = buildProductionBriefFromDraft(selectedAssets);
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
+    const referenceAssetIds = mergeIds(selectedAssets.assets.map((asset) => asset._id));
 
     if (!normalizedTopic || isGeneratingDraftPreview) {
       return;
@@ -1722,13 +2200,20 @@ export function App() {
     const draftInput: NewJobInput = {
       id: draftJobId,
       backgroundAssetId: selectedAssets.background?._id ?? null,
+      characterAssetIds: selectedAssets.assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
       characterAssetId: selectedAssets.character?._id ?? null,
       characterId: selectedCharacterId,
       costLimitRM,
+      episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
       language,
       prompt: normalizedPrompt,
+      productionBrief,
+      referenceAssetIds,
+      sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       sceneCount,
+      seriesId: selectedSeries?._id ?? null,
+      storyWorldId,
       templateType: routedTemplateType,
       topic: normalizedTopic
     };
@@ -1737,7 +2222,7 @@ export function App() {
     setIsGeneratingDraftPreview(true);
 
     if (apiState !== "online") {
-      setGenerationError(`API server is ${apiState}. Script preview needs ${apiBaseUrl}.`);
+      setGenerationError(`API 服务当前为 ${apiState}。生成大纲需要连接 ${apiBaseUrl}。`);
       setIsGeneratingDraftPreview(false);
       return;
     }
@@ -1751,6 +2236,7 @@ export function App() {
           jobId: draftJobId,
           language: draftInput.language,
           prompt: draftInput.prompt,
+          productionBrief: draftInput.productionBrief ?? undefined,
           sceneCount: draftInput.sceneCount,
           templateType: draftInput.templateType,
           topic: draftInput.topic
@@ -1765,8 +2251,8 @@ export function App() {
       appendCaseActivity(
         draftJobId,
         "script_preview_generated",
-        "Script preview generated",
-        `${result.provider} ${result.model} returned ${result.storyboard.length} storyboard scenes.`
+        "大纲预览已生成",
+        `${result.provider} ${result.model} 已返回 ${result.storyboard.length} 个分镜场景。`
       );
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Script preview generation failed.");
@@ -1792,23 +2278,95 @@ export function App() {
       updatedAt: now,
       visualBible: caseDraftPreview.result.visualBible
     };
-    const records = applyScriptStoryResultToRecords(createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), job.id, caseDraftPreview.result, now);
+    const records = applyScriptStoryResultToRecords(
+      createProcessRecordsForJob(job, staffAgents, aiToolEndpoints),
+      job.id,
+      caseDraftPreview.result,
+      now,
+      { forceApproved: true }
+    );
 
     setJobs((currentJobs) => [job, ...currentJobs.filter((currentJob) => currentJob.id !== job.id)]);
     setJobProcessRecords((currentRecords) => [...records, ...currentRecords.filter((record) => record.jobId !== job.id)]);
     setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets.filter((target) => target.jobId !== job.id)]);
-    appendCaseActivity(job.id, "script_preview_approved", "Script preview approved", "Generated script and storyboard were approved and converted into a production case.");
-    appendCaseActivity(job.id, "case_created", "Case created", "Case entered production with script, storyboard, and image prompts already recorded.");
+    appendCaseActivity(job.id, "script_preview_approved", "大纲已确认", "已确认标题、脚本、分镜和图片提示词，并转换为生产 Case。");
+    appendCaseActivity(job.id, "case_created", "Case 已建立", "这个 Case 已进入生产，脚本、分镜和图片提示词已写入记录。");
     void handleBootstrapProductionAssets(job);
-    void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(caseDraftPreview.input.characterAssetId, caseDraftPreview.input.backgroundAssetId));
+    void attachSelectedAssetsToCase(job, getReferenceAssetsFromIds(
+      caseDraftPreview.input.referenceAssetIds ?? [],
+      caseDraftPreview.input.characterAssetIds ?? [],
+      caseDraftPreview.input.sceneAssetIds ?? [],
+      caseDraftPreview.input.characterAssetId,
+      caseDraftPreview.input.backgroundAssetId
+    ));
     setSelectedJobId(job.id);
     setTopic("");
     setPrompt("");
     setSelectedCharacterAssetId(null);
     setSelectedBackgroundAssetId(null);
+    setSelectedCharacterAssetIds([]);
+    setSelectedSceneAssetIds([]);
     setCaseDraftPreview(null);
     setGenerationError(null);
     switchView("cases");
+  }
+
+  async function runAutopilotSeedanceClipStep(
+    job: AdminJob,
+    records: JobProcessRecord[],
+    attachedAssets: ProductionAsset[],
+    sourceLabel: string
+  ): Promise<{ job: AdminJob; records: JobProcessRecord[] }> {
+    assertCaseBudgetAvailable(job, "自动生成 Seedance 场景片段");
+    setAutoGenerateStep(`${sourceLabel}: 生成 Seedance 场景片段`);
+
+    const workingStartedAt = new Date().toISOString();
+    const workingJob = {
+      ...job,
+      status: "VIDEO_GENERATING" as const,
+      updatedAt: workingStartedAt
+    };
+    const workingRecords = records.map((record) =>
+      record.stageId === "video"
+        ? {
+            ...record,
+            notes: "",
+            output: "自动生产正在按已确认分镜和已通过 QC 的场景图生成 Seedance 2.0 场景片段...",
+            status: "working" as const,
+            updatedAt: workingStartedAt
+          }
+        : record
+    );
+
+    upsertJob(workingJob);
+    upsertJobRecords(workingJob.id, workingRecords);
+
+    const clipResults = await generateSeedanceSceneClipsForJob(
+      workingJob,
+      workingRecords,
+      getEffectiveProductionAssetsForJobWithExtra(workingJob, attachedAssets)
+    );
+    const clipNow = new Date().toISOString();
+    const clipCostRM = clipResults.reduce((sum, result) => sum + result.costRM, 0);
+    const nextJob = {
+      ...workingJob,
+      actualCostRM: Number((workingJob.actualCostRM + clipCostRM).toFixed(4)),
+      reviewStatus: "draft" as const,
+      status: keepLaterStatus(workingJob.status, "VIDEO_DONE"),
+      updatedAt: clipNow
+    };
+    const nextRecords = applyVideoClipGenerationResultsToRecords(workingRecords, workingJob.id, clipResults, clipNow);
+
+    upsertJob(nextJob);
+    upsertJobRecords(nextJob.id, nextRecords);
+    appendCaseActivity(
+      nextJob.id,
+      "stage_updated",
+      "Seedance 场景片段已生成",
+      `${clipResults[0]?.model ?? "Seedance 2.0"} 已根据每个分镜生成 ${clipResults.length} 个场景片段。成本 RM ${clipCostRM.toFixed(4)}。`
+    );
+
+    return { job: nextJob, records: nextRecords };
   }
 
   async function runAutopilotPipelineFromInput(
@@ -1825,7 +2383,7 @@ export function App() {
     let workingRecords: JobProcessRecord[] = [];
 
     try {
-      setAutoGenerateStep(`${options.sourceLabel}: Writing script and storyboard`);
+      setAutoGenerateStep(`${options.sourceLabel}: 生成脚本与分镜`);
       const scriptResult = await requestDraftScriptStoryGeneration(
         {
           costLimitRM: pipelineInput.costLimitRM,
@@ -1834,6 +2392,7 @@ export function App() {
           jobId: pipelineInput.id,
           language: pipelineInput.language,
           prompt: pipelineInput.prompt,
+          productionBrief: pipelineInput.productionBrief ?? undefined,
           sceneCount: pipelineInput.sceneCount,
           templateType: pipelineInput.templateType,
           topic: pipelineInput.topic
@@ -1860,15 +2419,15 @@ export function App() {
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(workingJob!.id, activeTargetIds), ...currentTargets.filter((target) => target.jobId !== workingJob!.id)]);
       addCaseActivities([
         createCaseActivity({
-          detail: `${options.sourceLabel} created this production case and started autopilot.`,
+          detail: `${options.sourceLabel}已建立生产 Case，并启动自动生产流程。`,
           jobId: workingJob.id,
-          title: "Case created",
+          title: "Case 已建立",
           type: "case_created"
         }),
         createCaseActivity({
-          detail: `${scriptResult.provider} ${scriptResult.model} generated script, storyboard, and image prompts.`,
+          detail: `${scriptResult.provider} ${scriptResult.model} 已生成脚本、分镜和图片提示词。`,
           jobId: workingJob.id,
-          title: "Script/story generated",
+          title: "脚本与分镜已生成",
           type: "script_generated"
         })
       ]);
@@ -1878,11 +2437,14 @@ export function App() {
       }
 
       if (scriptResult.requiresReview) {
-        throw new Error(`Outline QC needs review before image generation. ${scriptResult.outlineQc.summary}`);
+        const message = `大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`;
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：大纲需审核", message);
+        return workingJob;
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
-      setAutoGenerateStep(`${options.sourceLabel}: Generating scene images`);
+      assertCaseBudgetAvailable(workingJob, "自动生成图片");
+      setAutoGenerateStep(`${options.sourceLabel}: 生成场景图片`);
       workingJob = {
         ...workingJob,
         status: "IMAGE_GENERATING",
@@ -1893,18 +2455,19 @@ export function App() {
         record.stageId === "image"
           ? {
               ...record,
-              output: "Autopilot is generating reviewable scene images...",
+              output: "自动生产正在生成可审核的场景图片...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
           : record
       );
       upsertJobRecords(workingJob.id, workingRecords);
-      const imageResult = await requestImageGeneration(
+      const imageResult = await requestSequentialSceneImages(
         workingJob,
         workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) ?? null : null,
         getGenerationReferencesForJob(workingJob, attachedAssets),
-        getToolOverride("image")
+        getToolOverride("image"),
+        workingRecords
       );
       const imageNow = new Date().toISOString();
       workingJob = {
@@ -1921,18 +2484,21 @@ export function App() {
       ]);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Images generated", `${imageResult.provider} ${imageResult.model} generated ${imageResult.images.length} scene image(s). Cost RM ${imageResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "图片已生成", `${imageResult.provider} ${imageResult.model} 已生成 ${imageResult.images.length} 张场景图片。成本 RM ${imageResult.costRM.toFixed(4)}。`);
 
       if (imageResult.requiresReview) {
-        throw new Error("Image visual QC found scene issues. Review the generated images, regenerate failed scenes, then continue to voiceover and MP4.");
+        const message = "图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。";
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：图片需审核", message);
+        return workingJob;
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot voiceover generation");
-      setAutoGenerateStep(`${options.sourceLabel}: Generating voiceover`);
+      assertCaseBudgetAvailable(workingJob, "自动生成配音");
+      setAutoGenerateStep(`${options.sourceLabel}: 生成配音`);
       const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, workingJob.id);
 
       if (!voiceoverText) {
-        throw new Error("Autopilot could not find storyboard voice text for TTS.");
+        throw new Error("自动生产找不到分镜旁白文本，无法生成 TTS 配音。");
       }
 
       workingJob = {
@@ -1945,7 +2511,7 @@ export function App() {
         record.stageId === "tts"
           ? {
               ...record,
-              output: "Autopilot is generating synced OpenAI TTS voiceover audio...",
+              output: "自动生产正在根据分镜旁白生成同步配音音频...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -1964,10 +2530,14 @@ export function App() {
       workingRecords = applyTtsGenerationResultToRecords(workingRecords, workingJob.id, ttsResult, ttsNow);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} generated synced narration audio. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已生成同步旁白音频。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot MP4 composition");
-      setAutoGenerateStep(`${options.sourceLabel}: Composing MP4`);
+      const clipStep = await runAutopilotSeedanceClipStep(workingJob, workingRecords, attachedAssets, options.sourceLabel);
+      workingJob = clipStep.job;
+      workingRecords = clipStep.records;
+
+      assertCaseBudgetAvailable(workingJob, "自动合成 MP4");
+      setAutoGenerateStep(`${options.sourceLabel}: 合成 MP4`);
       workingJob = {
         ...workingJob,
         status: "COMPOSING",
@@ -1978,7 +2548,7 @@ export function App() {
         record.stageId === "compose"
           ? {
               ...record,
-              output: "Autopilot is composing MP4 from images, subtitles, and synced voiceover audio...",
+              output: "自动生产正在用 Seedance 场景片段、字幕和同步配音合成 MP4...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2003,27 +2573,37 @@ export function App() {
       appendCaseActivity(
         workingJob.id,
         "video_generated",
-        "Autopilot MP4 generated",
+        "自动生成 MP4 完成",
         hasUploadTargets
-          ? `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. Waiting for human review before private upload.`
-          : `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+          ? `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。等待人工审核后再执行私密上传。`
+          : `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
 
       return workingJob;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Autopilot generation failed.";
+      const message = error instanceof Error ? error.message : "自动生产失败。";
+      const videoClipFailure = error instanceof VideoClipGenerationError;
+      const partialClipResults = videoClipFailure ? error.partialResults : [];
+      const partialClipCostRM = partialClipResults.reduce((sum, result) => sum + result.costRM, 0);
       setGenerationError(message);
 
       if (workingJob) {
+        const pausedForReview = isRecoverableAutopilotPause(message);
         const failedJob = {
           ...workingJob,
-          status: "FAILED" as const,
+          actualCostRM: partialClipResults.length > 0 ? Number((workingJob.actualCostRM + partialClipCostRM).toFixed(4)) : workingJob.actualCostRM,
+          reviewStatus: pausedForReview ? "needs_review" as const : workingJob.reviewStatus,
+          status: pausedForReview ? workingJob.status : "FAILED" as const,
           updatedAt: new Date().toISOString()
         };
+        const failedRecords = partialClipResults.length > 0
+          ? applyVideoClipGenerationResultsToRecords(workingRecords, failedJob.id, partialClipResults, failedJob.updatedAt, "failed", message)
+          : workingRecords;
+
         upsertJob(failedJob);
         upsertJobRecords(
           failedJob.id,
-          workingRecords.map((record) =>
+          failedRecords.map((record) =>
             record.status === "working"
               ? {
                   ...record,
@@ -2035,7 +2615,16 @@ export function App() {
               : record
           )
         );
-        appendCaseActivity(failedJob.id, "error", "Autopilot failed", message);
+        appendCaseActivity(
+          failedJob.id,
+          "error",
+          pausedForReview ? "自动生产暂停，等待人工审核" : "自动生产失败",
+          partialClipResults.length > 0 ? `${message} 已保留 ${partialClipResults.length} 个成功 Seedance 片段。` : message
+        );
+      }
+
+      if (workingJob && isRecoverableAutopilotPause(message)) {
+        return workingJob;
       }
 
       throw error;
@@ -2052,6 +2641,11 @@ export function App() {
     const routedTemplateType = inferTemplateTypeFromGenre(normalizedGenre || normalizedTopic);
     const selectedAssets = getSelectedDraftAssets();
     const normalizedPrompt = getEffectivePrompt(normalizedTopic, prompt, normalizedGenre, selectedAssets);
+    const productionBrief = buildProductionBriefFromDraft(selectedAssets);
+    const selectedSeries = selectedCaseSeriesId ? contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null : null;
+    const selectedEpisode = selectedCaseEpisodeId ? seriesEpisodes.find((episode) => episode._id === selectedCaseEpisodeId) ?? null : null;
+    const storyWorldId = selectedCaseStoryWorldId || selectedSeries?.storyWorldId || null;
+    const referenceAssetIds = mergeIds(selectedAssets.assets.map((asset) => asset._id));
 
     if (!normalizedTopic) {
       setGenerationError("请输入主题或想法，再开始自动写大纲并生成 MP4。");
@@ -2059,7 +2653,7 @@ export function App() {
     }
 
     if (apiState !== "online") {
-      setGenerationError(`API server is ${apiState}. Autopilot generation needs ${apiBaseUrl}.`);
+      setGenerationError(`API 服务当前为 ${apiState}。自动生产需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2068,13 +2662,20 @@ export function App() {
     const draftInput: NewJobInput = {
       id: jobId,
       backgroundAssetId: selectedAssets.background?._id ?? null,
+      characterAssetIds: selectedAssets.assets.filter(isCharacterDesignAsset).map((asset) => asset._id),
       characterAssetId: selectedAssets.character?._id ?? null,
       characterId: selectedCharacterId,
       costLimitRM,
+      episodeId: selectedEpisode?._id ?? null,
       genre: normalizedGenre || undefined,
       language,
       prompt: normalizedPrompt,
+      productionBrief,
+      referenceAssetIds,
+      sceneAssetIds: selectedAssets.assets.filter(isBackgroundDesignAsset).map((asset) => asset._id),
       sceneCount,
+      seriesId: selectedSeries?._id ?? null,
+      storyWorldId,
       templateType: routedTemplateType,
       topic: normalizedTopic
     };
@@ -2084,7 +2685,7 @@ export function App() {
     setGenerationError(null);
     setCaseDraftPreview(null);
     setIsAutoGeneratingCase(true);
-    setAutoGenerateStep("Writing script and storyboard");
+    setAutoGenerateStep("生成脚本与分镜");
 
     try {
       const scriptResult = await requestDraftScriptStoryGeneration(
@@ -2095,6 +2696,7 @@ export function App() {
           jobId,
           language: draftInput.language,
           prompt: draftInput.prompt,
+          productionBrief: draftInput.productionBrief ?? undefined,
           sceneCount: draftInput.sceneCount,
           templateType: draftInput.templateType,
           topic: draftInput.topic
@@ -2117,19 +2719,19 @@ export function App() {
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
       void handleBootstrapProductionAssets(workingJob);
-      const attachedAssets = await attachSelectedAssetsToCase(workingJob, selectedAssets.assets);
+      const attachedAssets = await attachSelectedAssetsToCase(workingJob, getReferenceAssetsFromIds(referenceAssetIds));
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(workingJob!.id, activeTargetIds), ...currentTargets.filter((target) => target.jobId !== workingJob!.id)]);
       addCaseActivities([
         createCaseActivity({
-          detail: "Autopilot created this production case from the AI outline.",
+          detail: "自动生产已根据 AI 大纲建立这个生产 Case。",
           jobId: workingJob.id,
-          title: "Case created",
+          title: "Case 已建立",
           type: "case_created"
         }),
         createCaseActivity({
-          detail: `${scriptResult.provider} ${scriptResult.model} generated script, storyboard, and image prompts.`,
+          detail: `${scriptResult.provider} ${scriptResult.model} 已生成脚本、分镜和图片提示词。`,
           jobId: workingJob.id,
-          title: "Script/story generated",
+          title: "脚本与分镜已生成",
           type: "script_generated"
         })
       ]);
@@ -2137,11 +2739,14 @@ export function App() {
       switchView("cases");
 
       if (scriptResult.requiresReview) {
-        throw new Error(`Outline QC needs review before image generation. ${scriptResult.outlineQc.summary}`);
+        const message = `大纲质检需要人工确认后才能生成图片。${scriptResult.outlineQc.summary}`;
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：大纲需审核", message);
+        return;
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot image generation");
-      setAutoGenerateStep("Generating scene images");
+      assertCaseBudgetAvailable(workingJob, "自动生成图片");
+      setAutoGenerateStep("生成场景图片");
       workingJob = {
         ...workingJob,
         status: "IMAGE_GENERATING",
@@ -2152,18 +2757,19 @@ export function App() {
         record.stageId === "image"
           ? {
               ...record,
-              output: "Autopilot is generating reviewable scene images...",
+              output: "自动生产正在生成可审核的场景图片...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
           : record
       );
       upsertJobRecords(workingJob.id, workingRecords);
-      const imageResult = await requestImageGeneration(
+      const imageResult = await requestSequentialSceneImages(
         workingJob,
-        workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) : null,
+        workingJob.characterId ? characterProfiles.find((character) => character.id === workingJob?.characterId) ?? null : null,
         getGenerationReferencesForJob(workingJob, attachedAssets),
-        getToolOverride("image")
+        getToolOverride("image"),
+        workingRecords
       );
       const imageNow = new Date().toISOString();
       workingJob = {
@@ -2180,18 +2786,21 @@ export function App() {
       ]);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Images generated", `${imageResult.provider} ${imageResult.model} generated ${imageResult.images.length} scene image(s). Cost RM ${imageResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "图片已生成", `${imageResult.provider} ${imageResult.model} 已生成 ${imageResult.images.length} 张场景图片。成本 RM ${imageResult.costRM.toFixed(4)}。`);
 
       if (imageResult.requiresReview) {
-        throw new Error("Image visual QC found scene issues. Review the generated images, regenerate failed scenes, then continue to voiceover and MP4.");
+        const message = "图片视觉 QC 发现问题。请检查生成图，重跑失败场景后再继续配音和 MP4。";
+        setGenerationError(message);
+        appendCaseActivity(workingJob.id, "error", "自动生产暂停：图片需审核", message);
+        return;
       }
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot voiceover generation");
-      setAutoGenerateStep("Generating voiceover");
+      assertCaseBudgetAvailable(workingJob, "自动生成配音");
+      setAutoGenerateStep("生成配音");
       const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, workingJob.id);
 
       if (!voiceoverText) {
-        throw new Error("Autopilot could not find storyboard voice text for TTS.");
+        throw new Error("自动生产找不到分镜旁白文本，无法生成 TTS 配音。");
       }
 
       workingJob = {
@@ -2204,7 +2813,7 @@ export function App() {
         record.stageId === "tts"
           ? {
               ...record,
-              output: "Autopilot is generating synced OpenAI TTS voiceover audio...",
+              output: "自动生产正在根据分镜旁白生成同步配音音频...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2223,10 +2832,14 @@ export function App() {
       workingRecords = applyTtsGenerationResultToRecords(workingRecords, workingJob.id, ttsResult, ttsNow);
       upsertJob(workingJob);
       upsertJobRecords(workingJob.id, workingRecords);
-      appendCaseActivity(workingJob.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} generated synced narration audio. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+      appendCaseActivity(workingJob.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已生成同步旁白音频。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
 
-      assertCaseBudgetAvailable(workingJob, "Autopilot MP4 composition");
-      setAutoGenerateStep("Composing MP4");
+      const clipStep = await runAutopilotSeedanceClipStep(workingJob, workingRecords, attachedAssets, "自动生产");
+      workingJob = clipStep.job;
+      workingRecords = clipStep.records;
+
+      assertCaseBudgetAvailable(workingJob, "自动合成 MP4");
+      setAutoGenerateStep("合成 MP4");
       workingJob = {
         ...workingJob,
         status: "COMPOSING",
@@ -2237,7 +2850,7 @@ export function App() {
         record.stageId === "compose"
           ? {
               ...record,
-              output: "Autopilot is composing MP4 from images, subtitles, and synced voiceover audio...",
+              output: "自动生产正在用 Seedance 场景片段、字幕和同步配音合成 MP4...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -2262,25 +2875,35 @@ export function App() {
       appendCaseActivity(
         workingJob.id,
         "video_generated",
-        "Autopilot MP4 generated",
+        "自动生成 MP4 完成",
         hasUploadTargets
-          ? `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. Waiting for human review before private upload.`
-          : `Final MP4 created at ${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+          ? `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。等待人工审核后再执行私密上传。`
+          : `最终 MP4 已生成：${videoResult.artifacts.finalVideo.publicUrl ?? videoResult.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Autopilot generation failed.";
+      const message = error instanceof Error ? error.message : "自动生产失败。";
+      const videoClipFailure = error instanceof VideoClipGenerationError;
+      const partialClipResults = videoClipFailure ? error.partialResults : [];
+      const partialClipCostRM = partialClipResults.reduce((sum, result) => sum + result.costRM, 0);
       setGenerationError(message);
 
       if (workingJob) {
+        const pausedForReview = isRecoverableAutopilotPause(message);
         const failedJob = {
           ...workingJob,
-          status: "FAILED" as const,
+          actualCostRM: partialClipResults.length > 0 ? Number((workingJob.actualCostRM + partialClipCostRM).toFixed(4)) : workingJob.actualCostRM,
+          reviewStatus: pausedForReview ? "needs_review" as const : workingJob.reviewStatus,
+          status: pausedForReview ? workingJob.status : "FAILED" as const,
           updatedAt: new Date().toISOString()
         };
+        const failedRecords = partialClipResults.length > 0
+          ? applyVideoClipGenerationResultsToRecords(workingRecords, failedJob.id, partialClipResults, failedJob.updatedAt, "failed", message)
+          : workingRecords;
+
         upsertJob(failedJob);
         upsertJobRecords(
           failedJob.id,
-          workingRecords.map((record) =>
+          failedRecords.map((record) =>
             record.status === "working"
               ? {
                   ...record,
@@ -2292,7 +2915,12 @@ export function App() {
               : record
           )
         );
-        appendCaseActivity(failedJob.id, "error", "Autopilot failed", message);
+        appendCaseActivity(
+          failedJob.id,
+          "error",
+          pausedForReview ? "自动生产暂停，等待人工审核" : "自动生产失败",
+          partialClipResults.length > 0 ? `${message} 已保留 ${partialClipResults.length} 个成功 Seedance 片段。` : message
+        );
       }
     } finally {
       setAutoGenerateStep(null);
@@ -2314,7 +2942,7 @@ export function App() {
     setJobProcessRecords((currentRecords) => syncProcessRecordsWithJob(updatedJob, currentRecords, staffAgents));
     if (updatedJob.status !== currentJob.status) {
       const type: CaseActivityType = updatedJob.status === "FAILED" ? "case_failed" : currentJob.status === "FAILED" ? "case_retried" : "case_advanced";
-      appendCaseActivity(id, type, "Case status changed", `${currentJob.status} -> ${updatedJob.status}`);
+      appendCaseActivity(id, type, "Case 状态已更新", `${currentJob.status} -> ${updatedJob.status}`);
     }
     setSelectedJobId(id);
   }
@@ -2369,7 +2997,7 @@ export function App() {
         return null;
       });
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production assets load failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产加载失败。");
     } finally {
       setIsLoadingProductionAssets(false);
     }
@@ -2399,6 +3027,16 @@ export function App() {
     }
   }
 
+  async function refreshStoryWorlds() {
+    try {
+      const response = await requestStoryWorlds();
+      setStoryWorlds(response.storyWorlds);
+      setSeriesError(null);
+    } catch (error) {
+      setSeriesError(error instanceof Error ? error.message : "Story worlds load failed.");
+    }
+  }
+
   async function refreshSeriesEpisodes(seriesId: string) {
     try {
       const response = await requestSeriesEpisodes(seriesId);
@@ -2419,7 +3057,7 @@ export function App() {
 
   async function handleCreateSeries() {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. Series library needs ${apiBaseUrl}.`);
+      setSeriesError(`API 服务当前为 ${apiState}。系列题库需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2427,15 +3065,19 @@ export function App() {
       const response = await requestCreateContentSeries({
         audience: "未指定目标观众",
         contentType: "自定义影片类型",
+        continuityRules: "",
         description: "",
+        dramaIntensity: "medium",
         durationSeconds: 45,
         language: "zh-CN",
         musicStyle: "",
+        narrativeMode: "standalone",
         name: "未命名系列",
         referenceAssetIds: [],
         safetyRules: "原创、不抄袭、不使用版权角色、不伪造真实人物；具体禁忌按这个系列的定位补充。",
         sceneCount: 5,
         status: "draft",
+        storyWorldId: null,
         tone: "",
         values: "",
         visualStyle: ""
@@ -2446,6 +3088,23 @@ export function App() {
       setSeriesError(null);
     } catch (error) {
       setSeriesError(error instanceof Error ? error.message : "Series create failed.");
+    }
+  }
+
+  async function handleCreateStoryWorld(input: Omit<StoryWorld, "_id" | "createdAt" | "updatedAt">) {
+    if (apiState !== "online") {
+      setSeriesError(`API 服务当前为 ${apiState}，背景故事库需要连接 ${apiBaseUrl}。`);
+      return null;
+    }
+
+    try {
+      const response = await requestCreateStoryWorld(input);
+      setStoryWorlds((currentStoryWorlds) => [response.storyWorld, ...currentStoryWorlds.filter((storyWorld) => storyWorld._id !== response.storyWorld._id)]);
+      setSeriesError(null);
+      return response.storyWorld;
+    } catch (error) {
+      setSeriesError(error instanceof Error ? error.message : "背景故事创建失败。");
+      return null;
     }
   }
 
@@ -2475,7 +3134,7 @@ export function App() {
 
   async function handleGenerateSeriesIdeas(seriesId: string, count: number) {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. AI 题库需要 ${apiBaseUrl}。`);
+      setSeriesError(`API 服务当前为 ${apiState}。AI 题库需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2502,33 +3161,57 @@ export function App() {
     }
   }
 
+  async function handleDeleteSeriesEpisode(seriesId: string, episodeId: string) {
+    try {
+      await requestDeleteSeriesEpisodeIdea(seriesId, episodeId);
+      setSeriesEpisodes((currentEpisodes) => currentEpisodes.filter((episode) => episode._id !== episodeId));
+      setSeriesError(null);
+    } catch (error) {
+      setSeriesError(error instanceof Error ? error.message : "Series episode delete failed.");
+    }
+  }
+
   async function handleConvertSeriesEpisodeToCase(series: ContentSeries, episode: SeriesEpisodeIdea) {
     if (apiState !== "online") {
-      setSeriesError(`API server is ${apiState}. Episode convert needs ${apiBaseUrl}.`);
+      setSeriesError(`API 服务当前为 ${apiState}。单集转 Case 需要连接 ${apiBaseUrl}。`);
       return;
     }
 
     const caseId = createId("job");
 
     try {
+      const latestAssetsResponse = await requestProductionAssets();
+      const latestProductionAssets = latestAssetsResponse.assets;
+      setProductionAssets(latestProductionAssets);
+
       const response = await requestConvertSeriesEpisodeToCase(series._id, episode._id, caseId);
-      const referenceAssets = series.referenceAssetIds
-        .map((id) => productionAssets.find((asset) => asset._id === id) ?? null)
-        .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
+      const seedReferenceIds = [...response.caseSeed.referenceAssetIds, ...response.caseSeed.characterAssetIds, ...response.caseSeed.sceneAssetIds]
+        .filter((id, index, ids) => ids.indexOf(id) === index);
+      const referenceAssets = findReadyReferenceAssetsByIds(latestProductionAssets, seedReferenceIds);
+      const missingReferenceCount = Math.max(0, seedReferenceIds.length - referenceAssets.length);
+      const splitSeedAssetIds = splitReadyReferenceAssetIdsByType(seedReferenceIds, latestProductionAssets);
+      const characterAssetIds = splitSeedAssetIds.characterAssetIds;
+      const sceneAssetIds = splitSeedAssetIds.sceneAssetIds;
       const characterAsset = referenceAssets.find(isCharacterDesignAsset) ?? null;
       const backgroundAsset = referenceAssets.find(isBackgroundDesignAsset) ?? null;
+      const productionBrief = enrichProductionBriefWithReferenceAssets(response.caseSeed.productionBrief, referenceAssets);
       const job = createJob({
-        backgroundAssetId: backgroundAsset?._id ?? null,
-        characterAssetId: characterAsset?._id ?? null,
-        costLimitRM: response.caseSeed.costLimitRM,
+        backgroundAssetId: response.caseSeed.backgroundAssetId ?? backgroundAsset?._id ?? null,
+        characterAssetIds,
+        characterAssetId: response.caseSeed.characterAssetId ?? characterAsset?._id ?? null,
+        costLimitRM: budgetSettings.defaultCaseBudgetRM,
         durationSeconds: response.caseSeed.durationSeconds,
         episodeId: response.caseSeed.episodeId,
         genre: response.caseSeed.genre,
         id: response.caseSeed.id,
         language: response.caseSeed.language,
         prompt: response.caseSeed.prompt,
+        productionBrief,
+        referenceAssetIds: seedReferenceIds,
+        sceneAssetIds,
         sceneCount: response.caseSeed.sceneCount,
         seriesId: response.caseSeed.seriesId,
+        storyWorldId: response.caseSeed.storyWorldId,
         templateType: response.caseSeed.templateType,
         topic: response.caseSeed.topic
       });
@@ -2536,9 +3219,18 @@ export function App() {
       setJobs((currentJobs) => [job, ...currentJobs]);
       setJobProcessRecords((currentRecords) => [...createProcessRecordsForJob(job, staffAgents, aiToolEndpoints), ...currentRecords]);
       setCasePublishTargets((currentTargets) => [...createCasePublishTargets(job.id, getEnabledPublishingTargetIds()), ...currentTargets]);
-      appendCaseActivity(job.id, "case_created", "Case created from Series", `Series: ${series.name}. Episode: ${episode.title}.`);
-      void handleBootstrapProductionAssets(job);
-      void attachSelectedAssetsToCase(job, referenceAssets);
+      appendCaseActivity(job.id, "case_created", "已从系列题库建立 Case", `系列：${series.name}。单集：${episode.title}。`);
+      await handleBootstrapProductionAssets(job);
+      const attachedAssets = await attachSelectedAssetsToCase(job, referenceAssets);
+
+      if (seedReferenceIds.length > 0 && referenceAssets.length === 0) {
+        appendCaseActivity(job.id, "error", "Series reference assets not available", "This episode has bound asset IDs, but none were ready/approved with usable media in MongoDB when converting to Case.");
+      } else if (missingReferenceCount > 0) {
+        appendCaseActivity(job.id, "error", "Some series references were skipped", `${missingReferenceCount} bound asset(s) were missing, not ready, or did not have usable media.`);
+      } else if (attachedAssets.length > 0) {
+        appendCaseActivity(job.id, "stage_updated", "Series references inherited", `${attachedAssets.length} bound reference asset(s) were copied into this Case.`);
+      }
+
       setSeriesEpisodes((currentEpisodes) => currentEpisodes.map((currentEpisode) => (currentEpisode._id === episode._id ? response.episode : currentEpisode)));
       setSelectedJobId(job.id);
       setSeriesError(null);
@@ -2550,7 +3242,7 @@ export function App() {
 
   async function handleBootstrapProductionAssets(job: AdminJob) {
     if (apiState !== "online") {
-      setAssetError(`API server is ${apiState}. Asset planning needs ${apiBaseUrl}.`);
+      setAssetError(`API 服务当前为 ${apiState}。资产规划需要连接 ${apiBaseUrl}。`);
       return;
     }
 
@@ -2577,24 +3269,78 @@ export function App() {
     }
   }
 
-  function getReferenceAssetsFromIds(characterAssetId?: string | null, backgroundAssetId?: string | null): ProductionAsset[] {
-    const ids = [characterAssetId, backgroundAssetId].filter((id): id is string => Boolean(id));
-
-    return ids
-      .map((id) => productionAssets.find((asset) => asset._id === id) ?? null)
-      .filter((asset): asset is ProductionAsset => Boolean(asset && isReadyReferenceAsset(asset)));
+  function getReferenceAssetsFromIds(...assetIds: Array<string | string[] | null | undefined>): ProductionAsset[] {
+    return findReadyReferenceAssetsByIds(productionAssets, assetIds);
   }
 
   function getGenerationReferencesForJob(job: AdminJob, extraAssets: ProductionAsset[] = []): GenerationReferenceAsset[] {
-    const selectedAssetIds = new Set([job.characterAssetId, job.backgroundAssetId].filter((id): id is string => Boolean(id)));
+    const selectedAssetIds = new Set([
+      job.characterAssetId,
+      job.backgroundAssetId,
+      ...(job.characterAssetIds ?? []),
+      ...(job.referenceAssetIds ?? []),
+      ...(job.sceneAssetIds ?? []),
+      ...getProductionBriefReferenceIds(job.productionBrief)
+    ].filter((id): id is string => Boolean(id)));
     const assets = [...extraAssets, ...productionAssets]
       .filter((asset) => asset.jobId === job.id || selectedAssetIds.has(asset._id))
       .filter(isReadyReferenceAsset);
-    const uniqueAssets = assets.filter((asset, index) => assets.findIndex((candidate) => candidate.url === asset.url) === index);
+    const uniqueAssets = assets.filter((asset, index) => assets.findIndex((candidate) => getProductionAssetMediaUrl(candidate) === getProductionAssetMediaUrl(asset)) === index);
 
     return uniqueAssets
       .map(productionAssetToGenerationReference)
       .filter((reference): reference is GenerationReferenceAsset => Boolean(reference));
+  }
+
+  function getEffectiveProductionAssetsForJob(job: AdminJob): ProductionAsset[] {
+    return getProductionAssetsForCase({
+      ...job,
+      referenceAssetIds: mergeIds(
+        job.referenceAssetIds ?? [],
+        getProductionBriefReferenceIds(job.productionBrief)
+      )
+    }, productionAssets);
+  }
+
+  function getEffectiveProductionAssetsForJobWithExtra(job: AdminJob, extraAssets: ProductionAsset[] = []): ProductionAsset[] {
+    const mergedAssets = [...extraAssets, ...productionAssets];
+    const seen = new Set<string>();
+
+    return getEffectiveProductionAssetsForJob(job)
+      .concat(extraAssets)
+      .filter((asset) => {
+        const mediaUrl = getProductionAssetMediaUrl(asset);
+        const key = mediaUrl || asset._id;
+
+        if (seen.has(key)) {
+          return false;
+        }
+
+        seen.add(key);
+        return mergedAssets.some((candidate) => candidate._id === asset._id);
+      });
+  }
+
+  function getReferenceGenerationBlocker(job: AdminJob, references: GenerationReferenceAsset[]): string | null {
+    const selectedCharacterIds = [job.characterAssetId, ...(job.characterAssetIds ?? [])].filter((id): id is string => Boolean(id));
+    const selectedSceneIds = [job.backgroundAssetId, ...(job.sceneAssetIds ?? [])].filter((id): id is string => Boolean(id));
+    const selectedReferenceIds = (job.referenceAssetIds ?? []).filter(Boolean);
+    const hasCharacterReference = references.some((reference) => reference.type === "character_design");
+    const hasSceneReference = references.some((reference) => reference.type === "scene_design" || reference.type === "style_reference");
+
+    if (selectedReferenceIds.length > 0 && references.length === 0) {
+      return "这个 Case 已继承系列/题库参考资产，但目前没有任何可用参考图。请到「设计资产」确认这些资产已保存入库、状态为已保存/已批准，并且图片 URL 可打开。系统不会在缺少系列参考时继续乱画。";
+    }
+
+    if (selectedCharacterIds.length > 0 && !hasCharacterReference) {
+      return "这个 Case 有选定角色资产，但没有可用的角色参考图。请到「设计资产」确认角色设计已保存入库、状态为已保存/已批准，并且图片 URL 可打开后再生成图片。系统不会在缺少角色参考图时擅自换角色。";
+    }
+
+    if (selectedSceneIds.length > 0 && !hasSceneReference) {
+      return "这个 Case 有选定场景资产，但没有可用的场景/风格参考图。请到「设计资产」确认场景设计已保存入库、状态为已保存/已批准，并且图片 URL 可打开后再生成图片。";
+    }
+
+    return null;
   }
 
   async function attachSelectedAssetsToCase(job: AdminJob, selectedAssets: ProductionAsset[]): Promise<ProductionAsset[]> {
@@ -2621,13 +3367,13 @@ export function App() {
           ].filter(Boolean).join("\n"),
           prompt: asset.prompt,
           provider: asset.provider,
-          role: asset.type === "first_frame" ? "first_frame" : "reference_image",
-          scope: asset.type === "first_frame" ? "scene" : "case",
+          role: "reference_image",
+          scope: "case",
           status: asset.status,
           storagePath: asset.storagePath,
           tags: [...asset.tags, "case_reference"],
           type: asset.type,
-          url: asset.url
+          url: getProductionAssetMediaUrl(asset)
         });
 
         attachedAssets.push(response.asset);
@@ -2666,16 +3412,16 @@ export function App() {
       setAssetFilterJobId(targetJob?.id ?? "");
       setAssetError(null);
       if (targetJob) {
-        appendCaseActivity(targetJob.id, "stage_updated", "Production asset row added", "A manual MongoDB asset planning row was created.");
+        appendCaseActivity(targetJob.id, "stage_updated", "生产资产行已新增", "已建立一条手动 MongoDB 资产规划记录。");
       }
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production asset create failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产创建失败。");
     }
   }
 
   async function handleCreateDesignProductionAsset(input: { folderName: string; jobId?: string | undefined; label: string; prompt: string; tags: string[]; type: ProductionAssetType }): Promise<ProductionAsset | null> {
     if (apiState !== "online") {
-      setAssetError(`API server is ${apiState}. 设计生成需要 ${apiBaseUrl}。`);
+      setAssetError(`API 服务当前为 ${apiState}。设计生成需要连接 ${apiBaseUrl}。`);
       return null;
     }
 
@@ -2710,7 +3456,7 @@ export function App() {
 
   async function handleCloneProductionAsset(asset: ProductionAsset): Promise<ProductionAsset | null> {
     if (apiState !== "online") {
-      setAssetError(`API server is ${apiState}. 复制资产版本需要 ${apiBaseUrl}。`);
+      setAssetError(`API 服务当前为 ${apiState}。复制资产版本需要连接 ${apiBaseUrl}。`);
       return null;
     }
 
@@ -2721,7 +3467,7 @@ export function App() {
       setSelectedProductionAssetId(response.asset._id);
       setAssetFilterJobId(response.asset.jobId === libraryJobId ? "" : response.asset.jobId);
       setAssetError(null);
-      appendCaseActivity(asset.jobId, "stage_updated", "Production asset version draft created", `${response.asset.label} was forked from ${asset.label}; the original approved asset was preserved.`);
+      appendCaseActivity(asset.jobId, "stage_updated", "资产版本草稿已建立", `${response.asset.label} 已从 ${asset.label} 复制；原本已批准的资产会保留。`);
       return response.asset;
     } catch (error) {
       setAssetError(error instanceof Error ? error.message : "资产版本草稿创建失败。");
@@ -2736,7 +3482,7 @@ export function App() {
       setProductionAssets((currentAssets) => currentAssets.map((asset) => (asset._id === id ? response.asset : asset)));
       setAssetError(null);
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production asset update failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产更新失败。");
     }
   }
 
@@ -2750,10 +3496,10 @@ export function App() {
       setAssetError(null);
 
       if (asset) {
-        appendCaseActivity(asset.jobId, "stage_updated", "Production asset deleted", `${asset.label} was removed from MongoDB production_assets.`);
+        appendCaseActivity(asset.jobId, "stage_updated", "生产资产已删除", `${asset.label} 已从 MongoDB production_assets 移除。`);
       }
     } catch (error) {
-      setAssetError(error instanceof Error ? error.message : "Production asset delete failed.");
+      setAssetError(error instanceof Error ? error.message : "生产资产删除失败。");
     }
   }
 
@@ -2764,14 +3510,14 @@ export function App() {
 
     const job = jobs.find((candidate) => candidate.id === asset.jobId) ?? null;
 
-    if (job && blockIfCaseBudgetExceeded(job, "Production asset generation")) {
+    if (job && blockIfCaseBudgetExceeded(job, "生产资产生成")) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Production asset generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。生产资产生成需要连接 ${apiBaseUrl}。`;
       setAssetError(message);
-      appendCaseActivity(asset.jobId, "error", "Production asset generation blocked", message);
+      appendCaseActivity(asset.jobId, "error", "生产资产生成被阻止", message);
       return;
     }
 
@@ -2794,11 +3540,11 @@ export function App() {
         )
       );
       setAssetError(null);
-      appendCaseActivity(asset.jobId, "stage_updated", "Production asset generated", `${response.asset.type} generated and stored in MongoDB production_assets. Cost RM ${response.costRM.toFixed(4)}.`);
+      appendCaseActivity(asset.jobId, "stage_updated", "生产资产已生成", `${response.asset.type} 已生成并写入 MongoDB production_assets。成本 RM ${response.costRM.toFixed(4)}。`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Production asset generation failed.";
+      const message = error instanceof Error ? error.message : "生产资产生成失败。";
       setAssetError(message);
-      appendCaseActivity(asset.jobId, "error", "Production asset generation failed", message);
+      appendCaseActivity(asset.jobId, "error", "生产资产生成失败", message);
       await refreshProductionAssets();
     } finally {
       setGeneratingProductionAssetIds((currentIds) => currentIds.filter((id) => id !== asset._id));
@@ -2827,7 +3573,7 @@ export function App() {
             storagePath: asset.url,
             tags: ["legacy-import"],
             type: asset.type,
-            url: asset.url
+            url: resolveMediaUrl(asset.url)
           })
         )
       );
@@ -2873,7 +3619,7 @@ export function App() {
 
       return [createStoredVideoFromJob(job, storageSettings), ...currentVideos];
     });
-    appendCaseActivity(job.id, "stored", "Video stored", `Video was registered in ${storageSettings.driver === "local" ? "local uploads" : storageSettings.driver.toUpperCase()} storage.`);
+    appendCaseActivity(job.id, "stored", "影片已登记入库", `影片已登记到 ${storageSettings.driver === "local" ? "本地 uploads" : storageSettings.driver.toUpperCase()} 存储。`);
     switchView("storage");
   }
 
@@ -2882,14 +3628,20 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Script/story generation")) {
+    const isOverwritingExistingScript = hasGeneratedScriptStory(jobProcessRecords, job.id);
+
+    if (isOverwritingExistingScript && !window.confirm("这个 Case 已经有已确认脚本、分镜和图片提示词。重新生成会覆盖脚本，并把图片、配音、字幕、BGM、视频片段、MP4 和 QC 标记为需要重跑。确定继续吗？")) {
+      return;
+    }
+
+    if (blockIfCaseBudgetExceeded(job, "脚本/分镜生成")) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Script generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。脚本生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Script generation blocked", message);
+      appendCaseActivity(job.id, "error", "脚本生成被阻止", message);
       return;
     }
 
@@ -2927,11 +3679,20 @@ export function App() {
             : currentJob
         )
       );
-      setJobProcessRecords((currentRecords) => applyScriptStoryResultToRecords(currentRecords, job.id, result, now));
-      appendCaseActivity(job.id, "script_generated", "Script/story generated", `${result.provider} ${result.model} generated script, storyboard, and image prompts. Cost RM ${result.costRM.toFixed(4)}.`);
+      setJobProcessRecords((currentRecords) => {
+        const updatedRecords = applyScriptStoryResultToRecords(currentRecords, job.id, result, now);
+        return isOverwritingExistingScript ? resetDownstreamRecordsAfterScriptOverwrite(updatedRecords, job.id, now) : updatedRecords;
+      });
+      if (isOverwritingExistingScript) {
+        setSceneReviews((currentReviews) => currentReviews.filter((review) => review.jobId !== job.id));
+        setCaseQcReports((currentReports) => currentReports.filter((report) => report.jobId !== job.id));
+        setStoredVideos((currentVideos) => currentVideos.filter((video) => video.jobId !== job.id));
+        appendCaseActivity(job.id, "stage_updated", "脚本与分镜已覆盖", "脚本和分镜已被重新生成；下游图片、音频、字幕、MP4 和 QC 已标记为需要重跑。");
+      }
+      appendCaseActivity(job.id, "script_generated", isOverwritingExistingScript ? "脚本与分镜已覆盖" : "脚本与分镜已生成", `${result.provider} ${result.model} 已生成脚本、分镜和图片提示词。成本 RM ${result.costRM.toFixed(4)}。`);
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Script generation failed.";
+      const message = error instanceof Error ? error.message : "脚本生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -2957,10 +3718,127 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Script generation failed", message);
+      appendCaseActivity(job.id, "error", "脚本生成失败", message);
     } finally {
       setGeneratingScriptCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
+  }
+
+  async function requestSequentialSceneImages(
+    job: AdminJob,
+    character: CharacterProfile | null,
+    references: GenerationReferenceAsset[],
+    toolOverride: ToolProviderOverride | undefined,
+    sourceRecords: JobProcessRecord[] = jobProcessRecords
+  ): Promise<GenerateImagesResponse> {
+    const referenceBlocker = getReferenceGenerationBlocker(job, references);
+
+    if (referenceBlocker) {
+      throw new Error(referenceBlocker);
+    }
+
+    const targets = getImageGenerationTargetsFromRecords(sourceRecords, job);
+
+    if (targets.length === 0) {
+      throw new Error("缺少已确认分镜，不能生成图片。请先重新生成脚本 / 分镜。");
+    }
+
+    let generatedImages: GeneratedImageAsset[] = [];
+    let latestProvider = toolOverride?.provider ?? "openai";
+    let latestModel = toolOverride?.model ?? "";
+    let latestReferenceImage: GenerateImagesResponse["referenceImage"] | undefined;
+    let latestVisualBible: GenerateImagesResponse["visualBible"] | undefined;
+
+    setSceneReviews((currentReviews) => currentReviews.filter((review) => review.jobId !== job.id));
+
+    for (const [index, target] of targets.entries()) {
+      const operationId = `${job.id}_${target.sceneId}`;
+      const progressLabel = `Scene ${target.sceneId} (${index + 1}/${targets.length})`;
+
+      setGeneratingSceneImageIds((currentIds) => currentIds.includes(operationId) ? currentIds : [...currentIds, operationId]);
+      setJobProcessRecords((currentRecords) =>
+        currentRecords.map((record) =>
+          record.jobId === job.id && record.stageId === "image"
+            ? {
+                ...record,
+                notes: "",
+                output: `逐场景生成图片中：${progressLabel}。已成功 ${generatedImages.length}/${targets.length} 张。`,
+                status: "working",
+                updatedAt: new Date().toISOString()
+              }
+            : record
+        )
+      );
+
+      try {
+        const sceneReferences = selectSceneGenerationReferences(references, {
+          imagePrompt: target.prompt,
+          sceneId: target.sceneId
+        });
+        const result = await requestSceneImageGeneration(job, target.sceneId, target.prompt, character, sceneReferences, toolOverride);
+        const now = new Date().toISOString();
+        latestProvider = result.provider;
+        latestModel = result.model;
+        latestReferenceImage = result.referenceImage;
+        latestVisualBible = result.visualBible;
+        generatedImages = replaceGeneratedImage(generatedImages, result.image);
+
+        setSceneReviews((currentReviews) => [
+          ...createSceneReviewItems(job.id, [result.image], currentReviews),
+          ...currentReviews.filter((review) => review.jobId !== job.id || review.sceneId !== result.image.sceneId)
+        ]);
+        setJobProcessRecords((currentRecords) =>
+          applySceneImageProgressToRecords(currentRecords, job.id, generatedImages, targets.length, latestProvider, latestModel, now)
+        );
+        appendCaseActivity(job.id, "stage_updated", `场景 ${target.sceneId} 图片已生成`, `${result.provider} ${result.model} 已生成 ${progressLabel}。成本 RM ${result.costRM.toFixed(4)}。`);
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : `Scene ${target.sceneId} image generation failed.`;
+        const message = buildReadableImageGenerationError(rawMessage, generatedImages.length, targets.length);
+        const now = new Date().toISOString();
+        const failedReview: SceneReviewItem = {
+          artifactPath: "",
+          id: `${job.id}_scene_${target.sceneId}`,
+          jobId: job.id,
+          notes: message,
+          prompt: target.prompt,
+          qcIssues: [message],
+          qcStatus: "fail",
+          qcSummary: message,
+          referenceImagePath: "",
+          sceneId: target.sceneId,
+          status: "needs_review",
+          updatedAt: now
+        };
+
+        setJobProcessRecords((currentRecords) =>
+          applySceneImageProgressToRecords(currentRecords, job.id, generatedImages, targets.length, latestProvider, latestModel, now, { errorMessage: message })
+        );
+        setSceneReviews((currentReviews) => [
+          failedReview,
+          ...currentReviews.filter((review) => review.jobId !== job.id || review.sceneId !== target.sceneId)
+        ]);
+        appendCaseActivity(job.id, "error", `场景 ${target.sceneId} 图片失败`, message);
+        throw new Error(message);
+      } finally {
+        setGeneratingSceneImageIds((currentIds) => currentIds.filter((id) => id !== operationId));
+      }
+    }
+
+    if (!latestVisualBible) {
+      throw new Error("图片生成没有返回视觉圣经资料，请重新生成脚本 / 分镜后再试。");
+    }
+
+    return {
+      costRM: Number(generatedImages.reduce((sum, image) => sum + image.costRM, 0).toFixed(4)),
+      images: generatedImages,
+      jobId: job.id,
+      model: latestModel,
+      provider: latestProvider,
+      referenceImage: latestReferenceImage,
+      requiresReview: generatedImages.some((image) => image.qualityCheck?.status === "fail"),
+      status: "IMAGE_DONE",
+      visualBible: latestVisualBible
+    };
   }
 
   async function handleGenerateImages(job: AdminJob) {
@@ -2968,21 +3846,21 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Image generation")) {
+    if (blockIfCaseBudgetExceeded(job, "图片生成")) {
       return;
     }
 
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
-      const message = "Generate script/story first. Image generation uses the approved storyboard image prompts; it will not invent missing prompts from a blank case.";
+      const message = "请先生成脚本/分镜。图片生成只会读取已确认的分镜图片提示词，不会从空白 Case 重新编故事。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Image generation blocked", message);
+      appendCaseActivity(job.id, "error", "图片生成被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Image generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。图片生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Image generation blocked", message);
+      appendCaseActivity(job.id, "error", "图片生成被阻止", message);
       return;
     }
 
@@ -3005,7 +3883,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Generating inspectable scene images...",
+              output: "正在生成可审核的场景图片...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3015,7 +3893,7 @@ export function App() {
 
     try {
       const character = job.characterId ? characterProfiles.find((candidate) => candidate.id === job.characterId) ?? null : null;
-      const result = await requestImageGeneration(job, character, getGenerationReferencesForJob(job), getToolOverride("image"));
+      const result = await requestSequentialSceneImages(job, character, getGenerationReferencesForJob(job), getToolOverride("image"));
       const now = new Date().toISOString();
 
       setJobs((currentJobs) =>
@@ -3039,21 +3917,22 @@ export function App() {
       appendCaseActivity(
         job.id,
         result.requiresReview ? "error" : "stage_updated",
-        result.requiresReview ? "Image QC needs review" : "Images generated",
+        result.requiresReview ? "图片 QC 需要人工审核" : "图片已生成",
         result.requiresReview
-          ? `${result.provider} ${result.model} generated images, but visual QC blocked compose. Review and regenerate failed scenes.`
-          : `${result.provider} ${result.model} generated ${result.images.length} inspectable scene image(s). Cost RM ${result.costRM.toFixed(4)}.`
+          ? `${result.provider} ${result.model} 已生成图片，但视觉 QC 阻止合成。请检查并重跑失败场景。`
+          : `${result.provider} ${result.model} 已生成 ${result.images.length} 张可审核场景图片。成本 RM ${result.costRM.toFixed(4)}。`
       );
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Image generation failed.";
+      const message = error instanceof Error ? error.message : "图片生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
           currentJob.id === job.id
             ? {
                 ...currentJob,
-                status: "FAILED",
+                reviewStatus: "needs_review",
+                status: currentJob.status === "IMAGE_GENERATING" ? "IMAGE_DONE" : currentJob.status,
                 updatedAt: new Date().toISOString()
               }
             : currentJob
@@ -3072,7 +3951,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Image generation failed", message);
+      appendCaseActivity(job.id, "error", "图片生成失败", message);
     } finally {
       setGeneratingImageCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3085,14 +3964,14 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, `Scene ${scene.sceneId} image regeneration`)) {
+    if (blockIfCaseBudgetExceeded(job, `场景 ${scene.sceneId} 图片重生`)) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Scene image generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。单场景图片生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Scene image generation blocked", message);
+      appendCaseActivity(job.id, "error", "单场景图片生成被阻止", message);
       return;
     }
 
@@ -3101,10 +3980,21 @@ export function App() {
 
     try {
       const character = job.characterId ? characterProfiles.find((candidate) => candidate.id === job.characterId) ?? null : null;
-      const result = await requestSceneImageGeneration(job, scene.sceneId, scene.prompt, character, getGenerationReferencesForJob(job), getToolOverride("image"));
+      const references = getGenerationReferencesForJob(job);
+      const referenceBlocker = getReferenceGenerationBlocker(job, references);
+
+      if (referenceBlocker) {
+        throw new Error(referenceBlocker);
+      }
+
+      const sceneReferences = selectSceneGenerationReferences(references, {
+        imagePrompt: scene.prompt,
+        sceneId: scene.sceneId
+      });
+      const result = await requestSceneImageGeneration(job, scene.sceneId, scene.prompt, character, sceneReferences, getToolOverride("image"));
       const now = new Date().toISOString();
       const artifactPath = result.image.asset.publicUrl ?? result.image.asset.storagePath;
-      const hasOtherBlockedScenes = sceneReviews.some((review) => review.jobId === job.id && review.id !== scene.id && (review.status === "needs_review" || review.status === "rejected"));
+      const hasOtherBlockedScenes = sceneReviews.some((review) => review.jobId === job.id && review.id !== scene.id && isSceneReviewBlockingForProduction(review));
 
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3151,13 +4041,13 @@ export function App() {
               ...record,
               artifactPath: nextArtifacts.join("\n"),
               costRM: Number((record.costRM + result.costRM).toFixed(4)),
-              output: `${record.output}\n\nRegenerated scene ${scene.sceneId}: ${result.image.prompt}`,
+              output: `${record.output}\n\n场景 ${scene.sceneId} 已重生: ${result.image.prompt}`,
               provider: result.provider === "openai" ? `OpenAI ${result.model}` : result.model,
               status: result.requiresReview || hasOtherBlockedScenes ? "failed" : "done",
               notes: result.requiresReview
-                ? `Scene ${scene.sceneId} failed visual QC. Regenerate it before composing MP4.`
+                ? `场景 ${scene.sceneId} 未通过视觉 QC。请重生后再合成 MP4。`
                 : hasOtherBlockedScenes
-                  ? "Other scene images still need review before composing MP4."
+                  ? "还有其他场景图片需要审核，完成后才能合成 MP4。"
                   : "",
               updatedAt: now
             };
@@ -3167,7 +4057,7 @@ export function App() {
             return {
               ...record,
               artifactPath: "",
-              output: `Waiting for regenerated MP4 after scene ${scene.sceneId} image changed.`,
+              output: `场景 ${scene.sceneId} 图片已更新，等待重新合成 MP4。`,
               status: "pending",
               updatedAt: now
             };
@@ -3178,9 +4068,9 @@ export function App() {
       );
       setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
       setCaseQcReports((currentReports) => currentReports.filter((report) => report.jobId !== job.id));
-      appendCaseActivity(job.id, "stage_updated", `Scene ${scene.sceneId} image regenerated`, `${result.provider} ${result.model} regenerated one scene image. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "stage_updated", `场景 ${scene.sceneId} 图片已重生`, `${result.provider} ${result.model} 已重生一张场景图片。成本 RM ${result.costRM.toFixed(4)}。`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : `Scene ${scene.sceneId} image generation failed.`;
+      const message = error instanceof Error ? error.message : `场景 ${scene.sceneId} 图片生成失败。`;
       setGenerationError(message);
       setSceneReviews((currentReviews) =>
         currentReviews.map((review) =>
@@ -3194,7 +4084,7 @@ export function App() {
             : review
         )
       );
-      appendCaseActivity(job.id, "error", `Scene ${scene.sceneId} image failed`, message);
+      appendCaseActivity(job.id, "error", `场景 ${scene.sceneId} 图片失败`, message);
     } finally {
       setGeneratingSceneImageIds((currentIds) => currentIds.filter((id) => id !== operationId));
     }
@@ -3205,30 +4095,30 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Voiceover generation")) {
+    if (blockIfCaseBudgetExceeded(job, "配音生成")) {
       return;
     }
 
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
-      const message = "Generate script/story first. Voiceover generation uses the approved storyboard scene voice text; it will not invent narration from a blank case.";
+      const message = "请先生成脚本/分镜。配音只会读取已确认的分镜旁白，不会从空白 Case 编旁白。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Voiceover generation blocked", message);
+      appendCaseActivity(job.id, "error", "配音生成被阻止", message);
       return;
     }
 
     const voiceoverText = extractVoiceoverTextFromRecords(jobProcessRecords, job.id);
 
     if (!voiceoverText) {
-      const message = "Voiceover text is missing from the Storyboard or Script stage. Regenerate or edit the story before producing TTS audio.";
+      const message = "分镜或脚本阶段缺少旁白文本。请重新生成或编辑故事后再产出 TTS 音频。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Voiceover generation blocked", message);
+      appendCaseActivity(job.id, "error", "配音生成被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Voiceover generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。配音生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Voiceover generation blocked", message);
+      appendCaseActivity(job.id, "error", "配音生成被阻止", message);
       return;
     }
 
@@ -3251,7 +4141,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Generating OpenAI TTS voiceover audio from storyboard scene voice text...",
+              output: "正在根据分镜旁白生成 TTS 配音音频...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3278,10 +4168,10 @@ export function App() {
       );
       setJobProcessRecords((currentRecords) => applyTtsGenerationResultToRecords(currentRecords, job.id, result, now));
       setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
-      appendCaseActivity(job.id, "stage_updated", "Voiceover generated", `${result.provider} ${result.model} generated narration audio. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "stage_updated", "配音已生成", `${result.provider} ${result.model} 已生成旁白音频。成本 RM ${result.costRM.toFixed(4)}。`);
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Voiceover generation failed.";
+      const message = error instanceof Error ? error.message : "配音生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3307,7 +4197,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "Voiceover generation failed", message);
+      appendCaseActivity(job.id, "error", "配音生成失败", message);
     } finally {
       setGeneratingTtsCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3318,14 +4208,14 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Background music generation")) {
+    if (blockIfCaseBudgetExceeded(job, "背景音乐生成")) {
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Background music generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。背景音乐生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "BGM generation blocked", message);
+      appendCaseActivity(job.id, "error", "BGM 生成被阻止", message);
       return;
     }
 
@@ -3348,7 +4238,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Generating instrumental background music with ElevenLabs Music...",
+              output: "正在使用 ElevenLabs Music 生成无歌词背景音乐...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3375,10 +4265,10 @@ export function App() {
       );
       setJobProcessRecords((currentRecords) => applyBgmGenerationResultToRecords(currentRecords, job.id, result, now));
       setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
-      appendCaseActivity(job.id, "stage_updated", "Background music generated", `${result.provider} ${result.model} generated instrumental BGM. Cost RM ${result.costRM.toFixed(4)}.`);
+      appendCaseActivity(job.id, "stage_updated", "背景音乐已生成", `${result.provider} ${result.model} 已生成无歌词 BGM。成本 RM ${result.costRM.toFixed(4)}。`);
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Background music generation failed.";
+      const message = error instanceof Error ? error.message : "背景音乐生成失败。";
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -3404,17 +4294,17 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "BGM generation failed", message);
+      appendCaseActivity(job.id, "error", "BGM 生成失败", message);
     } finally {
       setGeneratingBgmCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
   }
 
-  async function generateSeedanceSceneClipsForJob(job: AdminJob, recordsSnapshot: JobProcessRecord[]): Promise<GenerateVideoClipResponse[]> {
-    const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, productionAssets, job);
+  async function generateSeedanceSceneClipsForJob(job: AdminJob, recordsSnapshot: JobProcessRecord[], effectiveAssets = getEffectiveProductionAssetsForJob(job)): Promise<GenerateVideoClipResponse[]> {
+    const clipInputs = getSeedanceClipInputs(recordsSnapshot, sceneReviews, effectiveAssets, job);
 
     if (clipInputs.length === 0) {
-      throw new Error("No storyboard scenes were found for Seedance clip generation. Regenerate the script/storyboard first.");
+      throw new Error("找不到可用于 Seedance 的分镜场景。请先重新生成或确认脚本/分镜。");
     }
 
     const results: GenerateVideoClipResponse[] = [];
@@ -3425,7 +4315,7 @@ export function App() {
           record.jobId === job.id && record.stageId === "video"
             ? {
                 ...record,
-                output: `Generating Seedance scene clip ${index + 1}/${clipInputs.length}: scene ${clipInput.sceneId}, ${clipInput.durationSeconds}s...`,
+                output: `正在生成 Seedance 场景片段 ${index + 1}/${clipInputs.length}：场景 ${clipInput.sceneId}，${clipInput.durationSeconds}s...`,
                 status: "working",
                 updatedAt: new Date().toISOString()
               }
@@ -3433,16 +4323,25 @@ export function App() {
         )
       );
 
-      const result = await requestVideoClipGeneration(job, {
-        durationSeconds: clipInput.durationSeconds,
-        imageUrl: clipInput.imageUrl,
-        lastFrameImageUrl: clipInput.lastFrameImageUrl,
-        prompt: clipInput.prompt,
-        referenceImageUrls: clipInput.referenceImageUrls,
-        sceneId: clipInput.sceneId
-      }, getToolOverride("video"));
+      try {
+        const result = await requestVideoClipGeneration(job, {
+          durationSeconds: clipInput.durationSeconds,
+          imageUrl: clipInput.imageUrl,
+          lastFrameImageUrl: clipInput.lastFrameImageUrl,
+          prompt: clipInput.prompt,
+          referenceImageUrls: clipInput.referenceImageUrls,
+          sceneId: clipInput.sceneId
+        }, getToolOverride("video"));
 
-      results.push(result);
+        results.push(result);
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : "Seedance 场景片段生成失败。";
+        const progress = results.length > 0
+          ? `已保留 ${results.length}/${clipInputs.length} 个成功片段，请到「视频片段」页签单独重试失败场景。`
+          : "还没有成功片段，请检查该场景首帧、参考图和 Seedance 工具设置后重试。";
+
+        throw new VideoClipGenerationError(`场景 ${clipInput.sceneId} Seedance 片段失败：${rawMessage} ${progress}`, results);
+      }
     }
 
     return results;
@@ -3459,21 +4358,21 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Seedance video clip generation")) {
+    if (blockIfCaseBudgetExceeded(job, "Seedance 视频片段生成")) {
       return;
     }
 
     if (!hasGeneratedScriptStory(jobProcessRecords, job.id)) {
-      const message = "Generate script/story first. Seedance needs the approved scene prompt before creating a motion clip.";
+      const message = "请先生成脚本/分镜。Seedance 需要已确认的场景提示词才能生成动态片段。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Seedance video clip blocked", message);
+      appendCaseActivity(job.id, "error", "Seedance 视频片段被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Seedance video clip generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。Seedance 视频片段生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Seedance video clip blocked", message);
+      appendCaseActivity(job.id, "error", "Seedance 视频片段被阻止", message);
       return;
     }
 
@@ -3496,7 +4395,7 @@ export function App() {
           ? {
               ...record,
               notes: "",
-              output: "Preparing storyboard scene clips for Seedance 2.0...",
+              output: "正在准备分镜场景，准备交给 Seedance 2.0 生成视频片段...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3525,30 +4424,43 @@ export function App() {
             : currentJob
         )
       );
-      setJobProcessRecords((currentRecords) => applyVideoClipGenerationResultsToRecords(currentRecords, job.id, successfulResults, now));
+      setJobProcessRecords((currentRecords) =>
+        invalidateComposeRecordsAfterVideoClipChange(
+          applyVideoClipGenerationResultsToRecords(currentRecords, job.id, successfulResults, now),
+          job.id,
+          now
+        )
+      );
+      setStoredVideos((currentVideos) => currentVideos.filter((currentVideo) => currentVideo.jobId !== job.id));
       appendCaseActivity(
         job.id,
         "stage_updated",
-        "Seedance scene clips generated",
-        `${successfulResults[0]?.model ?? "Seedance 2.0"} generated ${successfulResults.length} scene clip(s) from the storyboard. Total cost RM ${totalCostRM.toFixed(4)}.`
+        "Seedance 视频片段已生成",
+        `${successfulResults[0]?.model ?? "Seedance 2.0"} 已根据分镜生成 ${successfulResults.length} 个场景片段。总成本 RM ${totalCostRM.toFixed(4)}。`
       );
       setSelectedJobId(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Seedance video clip generation failed.";
+      const message = error instanceof Error ? error.message : "Seedance 视频片段生成失败。";
+      const partialResults = error instanceof VideoClipGenerationError ? error.partialResults : successfulResults;
+      const now = new Date().toISOString();
+      const partialCostRM = partialResults.reduce((sum, result) => sum + result.costRM, 0);
+
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
           currentJob.id === job.id
             ? {
                 ...currentJob,
-                updatedAt: new Date().toISOString()
+                actualCostRM: partialResults.length > 0 ? Number((currentJob.actualCostRM + partialCostRM).toFixed(4)) : currentJob.actualCostRM,
+                reviewStatus: "needs_review",
+                updatedAt: now
               }
             : currentJob
         )
       );
       setJobProcessRecords((currentRecords) =>
-        successfulResults.length > 0
-          ? applyVideoClipGenerationResultsToRecords(currentRecords, job.id, successfulResults, new Date().toISOString(), "failed", message)
+        partialResults.length > 0
+          ? applyVideoClipGenerationResultsToRecords(currentRecords, job.id, partialResults, now, "failed", message)
           : currentRecords.map((record) =>
               record.jobId === job.id && record.stageId === "video"
                 ? {
@@ -3556,12 +4468,17 @@ export function App() {
                     notes: message,
                     output: message,
                     status: "failed",
-                    updatedAt: new Date().toISOString()
+                    updatedAt: now
                   }
                 : record
             )
       );
-      appendCaseActivity(job.id, "error", "Seedance video clip failed", message);
+      appendCaseActivity(
+        job.id,
+        "error",
+        "Seedance 视频片段失败",
+        partialResults.length > 0 ? `${message} 已写回 ${partialResults.length} 个成功片段。` : message
+      );
     } finally {
       setGeneratingVideoClipCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3572,28 +4489,28 @@ export function App() {
       return;
     }
 
-    if (blockIfCaseBudgetExceeded(job, "Final MP4 generation")) {
+    if (blockIfCaseBudgetExceeded(job, "最终 MP4 生成")) {
       return;
     }
 
     if (!hasGeneratedRasterImages(jobProcessRecords, job.id)) {
-      const message = "Generate and review scene images first. Video compose uses those PNG/JPG assets, so it is blocked until Image stage has real reviewable images.";
+      const message = "请先生成并审核场景图片。影片合成会使用这些 PNG/JPG 图片，因此必须等图片阶段有真实可审核资产后才能继续。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Video generation blocked", message);
+      appendCaseActivity(job.id, "error", "影片生成被阻止", message);
       return;
     }
 
     if (hasBlockedSceneReviews(sceneReviews, job.id)) {
-      const message = "Scene image QC is still blocking this case. Regenerate or approve the failed scene images before composing MP4.";
+      const message = "场景图片 QC 仍在阻止这个 Case。请重生或批准失败场景图后再合成 MP4。";
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Video generation blocked", message);
+      appendCaseActivity(job.id, "error", "影片生成被阻止", message);
       return;
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. Video generation needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。影片生成需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "Video generation blocked", message);
+      appendCaseActivity(job.id, "error", "影片生成被阻止", message);
       return;
     }
 
@@ -3616,7 +4533,7 @@ export function App() {
             ? {
                 ...record,
                 notes: "",
-                output: "Preparing missing voiceover / scene clips, then rendering MP4 with subtitles...",
+                output: "正在补齐缺少的配音/场景片段，然后渲染带字幕 MP4...",
                 status: "working",
                 updatedAt: new Date().toISOString()
             }
@@ -3632,7 +4549,7 @@ export function App() {
         const voiceoverText = extractVoiceoverTextFromRecords(workingRecords, job.id);
 
         if (!voiceoverText) {
-          throw new Error("Voiceover text is missing from the Storyboard or Script stage. Regenerate or edit the story before producing TTS audio.");
+          throw new Error("分镜或脚本阶段缺少旁白文本。请重新生成或编辑故事后再产出 TTS 音频。");
         }
 
         setJobProcessRecords((currentRecords) =>
@@ -3640,32 +4557,42 @@ export function App() {
             record.jobId === job.id && record.stageId === "tts"
               ? {
                   ...record,
-                  output: "Auto-generating OpenAI TTS voiceover before MP4 compose...",
+                  output: "合成 MP4 前，正在自动生成已配置的 TTS 配音...",
                   status: "working",
                   updatedAt: new Date().toISOString()
                 }
               : record
           )
         );
-        const ttsResult = await requestTtsGeneration(job, voiceoverText);
+        const ttsResult = await requestTtsGeneration(job, voiceoverText, getToolOverride("tts"));
         const ttsNow = new Date().toISOString();
         pipelineCostRM += ttsResult.costRM;
         workingRecords = applyTtsGenerationResultToRecords(workingRecords, job.id, ttsResult, ttsNow);
         setJobProcessRecords((currentRecords) => applyTtsGenerationResultToRecords(currentRecords, job.id, ttsResult, ttsNow));
-        appendCaseActivity(job.id, "stage_updated", "Voiceover generated", `${ttsResult.provider} ${ttsResult.model} auto-generated narration before MP4. Cost RM ${ttsResult.costRM.toFixed(4)}.`);
+        appendCaseActivity(job.id, "stage_updated", "配音已生成", `${ttsResult.provider} ${ttsResult.model} 已在合成 MP4 前自动生成旁白。成本 RM ${ttsResult.costRM.toFixed(4)}。`);
       }
 
-      const expectedClipCount = getSeedanceClipInputs(workingRecords, sceneReviews, productionAssets, job).length;
+      const expectedClipCount = getSeedanceClipInputs(workingRecords, sceneReviews, getEffectiveProductionAssetsForJob(job), job).length;
       const currentClipCount = getGeneratedClipCount(workingRecords, job.id);
 
-      if (expectedClipCount > 0 && currentClipCount < expectedClipCount) {
+      if (expectedClipCount === 0) {
+        throw new Error("找不到可用于 Seedance 2.0 的分镜场景，不能生成动态影片。请先生成脚本、分镜和场景图片。");
+      }
+
+      if (currentClipCount < expectedClipCount) {
         const clipResults = await generateSeedanceSceneClipsForJob(job, workingRecords);
         const clipNow = new Date().toISOString();
         const clipCostRM = clipResults.reduce((sum, result) => sum + result.costRM, 0);
         pipelineCostRM += clipCostRM;
         workingRecords = applyVideoClipGenerationResultsToRecords(workingRecords, job.id, clipResults, clipNow);
         setJobProcessRecords((currentRecords) => applyVideoClipGenerationResultsToRecords(currentRecords, job.id, clipResults, clipNow));
-        appendCaseActivity(job.id, "stage_updated", "Seedance scene clips generated", `${clipResults[0]?.model ?? "Seedance 2.0"} auto-generated ${clipResults.length} scene clip(s) before MP4. Cost RM ${clipCostRM.toFixed(4)}.`);
+        appendCaseActivity(job.id, "stage_updated", "Seedance 视频片段已生成", `${clipResults[0]?.model ?? "Seedance 2.0"} 已在合成 MP4 前自动生成 ${clipResults.length} 个场景片段。成本 RM ${clipCostRM.toFixed(4)}。`);
+      }
+
+      const readyClipCount = getGeneratedClipCount(workingRecords, job.id);
+
+      if (readyClipCount < expectedClipCount) {
+        throw new Error(`Seedance 2.0 视频片段不足：需要 ${expectedClipCount} 个场景片段，目前只有 ${readyClipCount} 个。系统不会用静态图片合成假影片，请先重新生成视频片段。`);
       }
 
       setJobProcessRecords((currentRecords) =>
@@ -3673,7 +4600,7 @@ export function App() {
           record.jobId === job.id && record.stageId === "compose"
             ? {
                 ...record,
-                output: "Rendering MP4 from scene clips/images, synced voiceover audio, BGM if available, and burned-in subtitles...",
+                output: "正在用场景片段/图片、同步配音、可用 BGM 和烧录字幕渲染 MP4...",
                 status: "working",
                 updatedAt: new Date().toISOString()
               }
@@ -3706,10 +4633,10 @@ export function App() {
       appendCaseActivity(
         job.id,
         "video_generated",
-        "Video generated",
+        "影片已生成",
         hasUploadTargets
-          ? `Final MP4 created at ${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}. Waiting for private upload approval.`
-          : `Final MP4 created at ${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}. No YouTube target configured, so this case stops at MP4/QC.`
+          ? `最终 MP4 已生成：${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}。等待私密上传审核。`
+          : `最终 MP4 已生成：${result.artifacts.finalVideo.publicUrl ?? result.artifacts.finalVideo.storagePath}。未配置 YouTube 目标，所以这个 Case 会停在 MP4/QC。`
       );
       setSelectedJobId(job.id);
       void handleRunQc({
@@ -3724,33 +4651,62 @@ export function App() {
         voiceover: result.artifacts.voiceover.publicUrl ?? result.artifacts.voiceover.storagePath
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Video generation failed.";
+      const message = error instanceof Error ? error.message : "影片生成失败。";
+      const videoClipFailure = error instanceof VideoClipGenerationError;
+      const partialResults = videoClipFailure ? error.partialResults : [];
+      const partialCostRM = partialResults.reduce((sum, result) => sum + result.costRM, 0);
+      const now = new Date().toISOString();
+
       setGenerationError(message);
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
           currentJob.id === job.id
             ? {
                 ...currentJob,
-                status: "FAILED",
-                updatedAt: new Date().toISOString()
+                actualCostRM: partialResults.length > 0 ? Number((currentJob.actualCostRM + partialCostRM).toFixed(4)) : currentJob.actualCostRM,
+                reviewStatus: videoClipFailure ? "needs_review" : currentJob.reviewStatus,
+                status: videoClipFailure ? currentJob.status : "FAILED",
+                updatedAt: now
               }
             : currentJob
         )
       );
       setJobProcessRecords((currentRecords) =>
-        currentRecords.map((record) =>
-          record.jobId === job.id && record.stageId === "compose"
-            ? {
+        (partialResults.length > 0 ? applyVideoClipGenerationResultsToRecords(currentRecords, job.id, partialResults, now, "failed", message) : currentRecords)
+          .map((record) => {
+            if (record.jobId !== job.id) {
+              return record;
+            }
+
+            if (videoClipFailure && record.stageId === "compose") {
+              return {
+                ...record,
+                notes: "等待失败的 Seedance 场景片段补齐后再合成 MP4。",
+                output: "Seedance 片段未齐，最终 MP4 已暂停。请先到「视频片段」页签重试失败场景。",
+                status: "pending",
+                updatedAt: now
+              };
+            }
+
+            if (!videoClipFailure && record.stageId === "compose") {
+              return {
                 ...record,
                 notes: message,
                 output: message,
                 status: "failed",
-                updatedAt: new Date().toISOString()
-              }
-            : record
-        )
+                updatedAt: now
+              };
+            }
+
+            return record;
+          })
       );
-      appendCaseActivity(job.id, "error", "Video generation failed", message);
+      appendCaseActivity(
+        job.id,
+        "error",
+        videoClipFailure ? "Seedance 片段未齐，MP4 暂停" : "影片生成失败",
+        partialResults.length > 0 ? `${message} 已保留 ${partialResults.length} 个成功片段。` : message
+      );
     } finally {
       setGeneratingCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3762,9 +4718,9 @@ export function App() {
     }
 
     if (apiState !== "online") {
-      const message = `API server is ${apiState}. QC needs ${apiBaseUrl}.`;
+      const message = `API 服务当前为 ${apiState}。QC 检查需要连接 ${apiBaseUrl}。`;
       setGenerationError(message);
-      appendCaseActivity(job.id, "error", "QC blocked", message);
+      appendCaseActivity(job.id, "error", "QC 被阻止", message);
       return;
     }
 
@@ -3775,7 +4731,7 @@ export function App() {
         record.jobId === job.id && record.stageId === "qc"
           ? {
               ...record,
-              output: "Running media, asset, audio, subtitle, and budget QC checks...",
+              output: "正在检查媒体、资产、音频、字幕和预算...",
               status: "working",
               updatedAt: new Date().toISOString()
             }
@@ -3814,9 +4770,9 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, report.passed ? "stage_updated" : "error", report.passed ? "QC passed" : "QC failed", report.summary);
+      appendCaseActivity(job.id, report.passed ? "stage_updated" : "error", report.passed ? "QC 通过" : "QC 失败", report.summary);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "QC report failed.";
+      const message = error instanceof Error ? error.message : "QC 报告生成失败。";
       setGenerationError(message);
       setJobProcessRecords((currentRecords) =>
         currentRecords.map((record) =>
@@ -3831,7 +4787,7 @@ export function App() {
             : record
         )
       );
-      appendCaseActivity(job.id, "error", "QC failed", message);
+      appendCaseActivity(job.id, "error", "QC 失败", message);
     } finally {
       setGeneratingQcCaseIds((currentIds) => currentIds.filter((id) => id !== job.id));
     }
@@ -3930,14 +4886,14 @@ export function App() {
           record.jobId === job.id && record.stageId === "publish"
             ? {
                 ...record,
-                output: "No YouTube targets configured. MP4 was approved locally and upload remains skipped.",
+                output: "未配置 YouTube 目标。MP4 已在本地审核通过，上传阶段保持跳过。",
                 status: "skipped",
                 updatedAt: now
               }
             : record
         )
       );
-      appendCaseActivity(job.id, "case_approved", "MP4 approved", "Human review approved this MP4. No YouTube target is configured, so production remains complete at MP4/QC.");
+      appendCaseActivity(job.id, "case_approved", "MP4 已审核通过", "人工审核已批准这个 MP4。当前未配置 YouTube 目标，所以生产会停在 MP4/QC 完成状态。");
       return;
     }
 
@@ -3966,7 +4922,7 @@ export function App() {
           : target
       )
     );
-    appendCaseActivity(job.id, "case_approved", "MP4 approved", "Human review approved this MP4 for private upload targets.");
+    appendCaseActivity(job.id, "case_approved", "MP4 已审核通过", "人工审核已批准这个 MP4，可继续执行已绑定目标的私密上传。");
   }
 
   function uploadPrivateTarget(job: AdminJob, targetId: string) {
@@ -4047,7 +5003,7 @@ export function App() {
   const selectedJobActivities = selectedJob ? caseActivities.filter((activity) => activity.jobId === selectedJob.id) : [];
   const selectedJobPublishTargets = selectedJob ? casePublishTargets.filter((target) => target.jobId === selectedJob.id) : [];
   const selectedJobSceneReviews = selectedJob ? sceneReviews.filter((review) => review.jobId === selectedJob.id).sort((a, b) => a.sceneId - b.sceneId) : [];
-  const selectedJobProductionAssets = selectedJob ? productionAssets.filter((asset) => asset.jobId === selectedJob.id).sort((a, b) => (a.sceneId ?? 0) - (b.sceneId ?? 0) || a.label.localeCompare(b.label)) : [];
+  const selectedJobProductionAssets = selectedJob ? getEffectiveProductionAssetsForJob(selectedJob) : [];
   const selectedJobQcReport = selectedJob ? caseQcReports.find((report) => report.jobId === selectedJob.id) ?? null : null;
   const selectedCharacter = selectedJob?.characterId ? characterProfiles.find((character) => character.id === selectedJob.characterId) ?? null : null;
   const canUpload = accounts.some((account) => account.status === "connected");
@@ -4121,7 +5077,7 @@ export function App() {
             ) : null}
             <StatusButton
               state={apiState}
-              label={apiState === "online" ? `API ${health?.env ?? "online"}` : apiState === "offline" ? "API 离线" : "检查 API"}
+              label={apiState === "online" ? `API ${formatApiEnvironmentLabel(health?.env)}` : apiState === "offline" ? "API 离线" : "检查 API"}
               onClick={() => void refreshOperationalStatus()}
             />
             <StatusButton
@@ -4153,6 +5109,7 @@ export function App() {
             schedules={productionSchedules}
             storedVideos={storedVideos}
             summary={summary}
+            onNavigate={switchView}
             onOpenCase={(id) => {
               setSelectedJobId(id);
               switchView("cases");
@@ -4162,6 +5119,7 @@ export function App() {
 
         {activeView === "automation" ? (
           <AutomationPage
+            budgetSettings={budgetSettings}
             endpoints={aiToolEndpoints}
             jobs={jobs}
             producerAgent={staffAgents[0] ?? null}
@@ -4218,6 +5176,7 @@ export function App() {
             assets={productionAssets}
             convertEpisodeToCase={(series, episode) => void handleConvertSeriesEpisodeToCase(series, episode)}
             createSeries={() => void handleCreateSeries()}
+            createStoryWorld={(input) => handleCreateStoryWorld(input)}
             deleteSeries={(id) => void handleDeleteSeries(id)}
             episodes={seriesEpisodes}
             error={seriesError}
@@ -4234,6 +5193,8 @@ export function App() {
             selectSeries={selectSeries}
             selectedSeriesId={selectedSeriesId}
             series={contentSeries}
+            storyWorlds={storyWorlds}
+            deleteEpisode={(seriesId, episodeId) => void handleDeleteSeriesEpisode(seriesId, episodeId)}
             updateEpisode={(seriesId, episodeId, patch) => handleUpdateSeriesEpisode(seriesId, episodeId, patch)}
             updateSeries={(id, patch) => handleUpdateSeries(id, patch)}
           />
@@ -4259,9 +5220,18 @@ export function App() {
             costLimitRM={costLimitRM}
             characters={characterProfiles}
             draftBackgroundAssetId={selectedBackgroundAssetId}
+            draftCharacterAssetIds={selectedCharacterAssetIds}
             draftCharacterId={selectedCharacterId}
             draftCharacterAssetId={selectedCharacterAssetId}
+            draftSceneAssetIds={selectedSceneAssetIds}
             draftReferenceAssets={productionAssets}
+            draftSeriesId={selectedCaseSeriesId}
+            draftEpisodeId={selectedCaseEpisodeId}
+            draftStoryWorldId={selectedCaseStoryWorldId}
+            draftLessonOrTheme={caseLessonOrTheme}
+            draftGoal={caseGoal}
+            draftConflict={caseConflict}
+            draftTone={caseTone}
             clearDraftPreview={() => setCaseDraftPreview(null)}
             confirmDraftCase={handleConfirmDraftCase}
             createCase={handleConfirmDraftCase}
@@ -4307,6 +5277,7 @@ export function App() {
             productionSchedules={productionSchedules}
             approveCaseForPublishing={approveCaseForPublishing}
             openAssetPlanForJob={openAssetPlanForJob}
+            openCostSettings={() => switchView("cost")}
             uploadPrivateTarget={uploadPrivateTarget}
             setCostLimitRM={(value) => {
               setCostLimitRM(value);
@@ -4343,15 +5314,105 @@ export function App() {
             }}
             setDraftCharacterAssetId={(id) => {
               setSelectedCharacterAssetId(id);
+              setSelectedCharacterAssetIds(id ? [id] : []);
               setCaseDraftPreview(null);
             }}
             setDraftBackgroundAssetId={(id) => {
               setSelectedBackgroundAssetId(id);
+              setSelectedSceneAssetIds(id ? [id] : []);
+              setCaseDraftPreview(null);
+            }}
+            setDraftCharacterAssetIds={(ids) => {
+              setSelectedCharacterAssetIds(ids);
+              setSelectedCharacterAssetId(ids[0] ?? null);
+              setCaseDraftPreview(null);
+            }}
+            setDraftSceneAssetIds={(ids) => {
+              setSelectedSceneAssetIds(ids);
+              setSelectedBackgroundAssetId(ids[0] ?? null);
+              setCaseDraftPreview(null);
+            }}
+            setDraftSeriesId={(id) => {
+              setSelectedCaseSeriesId(id);
+              const nextSeries = contentSeries.find((series) => series._id === id) ?? null;
+              const nextStoryWorld = nextSeries?.storyWorldId ? storyWorlds.find((storyWorld) => storyWorld._id === nextSeries.storyWorldId) ?? null : null;
+              const splitAssetIds = splitReadyReferenceAssetIdsByType(mergeIds(
+                nextSeries?.referenceAssetIds ?? [],
+                nextStoryWorld?.recurringCharacterAssetIds ?? [],
+                nextStoryWorld?.defaultSceneAssetIds ?? []
+              ));
+
+              setSelectedCaseStoryWorldId(nextSeries?.storyWorldId ?? "");
+              setSelectedCharacterAssetIds(splitAssetIds.characterAssetIds);
+              setSelectedSceneAssetIds(splitAssetIds.sceneAssetIds);
+              setSelectedCharacterAssetId(splitAssetIds.characterAssetIds[0] ?? null);
+              setSelectedBackgroundAssetId(splitAssetIds.sceneAssetIds[0] ?? null);
+              setCaseDraftPreview(null);
+            }}
+            setDraftEpisodeId={(id) => {
+              const nextEpisode = seriesEpisodes.find((episode) => episode._id === id) ?? null;
+              setSelectedCaseEpisodeId(id);
+              if (nextEpisode) {
+                const activeSeries = contentSeries.find((series) => series._id === selectedCaseSeriesId) ?? null;
+                const activeStoryWorld = selectedCaseStoryWorldId || activeSeries?.storyWorldId
+                  ? storyWorlds.find((storyWorld) => storyWorld._id === (selectedCaseStoryWorldId || activeSeries?.storyWorldId)) ?? null
+                  : null;
+                const episodeHasExplicitAssets = nextEpisode.selectedCharacterAssetIds.length > 0 || nextEpisode.selectedSceneAssetIds.length > 0;
+                const splitAssetIds = splitReadyReferenceAssetIdsByType(
+                  episodeHasExplicitAssets
+                    ? mergeIds(nextEpisode.selectedCharacterAssetIds, nextEpisode.selectedSceneAssetIds)
+                    : mergeIds(activeSeries?.referenceAssetIds ?? [], activeStoryWorld?.recurringCharacterAssetIds ?? [], activeStoryWorld?.defaultSceneAssetIds ?? [])
+                );
+
+                setTopic(nextEpisode.title);
+                setCaseLessonOrTheme(nextEpisode.lessonOrTheme || nextEpisode.moralLesson);
+                setCaseGoal(nextEpisode.promptSeed);
+                setCaseConflict(nextEpisode.synopsis);
+                setSelectedCharacterAssetIds(splitAssetIds.characterAssetIds);
+                setSelectedSceneAssetIds(splitAssetIds.sceneAssetIds);
+                setSelectedCharacterAssetId(splitAssetIds.characterAssetIds[0] ?? null);
+                setSelectedBackgroundAssetId(splitAssetIds.sceneAssetIds[0] ?? null);
+              }
+              setCaseDraftPreview(null);
+            }}
+            setDraftStoryWorldId={(id) => {
+              const nextStoryWorld = storyWorlds.find((storyWorld) => storyWorld._id === id) ?? null;
+              const splitAssetIds = splitReadyReferenceAssetIdsByType(mergeIds(
+                nextStoryWorld?.recurringCharacterAssetIds ?? [],
+                nextStoryWorld?.defaultSceneAssetIds ?? []
+              ));
+
+              setSelectedCaseStoryWorldId(id);
+              if (splitAssetIds.characterAssetIds.length > 0) {
+                setSelectedCharacterAssetIds((currentIds) => mergeIds(currentIds, splitAssetIds.characterAssetIds));
+                setSelectedCharacterAssetId((currentId) => currentId ?? splitAssetIds.characterAssetIds[0] ?? null);
+              }
+              if (splitAssetIds.sceneAssetIds.length > 0) {
+                setSelectedSceneAssetIds((currentIds) => mergeIds(currentIds, splitAssetIds.sceneAssetIds));
+                setSelectedBackgroundAssetId((currentId) => currentId ?? splitAssetIds.sceneAssetIds[0] ?? null);
+              }
+              setCaseDraftPreview(null);
+            }}
+            setDraftLessonOrTheme={(value) => {
+              setCaseLessonOrTheme(value);
+              setCaseDraftPreview(null);
+            }}
+            setDraftGoal={(value) => {
+              setCaseGoal(value);
+              setCaseDraftPreview(null);
+            }}
+            setDraftConflict={(value) => {
+              setCaseConflict(value);
+              setCaseDraftPreview(null);
+            }}
+            setDraftTone={(value) => {
+              setCaseTone(value);
               setCaseDraftPreview(null);
             }}
             storedVideos={storedVideos}
             series={contentSeries}
             seriesEpisodes={seriesEpisodes}
+            storyWorlds={storyWorlds}
             templateType={templateType}
             toolProviderSettings={toolProviderSettings}
             topic={topic}
@@ -4398,6 +5459,8 @@ export function App() {
           <WorkflowPage
             agents={staffAgents}
             endpoints={aiToolEndpoints}
+            openAgentSettings={() => switchView("agents")}
+            openKeySettings={() => switchView("keys")}
             providerKeys={providerKeys}
             reportDirtyState={reportDirtyDraft}
             resetEndpoints={() => setAiToolEndpoints(resetAiToolEndpoints())}
@@ -4460,7 +5523,21 @@ export function App() {
           />
         ) : null}
 
-        {activeView === "cost" ? <CostPage jobs={jobs} storedVideos={storedVideos} summary={summary} /> : null}
+        {activeView === "cost" ? (
+          <CostPage
+            budgetSettings={budgetSettings}
+            jobs={jobs}
+            openCase={(id) => {
+              setSelectedJobId(id);
+              switchView("cases");
+            }}
+            reportDirtyState={reportDirtyDraft}
+            storedVideos={storedVideos}
+            summary={summary}
+            updateCaseDetails={updateCaseDetails}
+            updateBudgetSettings={updateBudgetSettings}
+          />
+        ) : null}
       </section>
     </main>
   );

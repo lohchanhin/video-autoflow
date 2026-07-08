@@ -147,12 +147,36 @@ function normalizeInput(input: GenerateBgmRequest): NormalizedBgmInput {
     topic
   };
 
+  if (input.apiStyle?.trim()) {
+    normalized.apiStyle = input.apiStyle.trim();
+  }
+
+  if (input.baseUrl?.trim()) {
+    normalized.baseUrl = input.baseUrl.trim();
+  }
+
+  if (input.cost) {
+    normalized.cost = input.cost;
+  }
+
   if (input.jobId?.trim()) {
     normalized.jobId = input.jobId.trim();
   }
 
+  if (input.model?.trim()) {
+    normalized.model = input.model.trim();
+  }
+
   if (input.mood?.trim()) {
     normalized.mood = input.mood.trim();
+  }
+
+  if (input.params) {
+    normalized.params = input.params;
+  }
+
+  if (input.provider?.trim()) {
+    normalized.provider = input.provider.trim();
   }
 
   return normalized;
@@ -248,10 +272,11 @@ async function extractErrorMessage(response: Response): Promise<string> {
   if (contentType.includes("application/json")) {
     const body = (await response.json().catch(() => ({}))) as unknown;
     const message = extractJsonErrorMessage(body);
-    return message ? `${message} (HTTP ${response.status})` : `${safeStringify(body) || response.statusText} (HTTP ${response.status})`;
+    return message ? `${normalizeElevenLabsErrorMessage(message)} (HTTP ${response.status})` : `${safeStringify(body) || response.statusText} (HTTP ${response.status})`;
   }
 
-  return (await response.text().catch(() => "")).trim() || response.statusText;
+  const text = (await response.text().catch(() => "")).trim() || response.statusText;
+  return normalizeElevenLabsErrorMessage(text);
 }
 
 function extractJsonErrorMessage(value: unknown): string | null {
@@ -313,6 +338,23 @@ function formatValidationDetail(value: unknown): string | null {
     .filter(Boolean);
 
   return messages.length > 0 ? messages.join("; ") : null;
+}
+
+function normalizeElevenLabsErrorMessage(message: string): string {
+  const trimmed = message.trim();
+  const quotaMatch = /exceeds your API key \(([^)]+)\) quota of ([\d,]+).*?You have ([\d,]+) credits remaining, while ([\d,]+) credits are required/iu.exec(trimmed);
+
+  if (quotaMatch) {
+    const [, keyName, keyLimit, remainingCredits, requiredCredits] = quotaMatch;
+    return [
+      trimmed,
+      `这是 ElevenLabs API key「${keyName}」自己的用量上限，不是账户 top-up balance。`,
+      `这把 key 的 quota 是 ${keyLimit} credits，目前剩 ${remainingCredits}，本次 BGM 需要 ${requiredCredits}。`,
+      "请到 ElevenLabs > API Keys 编辑这把 key，把 Usage Limits / Monthly credits 调高或设为 Unlimited；也可以缩短 BGM 时长后重试。"
+    ].join(" ");
+  }
+
+  return trimmed;
 }
 
 function safeStringify(value: unknown): string {

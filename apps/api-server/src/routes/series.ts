@@ -3,17 +3,20 @@ import { config } from "@ai-content-factory/config";
 import {
   connectMongoDatabase,
   createContentSeriesRepository,
+  createStoryWorldsRepository,
   type ContentSeriesCreateInput,
   type ContentSeriesPatchInput,
   type ContentSeriesRepository,
   type MongoDatabaseConnection,
-  type SeriesEpisodeIdeaPatchInput
+  type SeriesEpisodeIdeaPatchInput,
+  type StoryWorldsRepository
 } from "@ai-content-factory/database";
 import {
   contentSeriesStatuses,
   seriesEpisodeIdeaStatuses,
   type ContentSeries,
-  type ContentTemplateType
+  type ContentTemplateType,
+  type StoryWorld
 } from "@ai-content-factory/shared-types";
 import { randomUUID } from "node:crypto";
 import { ApiError } from "../errors.js";
@@ -26,6 +29,7 @@ export interface CreateSeriesRouterOptions {
   contentSeriesRepository?: ContentSeriesRepository | undefined;
   costRecorder?: CostRecorder | undefined;
   episodeIdeaService?: SeriesEpisodeIdeaService | undefined;
+  storyWorldsRepository?: StoryWorldsRepository | undefined;
 }
 
 export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
@@ -125,7 +129,8 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           throw new ApiError("Series not found.", 404, "SERIES_NOT_FOUND");
         }
 
-        const generated = await episodeIdeaService.generateEpisodeIdeas({ count, series });
+        const storyWorld = await findStoryWorldForSeries(options, series);
+        const generated = await episodeIdeaService.generateEpisodeIdeas({ count, series, storyWorld });
         const episodes = await repository.createEpisodeIdeas(series._id, generated.ideas);
 
         await options.costRecorder?.record({
@@ -139,13 +144,15 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           pricingStatus: generated.provider === "openai" ? scriptPricingStatus(generated.usage.pricingMode, generated.costRM, generated.usage.inputTokens + generated.usage.outputTokens) : "local_zero",
           quantity: generated.usage.inputTokens + generated.usage.outputTokens,
           service: "script",
+          toolType: "llm",
           unit: "tokens",
           usage: {
             episodeCount: episodes.length,
             inputTokens: generated.usage.inputTokens,
             outputTokens: generated.usage.outputTokens,
             pricingMode: generated.usage.pricingMode,
-            seriesId: series._id
+            seriesId: series._id,
+            storyWorldId: storyWorld?._id ?? null
           }
         });
 
@@ -189,6 +196,30 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
     }
   });
 
+  router.delete("/series/:id/episodes/:episodeId", async (req: Request, res: Response, next) => {
+    try {
+      const seriesId = paramString(req.params.id);
+      const episodeId = paramString(req.params.episodeId);
+      const deleted = await withContentSeriesRepository(options, async (repository) => {
+        const series = await repository.findSeriesById(seriesId);
+
+        if (!series) {
+          throw new ApiError("Series not found.", 404, "SERIES_NOT_FOUND");
+        }
+
+        return repository.deleteEpisodeIdea(seriesId, episodeId);
+      });
+
+      if (!deleted) {
+        throw new ApiError("Episode idea not found.", 404, "EPISODE_IDEA_NOT_FOUND");
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/series/:id/episodes/:episodeId/convert-case", async (req: Request, res: Response, next) => {
     try {
       const seriesId = paramString(req.params.id);
@@ -206,8 +237,8 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           throw new ApiError("Episode idea not found.", 404, "EPISODE_IDEA_NOT_FOUND");
         }
 
-        if (episode.status !== "approved") {
-          throw new ApiError("Only approved episode ideas can be converted to Case.", 409, "EPISODE_NOT_APPROVED");
+        if (episode.status !== "approved" && episode.status !== "converted_to_case") {
+          throw new ApiError("Only approved or previously converted episode ideas can be converted to Case.", 409, "EPISODE_NOT_APPROVED");
         }
 
         const caseId = parseCaseId(req.body);
@@ -216,8 +247,10 @@ export function createSeriesRouter(options: CreateSeriesRouterOptions): Router {
           status: "converted_to_case"
         });
 
+        const storyWorld = await findStoryWorldForSeries(options, series);
+
         return {
-          caseSeed: buildCaseSeed(series, updatedEpisode ?? episode, caseId),
+          caseSeed: buildCaseSeed(series, updatedEpisode ?? episode, caseId, storyWorld),
           episode: updatedEpisode ?? episode,
           series,
           status: "EPISODE_CONVERTED_TO_CASE" as const
@@ -272,6 +305,26 @@ async function withContentSeriesRepository<T>(
   }
 }
 
+async function findStoryWorldForSeries(options: CreateSeriesRouterOptions, series: ContentSeries): Promise<StoryWorld | null> {
+  if (!series.storyWorldId) {
+    return null;
+  }
+
+  if (options.storyWorldsRepository) {
+    return options.storyWorldsRepository.findById(series.storyWorldId);
+  }
+
+  let connection: MongoDatabaseConnection | null = null;
+
+  try {
+    connection = await (options.connectDatabase ?? defaultConnectDatabase)();
+    const repository = createStoryWorldsRepository(connection);
+    return await repository.findById(series.storyWorldId);
+  } finally {
+    await connection?.close();
+  }
+}
+
 async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
   return connectMongoDatabase({
     dbName: config.mongoDbName,
@@ -280,14 +333,28 @@ async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
   });
 }
 
-function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesson: string; promptSeed: string; sourceStory: string; synopsis: string; title: string }, caseId: string) {
+function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesson: string; promptSeed: string; sourceStory: string; synopsis: string; title: string }, caseId: string, storyWorld: StoryWorld | null = null) {
+  const episodeWithOptionalFields = episode as {
+    continuityNote?: string;
+    episodeNo?: number | null;
+    interactiveEnding?: string;
+    lessonOrTheme?: string;
+    serialHook?: string;
+    selectedCharacterAssetIds?: string[];
+    selectedSceneAssetIds?: string[];
+  };
+  const referenceAssetIds = uniqueStrings(series.referenceAssetIds);
+  const characterAssetIds = uniqueStrings(episodeWithOptionalFields.selectedCharacterAssetIds ?? []);
+  const sceneAssetIds = uniqueStrings(episodeWithOptionalFields.selectedSceneAssetIds ?? []);
+  const allReferenceAssetIds = uniqueStrings([...referenceAssetIds, ...characterAssetIds, ...sceneAssetIds]);
   const prompt = [
     `系列：${series.name}`,
     `单集题目：${episode.title}`,
-    `核心看点/价值：${episode.moralLesson}`,
+    `核心看点/价值：${episodeWithOptionalFields.lessonOrTheme || episode.moralLesson}`,
     `来源/灵感：${episode.sourceStory}`,
     `剧情梗概：${episode.synopsis}`,
     `制作种子：${episode.promptSeed}`,
+    episodeWithOptionalFields.interactiveEnding ? `互动结尾：${episodeWithOptionalFields.interactiveEnding}` : "",
     "",
     `系列定位：${series.description}`,
     `系列目标/价值：${series.values}`,
@@ -296,10 +363,18 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
     `BGM 风格：${series.musicStyle}`,
     `安全规则：${series.safetyRules}`,
     "",
-    "请严格按照以上系列设定生成原创、可拍、可审核的短视频脚本和分镜。不要额外强加未在系列中指定的题材、受众、语气或限制。"
+    "请严格按照以上系列设定生成原创、可拍、可审核的短视频脚本和分镜。不要额外强加未在系列中指定的题材、受众、语气或限制。",
+    `Narrative mode: ${series.narrativeMode}`,
+    `Drama intensity: ${series.dramaIntensity}`,
+    series.continuityRules ? `Continuity rules: ${series.continuityRules}` : "",
+    episodeWithOptionalFields.continuityNote ? `Continuity note: ${episodeWithOptionalFields.continuityNote}` : "",
+    episodeWithOptionalFields.serialHook ? `Serial hook: ${episodeWithOptionalFields.serialHook}` : ""
   ].join("\n");
 
   return {
+    backgroundAssetId: sceneAssetIds[0] ?? null,
+    characterAssetId: characterAssetIds[0] ?? null,
+    characterAssetIds,
     costLimitRM: 7.5,
     durationSeconds: series.durationSeconds,
     episodeId: episode._id,
@@ -307,9 +382,67 @@ function buildCaseSeed(series: ContentSeries, episode: { _id: string; moralLesso
     id: caseId,
     language: series.language,
     prompt,
-    referenceAssetIds: series.referenceAssetIds,
+    productionBrief: {
+      episodeContext: {
+        continuityNote: episodeWithOptionalFields.continuityNote ?? "",
+        episodeId: episode._id,
+        episodeNo: episodeWithOptionalFields.episodeNo ?? null,
+        interactiveEnding: episodeWithOptionalFields.interactiveEnding ?? "",
+        lessonOrTheme: episodeWithOptionalFields.lessonOrTheme || episode.moralLesson,
+        promptSeed: episode.promptSeed,
+        serialHook: episodeWithOptionalFields.serialHook ?? "",
+        synopsis: episode.synopsis,
+        title: episode.title
+      },
+      lessonOrTheme: episodeWithOptionalFields.lessonOrTheme || episode.moralLesson,
+      requiredBeats: [episode.synopsis, episode.promptSeed, episodeWithOptionalFields.interactiveEnding ?? ""].filter(Boolean),
+      selectedCharacters: characterAssetIds.map((assetId) => ({
+        assetId,
+        label: assetId,
+        visualIdentity: "Use the approved character design asset from the asset library."
+      })),
+      selectedScenes: sceneAssetIds.map((assetId) => ({
+        assetId,
+        label: assetId,
+        visualRules: "Use the approved scene design asset from the asset library."
+      })),
+      seriesContext: {
+        audience: series.audience,
+        continuityRules: series.continuityRules,
+        contentType: series.contentType,
+        description: series.description,
+        dramaIntensity: series.dramaIntensity,
+        musicStyle: series.musicStyle,
+        name: series.name,
+        narrativeMode: series.narrativeMode,
+        safetyRules: series.safetyRules,
+        seriesId: series._id,
+        tone: series.tone,
+        values: series.values,
+        visualStyle: series.visualStyle
+      },
+      storyWorldContext: storyWorld ? {
+        description: storyWorld.description,
+        name: storyWorld.name,
+        relationshipMap: storyWorld.relationshipMap,
+        safetyRules: storyWorld.safetyRules,
+        storyWorldId: storyWorld._id,
+        visualStyle: storyWorld.visualStyle
+      } : series.storyWorldId ? { storyWorldId: series.storyWorldId } : undefined,
+      tone: series.tone,
+      visualContinuityRules: [
+        storyWorld?.description,
+        storyWorld?.relationshipMap,
+        series.continuityRules,
+        series.visualStyle,
+        "Reuse selected recurring characters and scene assets when provided. Do not swap the story world, cast, or main setting unless the episode explicitly asks for it."
+      ].filter(Boolean)
+    },
+    referenceAssetIds: allReferenceAssetIds,
     sceneCount: series.sceneCount,
+    sceneAssetIds,
     seriesId: series._id,
+    storyWorldId: series.storyWorldId,
     templateType: inferTemplateTypeFromSeries(series),
     topic: episode.title
   };
@@ -328,17 +461,21 @@ function parseSeriesCreate(body: unknown): ContentSeriesCreateInput {
 
   return {
     audience: optionalString(body.audience),
+    continuityRules: optionalString(body.continuityRules),
     contentType: optionalString(body.contentType),
     description: optionalString(body.description),
+    dramaIntensity: parseDramaIntensity(body.dramaIntensity),
     durationSeconds: numberFromUnknown(body.durationSeconds, 45),
     id: optionalString(body.id),
     language: body.language === "en-US" ? "en-US" : "zh-CN",
     musicStyle: optionalString(body.musicStyle),
     name,
+    narrativeMode: parseNarrativeMode(body.narrativeMode),
     referenceAssetIds: stringArrayFromUnknown(body.referenceAssetIds),
     safetyRules: optionalString(body.safetyRules),
     sceneCount: numberFromUnknown(body.sceneCount, 5),
     status: parseSeriesStatus(body.status),
+    storyWorldId: body.storyWorldId === null ? null : optionalString(body.storyWorldId),
     tone: optionalString(body.tone),
     values: optionalString(body.values),
     visualStyle: optionalString(body.visualStyle)
@@ -354,16 +491,20 @@ function parseSeriesPatch(body: unknown): ContentSeriesPatchInput {
   const status = parseSeriesStatus(body.status);
 
   if (body.audience !== undefined) patch.audience = stringFromUnknown(body.audience, "");
+  if (body.continuityRules !== undefined) patch.continuityRules = stringFromUnknown(body.continuityRules, "");
   if (body.contentType !== undefined) patch.contentType = stringFromUnknown(body.contentType, "");
   if (body.description !== undefined) patch.description = stringFromUnknown(body.description, "");
+  if (body.dramaIntensity !== undefined) patch.dramaIntensity = parseDramaIntensity(body.dramaIntensity);
   if (body.durationSeconds !== undefined) patch.durationSeconds = numberFromUnknown(body.durationSeconds, 45);
   if (body.language !== undefined) patch.language = body.language === "en-US" ? "en-US" : "zh-CN";
   if (body.musicStyle !== undefined) patch.musicStyle = stringFromUnknown(body.musicStyle, "");
   if (body.name !== undefined) patch.name = stringFromUnknown(body.name, "");
+  if (body.narrativeMode !== undefined) patch.narrativeMode = parseNarrativeMode(body.narrativeMode);
   if (body.referenceAssetIds !== undefined) patch.referenceAssetIds = stringArrayFromUnknown(body.referenceAssetIds);
   if (body.safetyRules !== undefined) patch.safetyRules = stringFromUnknown(body.safetyRules, "");
   if (body.sceneCount !== undefined) patch.sceneCount = numberFromUnknown(body.sceneCount, 5);
   if (status) patch.status = status;
+  if (body.storyWorldId !== undefined) patch.storyWorldId = body.storyWorldId === null ? null : stringFromUnknown(body.storyWorldId, "");
   if (body.tone !== undefined) patch.tone = stringFromUnknown(body.tone, "");
   if (body.values !== undefined) patch.values = stringFromUnknown(body.values, "");
   if (body.visualStyle !== undefined) patch.visualStyle = stringFromUnknown(body.visualStyle, "");
@@ -381,9 +522,16 @@ function parseEpisodePatch(body: unknown): SeriesEpisodeIdeaPatchInput {
 
   if (body.ageRange !== undefined) patch.ageRange = stringFromUnknown(body.ageRange, "");
   if (body.caseId !== undefined) patch.caseId = body.caseId === null ? null : stringFromUnknown(body.caseId, "");
+  if (body.continuityNote !== undefined) patch.continuityNote = stringFromUnknown(body.continuityNote, "");
+  if (body.episodeNo !== undefined) patch.episodeNo = body.episodeNo === null ? null : numberFromUnknown(body.episodeNo, 1);
+  if (body.interactiveEnding !== undefined) patch.interactiveEnding = stringFromUnknown(body.interactiveEnding, "");
+  if (body.lessonOrTheme !== undefined) patch.lessonOrTheme = stringFromUnknown(body.lessonOrTheme, "");
   if (body.moralLesson !== undefined) patch.moralLesson = stringFromUnknown(body.moralLesson, "");
   if (body.promptSeed !== undefined) patch.promptSeed = stringFromUnknown(body.promptSeed, "");
   if (body.riskNotes !== undefined) patch.riskNotes = stringFromUnknown(body.riskNotes, "");
+  if (body.serialHook !== undefined) patch.serialHook = stringFromUnknown(body.serialHook, "");
+  if (body.selectedCharacterAssetIds !== undefined) patch.selectedCharacterAssetIds = stringArrayFromUnknown(body.selectedCharacterAssetIds);
+  if (body.selectedSceneAssetIds !== undefined) patch.selectedSceneAssetIds = stringArrayFromUnknown(body.selectedSceneAssetIds);
   if (body.sourceStory !== undefined) patch.sourceStory = stringFromUnknown(body.sourceStory, "");
   if (status) patch.status = status;
   if (body.synopsis !== undefined) patch.synopsis = stringFromUnknown(body.synopsis, "");
@@ -422,6 +570,18 @@ function parseEpisodeStatus(value: unknown) {
   return typeof value === "string" && (seriesEpisodeIdeaStatuses as readonly string[]).includes(value) ? value as (typeof seriesEpisodeIdeaStatuses)[number] : undefined;
 }
 
+function parseNarrativeMode(value: unknown) {
+  return value === "serialized" ? "serialized" : "standalone";
+}
+
+function parseDramaIntensity(value: unknown) {
+  if (value === "low" || value === "high" || value === "melodrama") {
+    return value;
+  }
+
+  return "medium";
+}
+
 function paramString(value: string | string[] | undefined): string {
   const id = Array.isArray(value) ? value[0] : value;
 
@@ -454,6 +614,10 @@ function stringArrayFromUnknown(value: unknown): string[] {
     return [];
   }
 
+  return uniqueStrings(value);
+}
+
+function uniqueStrings(value: unknown[]): string[] {
   return value
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .map((item) => item.trim())

@@ -2,7 +2,7 @@ services:
   api-server:
     image: node:22-bookworm-slim
     working_dir: /workspace
-    command: sh -c "corepack enable && corepack pnpm --filter @ai-content-factory/api-server start"
+    command: sh -c "corepack enable && corepack pnpm --filter @ai-content-factory/api-server build && corepack pnpm --filter @ai-content-factory/api-server start"
     restart: unless-stopped
     ports:
       - "4000:4000"
@@ -26,7 +26,7 @@ services:
   admin-web:
     image: node:22-bookworm-slim
     working_dir: /workspace
-    command: sh -c "corepack enable && corepack pnpm --filter @ai-content-factory/admin-web exec vite preview --host 0.0.0.0 --port 5173"
+    command: sh -c "corepack enable && corepack pnpm --filter @ai-content-factory/admin-web build && corepack pnpm --filter @ai-content-factory/admin-web exec vite preview --host 0.0.0.0 --port 5173"
     restart: unless-stopped
     ports:
       - "5173:5173"

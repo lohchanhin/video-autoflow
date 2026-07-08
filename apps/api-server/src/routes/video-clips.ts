@@ -48,6 +48,7 @@ export function createVideoClipsRouter(options: CreateVideoClipsRouterOptions): 
         pricingStatus: typeof totalTokens === "number" && totalTokens > 0 ? "actual_usage" : response.costRM > 0 ? "configured_rate" : "pricing_missing",
         quantity: typeof totalTokens === "number" && totalTokens > 0 ? totalTokens : response.clip.durationSeconds,
         service: "video",
+        toolType: "video",
         unit: typeof totalTokens === "number" && totalTokens > 0 ? "tokens" : "seconds",
         usage: response.usage
       });
@@ -73,18 +74,24 @@ async function hydrateSeedanceInputWithMongoAssets(options: CreateVideoClipsRout
   );
 
   const selectedSceneId = input.sceneId ?? firstSceneIdFromAssets(assets) ?? 1;
-  const firstFrame = findAssetByRole(assets, "first_frame", selectedSceneId);
-  const lastFrame = findAssetByRole(assets, "last_frame", selectedSceneId);
-  const referenceImageUrls = assets
-    .filter((asset) => asset.role === "reference_image" && (asset.sceneId === null || asset.sceneId === selectedSceneId) && asset.url.trim())
+  const hydratedReferenceImageUrls = assets
+    .filter((asset) =>
+      asset.role === "reference_image" &&
+      asset.type !== "first_frame" &&
+      asset.type !== "last_frame" &&
+      (asset.sceneId === null || asset.sceneId === selectedSceneId) &&
+      asset.url.trim()
+    )
     .map((asset) => asset.url.trim())
-    .filter((url, index, urls) => url !== firstFrame?.url && url !== lastFrame?.url && urls.indexOf(url) === index)
+    .filter((url, index, urls) => url !== input.imageUrl && url !== input.lastFrameImageUrl && urls.indexOf(url) === index)
     .slice(0, 8);
+  const hasFrameMedia = Boolean(input.imageUrl || input.lastFrameImageUrl);
+  const referenceImageUrls = hasFrameMedia ? [] : hydratedReferenceImageUrls;
 
   return {
     ...input,
-    imageUrl: firstFrame?.url || input.imageUrl,
-    lastFrameImageUrl: lastFrame?.url || input.lastFrameImageUrl,
+    imageUrl: input.imageUrl,
+    lastFrameImageUrl: input.lastFrameImageUrl,
     referenceImageUrls,
     sceneId: selectedSceneId
   };
@@ -115,10 +122,6 @@ async function defaultConnectDatabase(): Promise<MongoDatabaseConnection> {
     mongoUri: config.mongoUri,
     serverSelectionTimeoutMS: 3000
   });
-}
-
-function findAssetByRole(assets: ProductionAsset[], role: "first_frame" | "last_frame", sceneId: number): ProductionAsset | undefined {
-  return assets.find((asset) => asset.role === role && asset.sceneId === sceneId && asset.url.trim()) ?? assets.find((asset) => asset.role === role && asset.sceneId === null && asset.url.trim());
 }
 
 function firstSceneIdFromAssets(assets: ProductionAsset[]): number | undefined {

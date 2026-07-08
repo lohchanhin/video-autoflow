@@ -1,4 +1,5 @@
 import type { ProductionAsset, ProductionAssetRole, ProductionAssetType } from "@ai-content-factory/shared-types";
+import { resolveFirstMediaUrl } from "./media-url.js";
 
 export type ProductionAssetReadinessState = "usable" | "needs_review" | "needs_generation" | "needs_routing" | "blocked";
 
@@ -16,7 +17,7 @@ export function evaluateProductionAssetReadiness(asset: ProductionAsset): Produc
   const blockers: string[] = [];
   const warnings: string[] = [];
   const expectedRole = getExpectedAssetRole(asset.type);
-  const hasUrl = Boolean(asset.url.trim());
+  const hasUrl = Boolean(resolveFirstMediaUrl([asset.url, asset.storagePath]));
   const hasPrompt = Boolean(asset.prompt.trim());
 
   if (!hasPrompt && asset.type !== "bgm_reference") {

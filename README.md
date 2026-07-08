@@ -83,6 +83,10 @@ idea -> outline -> script -> storyboard -> visual/design assets -> images
 
 Video API clips are optional. The system can still compose an MP4 from images, TTS, BGM, and subtitles.
 
+## Logic Architecture
+
+The current architecture source of truth is [docs/LOGIC_ARCHITECTURE.md](docs/LOGIC_ARCHITECTURE.md). It defines the product layers, MongoDB business objects, Case lifecycle, asset reference flow, tool routing, cost control, automation, publishing matrix, and Mermaid diagrams that should guide implementation order.
+
 ## Tool Settings
 
 Open `Workflow > Tools` in the admin web to configure each tool:

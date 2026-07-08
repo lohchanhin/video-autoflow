@@ -44,6 +44,7 @@ export function createTtsRouter(options: CreateTtsRouterOptions): Router {
         pricingStatus: response.costRM > 0 ? "configured_rate" : "pricing_missing",
         quantity: typeof characterCount === "number" ? characterCount : response.voiceoverText.length,
         service: "tts",
+        toolType: "tts",
         unit: "characters",
         usage: response.usage
       });

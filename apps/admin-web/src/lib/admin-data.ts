@@ -1,8 +1,10 @@
-import { contentTemplateTypes, type ContentTemplateType, type GenerateQcReportResponse, type ToolCostMode, type ToolProviderOverride, type TrendScanResponse } from "@ai-content-factory/shared-types";
+import { contentTemplateTypes, type ContentTemplateType, type GenerateQcReportResponse, type ToolCostMode, type ToolProviderOverride, type ToolProviderSettings, type ToolProviderType, type TrendScanResponse } from "@ai-content-factory/shared-types";
 import { createId } from "./ids.js";
 import { readJson, writeJson } from "./local-storage.js";
 import { isDemoCaseId } from "./jobs.js";
 import { type ProductionStageId } from "./production.js";
+
+export type { ToolProviderSettings, ToolProviderType } from "@ai-content-factory/shared-types";
 
 export type TemplateType = ContentTemplateType;
 export type ContentLanguage = "zh-CN" | "en-US";
@@ -85,6 +87,16 @@ export interface StorageSettings {
   minioBucket: string;
 }
 
+export interface BudgetSettings {
+  defaultCaseBudgetRM: number;
+  dailyBudgetRM: number;
+  monthlyBudgetRM: number;
+  maxCasesPerRun: number;
+  maxVideosPerDay: number;
+  stopWhenBudgetExceeded: boolean;
+  updatedAt: string;
+}
+
 export interface StoredVideo {
   id: string;
   jobId: string;
@@ -142,26 +154,6 @@ export interface AiToolEndpoint {
   enabled: boolean;
 }
 
-export type ToolProviderType = "llm" | "image" | "design_image" | "tts" | "bgm" | "video" | "subtitle" | "compose" | "storage" | "youtube";
-
-export interface ToolProviderSettings {
-  id: string;
-  toolType: ToolProviderType;
-  provider: string;
-  apiStyle: string;
-  baseUrl: string;
-  model: string;
-  enabled: boolean;
-  allowAutopilot: boolean;
-  params: Record<string, boolean | number | string>;
-  costMode: ToolCostMode;
-  inputUnitPriceRM: number;
-  outputUnitPriceRM: number;
-  fallbackCostRM: number;
-  retryLimit: number;
-  updatedAt: string;
-}
-
 export interface ToolProviderPreset {
   id: string;
   label: string;
@@ -172,12 +164,17 @@ export interface ToolProviderPreset {
   models: string[];
   params: Record<string, boolean | number | string>;
   costMode: ToolCostMode;
+  pricing?: ToolPricingDefaults | undefined;
   retryLimit: number;
 }
 
 export const openAILlmModels = [
-  "gpt-5.2",
-  "gpt-5.2-pro",
+  "gpt-5.5",
+  "gpt-5.5-pro",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.4-pro",
   "gpt-5.1",
   "gpt-5",
   "gpt-5-mini",
@@ -187,9 +184,194 @@ export const openAILlmModels = [
   "gpt-4o-mini"
 ] as const;
 
-export const openAIImageModels = ["gpt-image-1.5", "chatgpt-image-latest", "gpt-image-1", "gpt-image-2"] as const;
+export const openAIImageModels = ["gpt-image-2", "gpt-image-1.5", "chatgpt-image-latest", "gpt-image-1", "gpt-image-1-mini"] as const;
 
 export const openAITtsModels = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"] as const;
+
+interface ToolPricingDefaults {
+  fallbackCostRM: number;
+  inputUnitPriceRM: number;
+  outputUnitPriceRM: number;
+  pricingSource: string;
+}
+
+const pricingUpdatedAt = "2026-06-06";
+const pricingUsdToMyrRate = 3.95;
+const openAIPricingSource = `OpenAI API pricing (${pricingUpdatedAt}), USD_TO_MYR=${pricingUsdToMyrRate}`;
+const bytePlusPricingSource = `BytePlus ModelArk Seedance 2.0 pricing (${pricingUpdatedAt}), USD_TO_MYR=${pricingUsdToMyrRate}`;
+const elevenLabsPricingSource = `ElevenLabs API pricing (${pricingUpdatedAt}), USD_TO_MYR=${pricingUsdToMyrRate}`;
+const gcsPricingSource = `Google Cloud Storage pricing varies by region/storage class (${pricingUpdatedAt}); configure manually when GCS is enabled`;
+const youtubePricingSource = `YouTube Data API quota pricing (${pricingUpdatedAt}); monetary cost is 0 RM, upload uses quota units`;
+const localPricingSource = "Local worker / local storage; no external API unit cost";
+
+const freePricing: ToolPricingDefaults = {
+  fallbackCostRM: 0,
+  inputUnitPriceRM: 0,
+  outputUnitPriceRM: 0,
+  pricingSource: localPricingSource
+};
+
+function rmFromUsd(usd: number): number {
+  return Number((usd * pricingUsdToMyrRate).toFixed(6));
+}
+
+function rmPerMillionTokens(usdPerMillionTokens: number): number {
+  return Number((rmFromUsd(usdPerMillionTokens) / 1_000_000).toFixed(12));
+}
+
+function rmPerThousandCharacters(usdPerThousandCharacters: number): number {
+  return Number((rmFromUsd(usdPerThousandCharacters) / 1_000).toFixed(12));
+}
+
+function createTokenPricing(inputUsdPerMillion: number, outputUsdPerMillion: number, pricingSource: string): ToolPricingDefaults {
+  return {
+    fallbackCostRM: 0,
+    inputUnitPriceRM: rmPerMillionTokens(inputUsdPerMillion),
+    outputUnitPriceRM: rmPerMillionTokens(outputUsdPerMillion),
+    pricingSource
+  };
+}
+
+function createPerUnitPricing(outputRM: number, pricingSource: string, fallbackCostRM = 0): ToolPricingDefaults {
+  return {
+    fallbackCostRM,
+    inputUnitPriceRM: 0,
+    outputUnitPriceRM: Number(outputRM.toFixed(6)),
+    pricingSource
+  };
+}
+
+const openAITextPricing: Record<string, ToolPricingDefaults> = {
+  "gpt-5.5": createTokenPricing(5, 30, `${openAIPricingSource}; gpt-5.5 text tokens`),
+  "gpt-5.5-pro": createTokenPricing(30, 180, `${openAIPricingSource}; gpt-5.5 pro text tokens`),
+  "gpt-5.4": createTokenPricing(2.5, 15, `${openAIPricingSource}; gpt-5.4 text tokens`),
+  "gpt-5.4-mini": createTokenPricing(0.75, 4.5, `${openAIPricingSource}; gpt-5.4 mini text tokens`),
+  "gpt-5.4-nano": createTokenPricing(0.2, 1.25, `${openAIPricingSource}; gpt-5.4 nano text tokens`),
+  "gpt-5.4-pro": createTokenPricing(30, 180, `${openAIPricingSource}; gpt-5.4 pro text tokens`),
+  "gpt-5": createTokenPricing(1.25, 10, `${openAIPricingSource}; gpt-5 text tokens`),
+  "gpt-5-mini": createTokenPricing(0.25, 2, `${openAIPricingSource}; gpt-5 mini text tokens`),
+  "gpt-5-nano": createTokenPricing(0.05, 0.4, `${openAIPricingSource}; gpt-5 nano text tokens`),
+  "gpt-4.1": createTokenPricing(2, 8, `${openAIPricingSource}; gpt-4.1 text tokens`),
+  "gpt-4.1-mini": createTokenPricing(0.4, 1.6, `${openAIPricingSource}; gpt-4.1 mini text tokens`),
+  "gpt-4o-mini": createTokenPricing(0.15, 0.6, `${openAIPricingSource}; gpt-4o mini text tokens`)
+};
+
+const deepSeekTextPricing: Record<string, ToolPricingDefaults> = {
+  "deepseek-chat": createTokenPricing(0.14, 0.28, `DeepSeek API pricing (${pricingUpdatedAt}); cache-miss input rate, USD_TO_MYR=${pricingUsdToMyrRate}`),
+  "deepseek-reasoner": createTokenPricing(0.435, 0.87, `DeepSeek API pricing (${pricingUpdatedAt}); pro/reasoning rate, USD_TO_MYR=${pricingUsdToMyrRate}`),
+  "deepseek-v4-flash": createTokenPricing(0.14, 0.28, `DeepSeek API pricing (${pricingUpdatedAt}); cache-miss input rate, USD_TO_MYR=${pricingUsdToMyrRate}`),
+  "deepseek-v4-pro": createTokenPricing(0.435, 0.87, `DeepSeek API pricing (${pricingUpdatedAt}); pro rate, USD_TO_MYR=${pricingUsdToMyrRate}`)
+};
+
+const geminiTextPricing: Record<string, ToolPricingDefaults> = {
+  "gemini-2.5-pro": createTokenPricing(1.25, 10, `Gemini API pricing (${pricingUpdatedAt}); <=200k token prompts, USD_TO_MYR=${pricingUsdToMyrRate}`),
+  "gemini-2.5-flash": createTokenPricing(0.3, 2.5, `Gemini API pricing (${pricingUpdatedAt}); standard tier, USD_TO_MYR=${pricingUsdToMyrRate}`),
+  "gemini-2.5-flash-lite": createTokenPricing(0.1, 0.4, `Gemini API pricing (${pricingUpdatedAt}); standard tier, USD_TO_MYR=${pricingUsdToMyrRate}`)
+};
+
+const openAIImagePricing: Record<string, ToolPricingDefaults> = {
+  "gpt-image-2": createPerUnitPricing(rmFromUsd(0.063), `${openAIPricingSource}; estimated medium 1024x1536 image cost, actual logs use returned token usage`),
+  "gpt-image-1.5": createPerUnitPricing(rmFromUsd(0.063), `${openAIPricingSource}; estimated medium 1024x1536 image cost, actual logs use returned token usage`),
+  "chatgpt-image-latest": createPerUnitPricing(rmFromUsd(0.063), `${openAIPricingSource}; estimated medium 1024x1536 image cost, actual logs use returned token usage`),
+  "gpt-image-1": createPerUnitPricing(rmFromUsd(0.063), `${openAIPricingSource}; estimated medium 1024x1536 image cost`),
+  "gpt-image-1-mini": createPerUnitPricing(rmFromUsd(0.016), `${openAIPricingSource}; estimated low-cost image generation`)
+};
+
+const openAIDesignImagePricing: Record<string, ToolPricingDefaults> = {
+  "gpt-image-2": createPerUnitPricing(rmFromUsd(0.25), `${openAIPricingSource}; estimated high 1024x1536 design image cost, actual logs use returned token usage`),
+  "gpt-image-1.5": createPerUnitPricing(rmFromUsd(0.25), `${openAIPricingSource}; estimated high 1024x1536 design image cost, actual logs use returned token usage`),
+  "chatgpt-image-latest": createPerUnitPricing(rmFromUsd(0.25), `${openAIPricingSource}; estimated high 1024x1536 design image cost, actual logs use returned token usage`),
+  "gpt-image-1": createPerUnitPricing(rmFromUsd(0.25), `${openAIPricingSource}; estimated high 1024x1536 design image cost`),
+  "gpt-image-1-mini": createPerUnitPricing(rmFromUsd(0.063), `${openAIPricingSource}; estimated medium design image cost`)
+};
+
+const openAITtsPricing: Record<string, ToolPricingDefaults> = {
+  "gpt-4o-mini-tts": createPerUnitPricing(rmPerThousandCharacters(0.015), `${openAIPricingSource}; compatible /audio/speech estimate uses $0.015 per 1K characters`),
+  "tts-1": createPerUnitPricing(rmPerThousandCharacters(0.015), `${openAIPricingSource}; legacy TTS estimate uses $0.015 per 1K characters`),
+  "tts-1-hd": createPerUnitPricing(rmPerThousandCharacters(0.03), `${openAIPricingSource}; legacy TTS HD estimate uses $0.030 per 1K characters`)
+};
+
+const elevenLabsTtsPricing: Record<string, ToolPricingDefaults> = {
+  eleven_flash_v2_5: createPerUnitPricing(rmPerThousandCharacters(0.05), `${elevenLabsPricingSource}; Flash/Turbo TTS $0.05 per 1K characters`),
+  eleven_turbo_v2_5: createPerUnitPricing(rmPerThousandCharacters(0.05), `${elevenLabsPricingSource}; Flash/Turbo TTS $0.05 per 1K characters`),
+  eleven_multilingual_v2: createPerUnitPricing(rmPerThousandCharacters(0.1), `${elevenLabsPricingSource}; Multilingual TTS $0.10 per 1K characters`)
+};
+
+const elevenLabsMusicPricing = createPerUnitPricing(rmFromUsd(0.11), `${elevenLabsPricingSource}; estimated Creator plan $0.11 per music minute`);
+
+const seedancePricing: Record<string, ToolPricingDefaults> = {
+  "dreamina-seedance-2-0-260128": {
+    fallbackCostRM: 0.28,
+    inputUnitPriceRM: 0,
+    outputUnitPriceRM: rmFromUsd(7),
+    pricingSource: `${bytePlusPricingSource}; 720p without video input $7.00 per 1M tokens; fallback is RM per second estimate`
+  },
+  "dreamina-seedance-2-0-fast": {
+    fallbackCostRM: 0.224,
+    inputUnitPriceRM: 0,
+    outputUnitPriceRM: rmFromUsd(5.6),
+    pricingSource: `${bytePlusPricingSource}; 720p fast without video input $5.60 per 1M tokens; fallback is RM per second estimate`
+  }
+};
+
+function resolveToolPricing(toolType: ToolProviderType, provider: string, model: string): ToolPricingDefaults {
+  const normalizedProvider = provider.trim().toLowerCase();
+  const normalizedModel = model.trim();
+
+  if (toolType === "llm" && normalizedProvider === "openai") {
+    return openAITextPricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "llm" && normalizedProvider === "deepseek") {
+    return deepSeekTextPricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "llm" && normalizedProvider === "gemini") {
+    return geminiTextPricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "image" && normalizedProvider === "openai") {
+    return openAIImagePricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "design_image" && normalizedProvider === "openai") {
+    return openAIDesignImagePricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "tts" && normalizedProvider === "openai") {
+    return openAITtsPricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "tts" && normalizedProvider === "elevenlabs") {
+    return elevenLabsTtsPricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "bgm" && normalizedProvider === "elevenlabs") {
+    return elevenLabsMusicPricing;
+  }
+
+  if (toolType === "video" && normalizedProvider === "seedance") {
+    return seedancePricing[normalizedModel] ?? freePricing;
+  }
+
+  if (toolType === "youtube") {
+    return { ...freePricing, pricingSource: youtubePricingSource };
+  }
+
+  if (toolType === "storage" && normalizedProvider === "gcs") {
+    return { ...freePricing, pricingSource: gcsPricingSource };
+  }
+
+  return freePricing;
+}
+
+function pricingFor(toolType: ToolProviderType, provider: string, model: string): ToolPricingDefaults {
+  return resolveToolPricing(toolType, provider, model);
+}
+
+function hasConfiguredPricing(setting: Pick<ToolProviderSettings, "fallbackCostRM" | "inputUnitPriceRM" | "outputUnitPriceRM">): boolean {
+  return setting.inputUnitPriceRM > 0 || setting.outputUnitPriceRM > 0 || setting.fallbackCostRM > 0;
+}
 
 export interface ProviderKeyRecord {
   id: string;
@@ -208,6 +390,7 @@ export interface TrendReport extends TrendScanResponse {
 }
 
 const accountsKey = "ai-content-factory:youtube-accounts";
+const budgetSettingsKey = "ai-content-factory:budget-settings";
 const storageSettingsKey = "ai-content-factory:storage-settings";
 const videosKey = "ai-content-factory:stored-videos";
 const aiToolEndpointsKey = "ai-content-factory:ai-tool-endpoints";
@@ -278,7 +461,7 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-images",
       baseUrl: "https://api.openai.com/v1",
       costMode: "image",
-      defaultModel: "gpt-image-1.5",
+      defaultModel: "gpt-image-2",
       id: "design_openai",
       label: "OpenAI Images",
       models: [...openAIImageModels],
@@ -328,7 +511,7 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-images",
       baseUrl: "https://api.openai.com/v1",
       costMode: "image",
-      defaultModel: "gpt-image-1.5",
+      defaultModel: "gpt-image-2",
       id: "image_openai",
       label: "OpenAI Images",
       models: [...openAIImageModels],
@@ -378,7 +561,7 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
       costMode: "tokens",
-      defaultModel: "gpt-5.2",
+      defaultModel: "gpt-5.4-mini",
       id: "llm_openai",
       label: "OpenAI",
       models: [...openAILlmModels],
@@ -390,10 +573,10 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "openai-compatible-chat",
       baseUrl: "https://api.deepseek.com",
       costMode: "tokens",
-      defaultModel: "deepseek-chat",
+      defaultModel: "deepseek-v4-flash",
       id: "llm_deepseek",
       label: "DeepSeek",
-      models: ["deepseek-chat", "deepseek-reasoner"],
+      models: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
       params: { maxOutputTokens: 3200 },
       provider: "deepseek",
       retryLimit: 1
@@ -402,10 +585,10 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
       apiStyle: "gemini-generate-content",
       baseUrl: "https://generativelanguage.googleapis.com",
       costMode: "tokens",
-      defaultModel: "gemini-2.0-flash",
+      defaultModel: "gemini-2.5-flash",
       id: "llm_gemini",
       label: "Gemini",
-      models: ["gemini-2.0-flash", "gemini-1.5-pro"],
+      models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
       params: { maxOutputTokens: 3200 },
       provider: "gemini",
       retryLimit: 1
@@ -567,7 +750,7 @@ const toolProviderPresets: Record<ToolProviderType, ToolProviderPreset[]> = {
     {
       apiStyle: "youtube-data-v3",
       baseUrl: "https://www.googleapis.com",
-      costMode: "credit",
+      costMode: "free",
       defaultModel: "youtube-upload-private",
       id: "youtube_data",
       label: "YouTube Data API",
@@ -584,18 +767,28 @@ const defaultYouTubeAccounts: YouTubeAccount[] = [];
 const defaultPublishingTargets: PublishingTarget[] = [];
 const defaultCharacterProfiles: CharacterProfile[] = [];
 
+const defaultBudgetSettings: BudgetSettings = {
+  dailyBudgetRM: 80,
+  defaultCaseBudgetRM: 7.5,
+  maxCasesPerRun: 5,
+  maxVideosPerDay: 10,
+  monthlyBudgetRM: 2500,
+  stopWhenBudgetExceeded: true,
+  updatedAt: new Date(0).toISOString()
+};
+
 const defaultProductionSchedules: ProductionSchedule[] = [
   {
     id: "schedule_daily_shorts",
-    name: "Daily Shorts Batch",
+    name: "每日短视频批次",
     enabled: true,
     executionMode: "queue_only",
     timezone: "Asia/Kuala_Lumpur",
     daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
     startTime: "09:00",
-    maxCasesPerRun: 5,
-    maxVideosPerDay: 10,
-    budgetLimitRM: 80,
+    maxCasesPerRun: defaultBudgetSettings.maxCasesPerRun,
+    maxVideosPerDay: defaultBudgetSettings.maxVideosPerDay,
+    budgetLimitRM: defaultBudgetSettings.dailyBudgetRM,
     approvalGate: "mp4_review",
     targetIds: [],
     nextRunAt: calculateNextRunAt({
@@ -818,7 +1011,7 @@ export const workflowSteps: WorkflowStep[] = [
     worker: "publisher-worker",
     queueName: "publish.queue",
     toolId: "tool_youtube",
-    output: "YouTube private video"
+    output: "YouTube 私密影片"
   },
   {
     id: "workflow_storage",
@@ -967,11 +1160,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "https://api.openai.com/v1",
     costMode: "tokens",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_llm",
-    inputUnitPriceRM: 0,
-    model: "gpt-5.2",
-    outputUnitPriceRM: 0,
+    model: "gpt-5.4-mini",
+    ...pricingFor("llm", "openai", "gpt-5.4-mini"),
     params: { maxOutputTokens: 3200 },
     provider: "openai",
     retryLimit: 1,
@@ -984,11 +1175,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "https://api.openai.com/v1",
     costMode: "image",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_image",
-    inputUnitPriceRM: 0,
-    model: "gpt-image-1.5",
-    outputUnitPriceRM: 0,
+    model: "gpt-image-2",
+    ...pricingFor("image", "openai", "gpt-image-2"),
     params: { quality: "medium", size: "1024x1536" },
     provider: "openai",
     retryLimit: 2,
@@ -1001,11 +1190,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "https://api.openai.com/v1",
     costMode: "image",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_design_image",
-    inputUnitPriceRM: 0,
-    model: "gpt-image-1.5",
-    outputUnitPriceRM: 0,
+    model: "gpt-image-2",
+    ...pricingFor("design_image", "openai", "gpt-image-2"),
     params: { quality: "high", size: "1024x1536" },
     provider: "openai",
     retryLimit: 2,
@@ -1018,11 +1205,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "https://api.openai.com/v1",
     costMode: "character",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_tts",
-    inputUnitPriceRM: 0,
     model: "gpt-4o-mini-tts",
-    outputUnitPriceRM: 0,
+    ...pricingFor("tts", "openai", "gpt-4o-mini-tts"),
     params: { format: "mp3", voice: "verse" },
     provider: "openai",
     retryLimit: 1,
@@ -1035,11 +1220,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "https://api.elevenlabs.io/v1",
     costMode: "credit",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_bgm",
-    inputUnitPriceRM: 0,
     model: "music_v1",
-    outputUnitPriceRM: 0,
+    ...pricingFor("bgm", "elevenlabs", "music_v1"),
     params: { outputFormat: "mp3_44100_128" },
     provider: "elevenlabs",
     retryLimit: 1,
@@ -1052,11 +1235,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3",
     costMode: "tokens",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_video",
-    inputUnitPriceRM: 0,
     model: "dreamina-seedance-2-0-260128",
-    outputUnitPriceRM: 0,
+    ...pricingFor("video", "seedance", "dreamina-seedance-2-0-260128"),
     params: { aspectRatio: "9:16", quality: "720p" },
     provider: "seedance",
     retryLimit: 0,
@@ -1069,11 +1250,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "local://subtitle-worker",
     costMode: "free",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_subtitle",
-    inputUnitPriceRM: 0,
     model: "local-srt",
-    outputUnitPriceRM: 0,
+    ...pricingFor("subtitle", "local", "local-srt"),
     params: { format: "srt" },
     provider: "local",
     retryLimit: 0,
@@ -1086,11 +1265,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "local://ffmpeg",
     costMode: "free",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_compose",
-    inputUnitPriceRM: 0,
     model: "ffmpeg-local",
-    outputUnitPriceRM: 0,
+    ...pricingFor("compose", "local", "ffmpeg-local"),
     params: { fps: 30, resolution: "1080x1920" },
     provider: "local",
     retryLimit: 0,
@@ -1103,11 +1280,9 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     baseUrl: "local://uploads",
     costMode: "free",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_storage",
-    inputUnitPriceRM: 0,
     model: "local-uploads",
-    outputUnitPriceRM: 0,
+    ...pricingFor("storage", "local", "local-uploads"),
     params: { driver: "local" },
     provider: "local",
     retryLimit: 0,
@@ -1118,13 +1293,11 @@ const defaultToolProviderSettings: ToolProviderSettings[] = [
     allowAutopilot: false,
     apiStyle: "youtube-data-v3",
     baseUrl: "https://www.googleapis.com",
-    costMode: "credit",
+    costMode: "free",
     enabled: true,
-    fallbackCostRM: 0,
     id: "tool_settings_youtube",
-    inputUnitPriceRM: 0,
     model: "youtube-upload-private",
-    outputUnitPriceRM: 0,
+    ...pricingFor("youtube", "youtube", "youtube-upload-private"),
     params: { privacy: "private" },
     provider: "youtube",
     retryLimit: 1,
@@ -1269,6 +1442,21 @@ export function loadScheduleRuns(schedules: ProductionSchedule[] = loadProductio
 
 export function saveScheduleRuns(runs: ScheduleRun[]): void {
   writeJson(scheduleRunsKey, runs.map(normalizeScheduleRun));
+}
+
+export function loadBudgetSettings(): BudgetSettings {
+  const settings = readJson<BudgetSettings>(budgetSettingsKey, defaultBudgetSettings);
+  const normalized = normalizeBudgetSettings(settings);
+
+  if (JSON.stringify(settings) !== JSON.stringify(normalized)) {
+    writeJson(budgetSettingsKey, normalized);
+  }
+
+  return normalized;
+}
+
+export function saveBudgetSettings(settings: BudgetSettings): void {
+  writeJson(budgetSettingsKey, normalizeBudgetSettings(settings));
 }
 
 export function createScheduleRun(input: {
@@ -1449,6 +1637,24 @@ export function usesCustomToolModel(setting: Pick<ToolProviderSettings, "model" 
   return !preset.models.includes(setting.model) && !syncedModels.includes(setting.model);
 }
 
+export function applyToolModelPricing(setting: ToolProviderSettings, model: string): ToolProviderSettings {
+  const normalizedModel = model.trim();
+  const nextSetting = {
+    ...setting,
+    model: normalizedModel,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (!normalizedModel || isManualPricingSource(setting.pricingSource)) {
+    return nextSetting;
+  }
+
+  return {
+    ...nextSetting,
+    ...resolveToolPricing(nextSetting.toolType, nextSetting.provider, normalizedModel)
+  };
+}
+
 export function applyToolProviderPreset(setting: ToolProviderSettings, presetId: string): ToolProviderSettings {
   const preset = getToolProviderPreset(setting.toolType, presetId);
 
@@ -1460,12 +1666,13 @@ export function applyToolProviderPreset(setting: ToolProviderSettings, presetId:
       costMode: "custom",
       model: "",
       params: {},
+      pricingSource: isManualPricingSource(setting.pricingSource) ? setting.pricingSource : "",
       provider: "",
       updatedAt: new Date().toISOString()
     };
   }
 
-  return {
+  const nextSetting = {
     ...setting,
     apiStyle: preset.apiStyle,
     baseUrl: preset.baseUrl,
@@ -1475,6 +1682,17 @@ export function applyToolProviderPreset(setting: ToolProviderSettings, presetId:
     provider: preset.provider,
     retryLimit: preset.retryLimit,
     updatedAt: new Date().toISOString()
+  };
+
+  const nextPricing = preset.pricing ?? resolveToolPricing(setting.toolType, preset.provider, preset.defaultModel);
+
+  if (isManualPricingSource(setting.pricingSource) || (hasConfiguredPricing(setting) && !setting.pricingSource)) {
+    return nextSetting;
+  }
+
+  return {
+    ...nextSetting,
+    ...nextPricing
   };
 }
 
@@ -1494,7 +1712,8 @@ export function buildToolProviderOverride(setting: ToolProviderSettings | null):
       costMode: setting.costMode,
       fallbackCostRM: setting.fallbackCostRM,
       inputUnitPriceRM: setting.inputUnitPriceRM,
-      outputUnitPriceRM: setting.outputUnitPriceRM
+      outputUnitPriceRM: setting.outputUnitPriceRM,
+      pricingSource: setting.pricingSource
     },
     model: setting.model,
     params: setting.params,
@@ -1509,23 +1728,67 @@ function normalizeToolProviderSettings(settings: ToolProviderSettings[]): ToolPr
     ...defaultToolProviderSettings.filter((setting) => !existingIds.has(setting.id))
   ];
 
-  return mergedSettings.map((setting) => ({
+  return mergedSettings.map((setting) => {
+    const toolType = normalizeToolProviderType(setting.toolType);
+    const provider = setting.provider ?? "";
+    const legacyModel = normalizeLegacyToolModel(toolType, setting.provider ?? "", setting.model ?? "", setting.pricingSource ?? "");
+    const normalized = {
     allowAutopilot: setting.allowAutopilot ?? false,
     apiStyle: setting.apiStyle ?? "",
     baseUrl: setting.baseUrl ?? "",
-    costMode: normalizeToolCostMode(setting.costMode),
+    costMode: normalizeLegacyToolCostMode(toolType, provider, normalizeToolCostMode(setting.costMode)),
     enabled: setting.enabled ?? true,
     fallbackCostRM: clampNumber(Number(setting.fallbackCostRM), 0, 1_000_000, 0),
     id: setting.id || createId("tool_setting"),
     inputUnitPriceRM: clampNumber(Number(setting.inputUnitPriceRM), 0, 1_000_000, 0),
-    model: setting.model ?? "",
+    model: legacyModel,
     outputUnitPriceRM: clampNumber(Number(setting.outputUnitPriceRM), 0, 1_000_000, 0),
     params: normalizeToolParams(setting.params),
-    provider: setting.provider ?? "",
+    pricingSource: setting.pricingSource ?? "",
+    provider,
     retryLimit: clampNumber(Number(setting.retryLimit), 0, 10, 1),
-    toolType: normalizeToolProviderType(setting.toolType),
+    toolType,
     updatedAt: setting.updatedAt ?? new Date().toISOString()
-  }));
+  };
+    const defaultPricing = resolveToolPricing(normalized.toolType, normalized.provider, normalized.model);
+
+    if (isManualPricingSource(normalized.pricingSource) || hasConfiguredPricing(normalized)) {
+      return normalized;
+    }
+
+    return {
+      ...normalized,
+      ...defaultPricing
+    };
+  });
+}
+
+function normalizeLegacyToolModel(toolType: ToolProviderType, provider: string, model: string, pricingSource: string): string {
+  if (isManualPricingSource(pricingSource)) {
+    return model;
+  }
+
+  if (toolType === "llm" && provider === "openai" && model === "gpt-5.2") {
+    return "gpt-5.4-mini";
+  }
+
+  if (toolType === "llm" && provider === "openai" && model === "gpt-5.2-pro") {
+    return "gpt-5.4-pro";
+  }
+
+  if (toolType === "image" && provider === "openai" && model === "gpt-image-1.5") {
+    return "gpt-image-2";
+  }
+
+  if (toolType === "design_image" && provider === "openai" && model === "gpt-image-1.5") {
+    return "gpt-image-2";
+  }
+
+  return model;
+}
+
+function isManualPricingSource(value: string | undefined): boolean {
+  return (value ?? "").trim().toLowerCase() === "manual";
 }
 
 function normalizeToolProviderType(value: unknown): ToolProviderType {
@@ -1536,6 +1799,14 @@ function normalizeToolProviderType(value: unknown): ToolProviderType {
 function normalizeToolCostMode(value: unknown): ToolCostMode {
   const allowed: ToolCostMode[] = ["tokens", "image", "second", "character", "credit", "free", "custom"];
   return typeof value === "string" && allowed.includes(value as ToolCostMode) ? value as ToolCostMode : "custom";
+}
+
+function normalizeLegacyToolCostMode(toolType: ToolProviderType, provider: string, costMode: ToolCostMode): ToolCostMode {
+  if (toolType === "youtube" && provider === "youtube") {
+    return "free";
+  }
+
+  return costMode;
 }
 
 function normalizeToolParams(value: unknown): Record<string, boolean | number | string> {
@@ -1826,15 +2097,15 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
   const targetIds = allowedTargetIds ? schedule.targetIds.filter((targetId) => allowedTargetIds.has(targetId)) : schedule.targetIds;
   const normalized = {
     approvalGate: "mp4_review" as const,
-    budgetLimitRM: clampNumber(Number(schedule.budgetLimitRM), 1, 100000, 80),
+    budgetLimitRM: clampNumber(Number(schedule.budgetLimitRM), 1, 100000, defaultBudgetSettings.dailyBudgetRM),
     daysOfWeek: normalizeDaysOfWeek(schedule.daysOfWeek),
     enabled: schedule.enabled ?? true,
     executionMode: schedule.executionMode === "autopilot_to_mp4" ? "autopilot_to_mp4" as const : "queue_only" as const,
     id: schedule.id || createId("schedule"),
     lastRunAt: schedule.lastRunAt ?? null,
-    maxCasesPerRun: clampNumber(Number(schedule.maxCasesPerRun), 1, 50, 5),
-    maxVideosPerDay: clampNumber(Number(schedule.maxVideosPerDay), 1, 100, 10),
-    name: schedule.name || "Daily Production Batch",
+    maxCasesPerRun: clampNumber(Number(schedule.maxCasesPerRun), 1, 50, defaultBudgetSettings.maxCasesPerRun),
+    maxVideosPerDay: clampNumber(Number(schedule.maxVideosPerDay), 1, 100, defaultBudgetSettings.maxVideosPerDay),
+    name: normalizeProductionScheduleName(schedule.name),
     nextRunAt: schedule.nextRunAt,
     startTime: normalizeStartTime(schedule.startTime),
     targetIds,
@@ -1844,6 +2115,28 @@ function normalizeProductionSchedule(schedule: ProductionSchedule, allowedTarget
   return {
     ...normalized,
     nextRunAt: normalized.nextRunAt && new Date(normalized.nextRunAt).toString() !== "Invalid Date" ? normalized.nextRunAt : calculateNextRunAt(normalized)
+  };
+}
+
+function normalizeProductionScheduleName(name: string | undefined): string {
+  const normalizedName = (name ?? "").trim();
+
+  if (!normalizedName || normalizedName === "Daily Shorts Batch" || normalizedName === "Daily Production Batch") {
+    return "每日短视频批次";
+  }
+
+  return normalizedName;
+}
+
+function normalizeBudgetSettings(settings: Partial<BudgetSettings>): BudgetSettings {
+  return {
+    dailyBudgetRM: clampNumber(Number(settings.dailyBudgetRM), 1, 1_000_000, defaultBudgetSettings.dailyBudgetRM),
+    defaultCaseBudgetRM: clampNumber(Number(settings.defaultCaseBudgetRM), 0.1, 100_000, defaultBudgetSettings.defaultCaseBudgetRM),
+    maxCasesPerRun: clampNumber(Number(settings.maxCasesPerRun), 1, 50, defaultBudgetSettings.maxCasesPerRun),
+    maxVideosPerDay: clampNumber(Number(settings.maxVideosPerDay), 1, 1000, defaultBudgetSettings.maxVideosPerDay),
+    monthlyBudgetRM: clampNumber(Number(settings.monthlyBudgetRM), 1, 10_000_000, defaultBudgetSettings.monthlyBudgetRM),
+    stopWhenBudgetExceeded: settings.stopWhenBudgetExceeded !== false,
+    updatedAt: typeof settings.updatedAt === "string" && settings.updatedAt.trim() ? settings.updatedAt : new Date(0).toISOString()
   };
 }
 

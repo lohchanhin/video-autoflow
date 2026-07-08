@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MongoClient } from "mongodb";
-import { connectMongoDatabase, createContentSeriesRepository, createProductionAssetsRepository, getDatabaseNameFromMongoUri, type MongoDatabaseConnection } from "./index.js";
+import { connectMongoDatabase, createAppStateRepository, createContentSeriesRepository, createProductionAssetsRepository, createStoryWorldsRepository, getDatabaseNameFromMongoUri, type MongoDatabaseConnection } from "./index.js";
 
 describe("getDatabaseNameFromMongoUri", () => {
   it("reads the database name from a MongoDB URI", () => {
@@ -58,6 +58,28 @@ describe("connectMongoDatabase", () => {
   });
 });
 
+describe("appStateRepository", () => {
+  it("upserts and lists app state by key prefix", async () => {
+    const fakeCollection = createFakeProductionAssetsCollection();
+    const repository = createAppStateRepository({
+      collection: () => fakeCollection
+    } as unknown as MongoDatabaseConnection);
+
+    await repository.upsert("ai-content-factory:admin-jobs", JSON.stringify([{ id: "job_001" }]));
+    await repository.upsert("other-app:key", "ignore");
+    await repository.upsert("ai-content-factory:budget-settings", JSON.stringify({ defaultCaseBudgetRM: 30 }));
+    await repository.upsert("ai-content-factory:budget-settings", JSON.stringify({ defaultCaseBudgetRM: 50 }));
+
+    const entries = await repository.list("ai-content-factory:");
+
+    expect(entries.map((entry) => entry.key)).toEqual(["ai-content-factory:admin-jobs", "ai-content-factory:budget-settings"]);
+    expect(JSON.parse(entries.find((entry) => entry.key === "ai-content-factory:budget-settings")?.value ?? "{}")).toEqual({
+      defaultCaseBudgetRM: 50
+    });
+    expect(fakeCollection.createIndex).toHaveBeenCalledWith({ key: 1 }, { unique: true });
+  });
+});
+
 describe("productionAssetsRepository", () => {
   it("bootstraps case asset plans idempotently", async () => {
     const fakeCollection = createFakeProductionAssetsCollection();
@@ -76,11 +98,11 @@ describe("productionAssetsRepository", () => {
       topic: "rainy convenience store"
     });
 
-    expect(first.created).toBe(5);
+    expect(first.created).toBe(3);
     expect(second.created).toBe(0);
-    expect(second.assets).toHaveLength(5);
+    expect(second.assets).toHaveLength(3);
     expect(fakeCollection.createIndex).toHaveBeenCalled();
-    expect(fakeCollection.documents()).toHaveLength(5);
+    expect(fakeCollection.documents()).toHaveLength(3);
   });
 
   it("creates, lists, patches, and deletes production assets", async () => {
@@ -168,6 +190,16 @@ describe("contentSeriesRepository", () => {
       }
     ]);
     const approved = await repository.patchEpisodeIdea(series._id, episodes[0]!._id, { status: "approved" });
+    const deletedEpisode = await repository.deleteEpisodeIdea(series._id, episodes[0]!._id);
+    const episodeListAfterEpisodeDelete = await repository.listEpisodeIdeas(series._id);
+    const nextEpisodes = await repository.createEpisodeIdeas(series._id, [
+      {
+        moralLesson: "ç¬¬äºŒæ¡é€‰é¢˜",
+        promptSeed: "ç”¨æ¥æµ‹è¯•åˆ é™¤ç³»åˆ—æ—¶ä¼šæ¸…ç†é¢˜åº“ã€‚",
+        synopsis: "ç¬¬äºŒæ¡é€‰é¢˜ã€‚",
+        title: "ç¬¬äºŒæ¡é€‰é¢˜"
+      }
+    ]);
     const listedBeforeDelete = await repository.listSeries();
     const episodeListBeforeDelete = await repository.listEpisodeIdeas(series._id);
     const deleted = await repository.deleteSeries(series._id);
@@ -176,6 +208,9 @@ describe("contentSeriesRepository", () => {
     expect(listedBeforeDelete).toHaveLength(1);
     expect(episodeListBeforeDelete).toHaveLength(1);
     expect(approved?.status).toBe("approved");
+    expect(deletedEpisode).toBe(true);
+    expect(episodeListAfterEpisodeDelete).toHaveLength(0);
+    expect(nextEpisodes).toHaveLength(1);
     expect(deleted).toBe(true);
     expect(await repository.listEpisodeIdeas(series._id)).toHaveLength(0);
   });
@@ -194,6 +229,36 @@ describe("contentSeriesRepository", () => {
     expect(series.description).toBe("");
     expect(series.tone).toBe("");
     expect(series.visualStyle).toBe("");
+  });
+});
+
+describe("storyWorldsRepository", () => {
+  it("creates, patches, lists, and deletes reusable story worlds", async () => {
+    const storyWorldsCollection = createFakeProductionAssetsCollection();
+    const repository = createStoryWorldsRepository({
+      collection: () => storyWorldsCollection
+    } as unknown as MongoDatabaseConnection);
+
+    const created = await repository.create({
+      defaultSceneAssetIds: ["asset_rainbow_forest"],
+      description: "ä¸€ä¸ªå¯é‡ç”¨çš„å½©è™¹æ£®æž—ä¸–ç•Œè§‚ã€‚",
+      name: "å½©è™¹æ£®æž—",
+      recurringCharacterAssetIds: ["asset_rabbit"],
+      seriesIds: ["series_story"],
+      status: "active",
+      visualStyle: "æŸ”å’Œç«¥è¯é£Žæ ¼"
+    });
+    const patched = await repository.patch(created._id, {
+      relationshipMap: "å…”å­ç±³ç±³å’Œæ£®æž—åŒå­¦ä¸€èµ·ä¸Šè¯¾ã€‚"
+    });
+    const listed = await repository.list();
+    const deleted = await repository.delete(created._id);
+
+    expect(created.defaultSceneAssetIds).toEqual(["asset_rainbow_forest"]);
+    expect(created.recurringCharacterAssetIds).toEqual(["asset_rabbit"]);
+    expect(patched?.relationshipMap).toContain("ç±³ç±³");
+    expect(listed).toHaveLength(1);
+    expect(deleted).toBe(true);
   });
 });
 
@@ -253,10 +318,18 @@ function matchesQuery(document: Record<string, unknown>, query: Record<string, u
       return value.$in.includes(document[key] as never);
     }
 
+    if (isRegexFilter(value)) {
+      return new RegExp(value.$regex).test(String(document[key] ?? ""));
+    }
+
     return document[key] === value;
   });
 }
 
 function isInFilter(value: unknown): value is { $in: unknown[] } {
   return typeof value === "object" && value !== null && "$in" in value && Array.isArray((value as { $in?: unknown }).$in);
+}
+
+function isRegexFilter(value: unknown): value is { $regex: string } {
+  return typeof value === "object" && value !== null && typeof (value as { $regex?: unknown }).$regex === "string";
 }

@@ -1,4 +1,4 @@
-import type { ContentTemplateType, GeneratedImageAsset, GeneratedImageQualityCheck, GeneratedInterpretedIdea, GeneratedOutlineQualityCheck, GeneratedVisualBible, JobStatus } from "@ai-content-factory/shared-types";
+import type { ContentTemplateType, GeneratedImageAsset, GeneratedImageQualityCheck, GeneratedInterpretedIdea, GeneratedOutlineQualityCheck, GeneratedVisualBible, JobStatus, ProductionBrief } from "@ai-content-factory/shared-types";
 import {
   defaultStaffAgents,
   getAgentLabel,
@@ -13,15 +13,21 @@ import type { CharacterProfile } from "./admin-data.js";
 
 export interface AdminJob {
   backgroundAssetId: string | null;
+  characterAssetIds: string[];
   characterAssetId: string | null;
   characterId: string | null;
   id: string;
   source: "manual" | "scheduled";
   scheduleId: string | null;
+  scheduleRunId: string | null;
   seriesId: string | null;
   episodeId: string | null;
   topic: string;
   prompt: string;
+  productionBrief: ProductionBrief | null;
+  referenceAssetIds: string[];
+  sceneAssetIds: string[];
+  storyWorldId: string | null;
   genre: string;
   templateType: ContentTemplateType;
   language: "zh-CN" | "en-US";
@@ -41,15 +47,21 @@ export interface AdminJob {
 
 export interface NewJobInput {
   backgroundAssetId?: string | null;
+  characterAssetIds?: string[] | undefined;
   characterAssetId?: string | null;
   characterId?: string | null;
   id?: string;
   source?: AdminJob["source"];
   scheduleId?: string | null;
+  scheduleRunId?: string | null;
   seriesId?: string | null;
   episodeId?: string | null;
   topic: string;
   prompt: string;
+  productionBrief?: ProductionBrief | null | undefined;
+  referenceAssetIds?: string[] | undefined;
+  sceneAssetIds?: string[] | undefined;
+  storyWorldId?: string | null | undefined;
   genre?: string | undefined;
   templateType: AdminJob["templateType"];
   language: AdminJob["language"];
@@ -155,6 +167,7 @@ export function loadJobs(): AdminJob[] {
   return migratedJobs.map((job) => ({
     ...job,
     backgroundAssetId: job.backgroundAssetId ?? null,
+    characterAssetIds: Array.isArray(job.characterAssetIds) ? job.characterAssetIds : (job.characterAssetId ? [job.characterAssetId] : []),
     characterAssetId: job.characterAssetId ?? null,
     characterId: job.characterId ?? null,
     episodeId: job.episodeId ?? null,
@@ -162,10 +175,15 @@ export function loadJobs(): AdminJob[] {
     interpretedIdea: job.interpretedIdea ?? null,
     outlineQc: job.outlineQc ?? null,
     prompt: job.prompt ?? "",
+    productionBrief: job.productionBrief ?? null,
+    referenceAssetIds: Array.isArray(job.referenceAssetIds) ? uniqueStrings(job.referenceAssetIds) : [],
     reviewStatus: job.reviewStatus ?? (job.status === "READY_TO_UPLOAD" || job.status === "QC_PASSED" ? "needs_review" : "draft"),
     scheduleId: job.scheduleId ?? null,
+    scheduleRunId: job.scheduleRunId ?? null,
+    sceneAssetIds: Array.isArray(job.sceneAssetIds) ? job.sceneAssetIds : (job.backgroundAssetId ? [job.backgroundAssetId] : []),
     seriesId: job.seriesId ?? null,
     source: job.source ?? "manual",
+    storyWorldId: job.storyWorldId ?? null,
     visualBible: job.visualBible ?? null
   }));
 }
@@ -180,14 +198,20 @@ export function createJob(input: NewJobInput): AdminJob {
   return {
     id: input.id ?? createId("job"),
     backgroundAssetId: input.backgroundAssetId ?? null,
+    characterAssetIds: input.characterAssetIds ?? (input.characterAssetId ? [input.characterAssetId] : []),
     characterAssetId: input.characterAssetId ?? null,
     characterId: input.characterId ?? null,
     source: input.source ?? "manual",
     scheduleId: input.scheduleId ?? null,
+    scheduleRunId: input.scheduleRunId ?? null,
     seriesId: input.seriesId ?? null,
     episodeId: input.episodeId ?? null,
     topic: input.topic,
     prompt: input.prompt,
+    productionBrief: input.productionBrief ?? null,
+    referenceAssetIds: uniqueStrings(input.referenceAssetIds ?? []),
+    sceneAssetIds: input.sceneAssetIds ?? (input.backgroundAssetId ? [input.backgroundAssetId] : []),
+    storyWorldId: input.storyWorldId ?? null,
     genre: input.genre?.trim() || getTemplateGenreLabel(input.templateType),
     templateType: input.templateType,
     language: input.language,
@@ -204,6 +228,10 @@ export function createJob(input: NewJobInput): AdminJob {
     createdAt: now,
     updatedAt: now
   };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return values.filter((value, index, array) => Boolean(value) && array.indexOf(value) === index);
 }
 
 function getTemplateGenreLabel(templateType: ContentTemplateType): string {
@@ -366,8 +394,8 @@ export function syncCaseReferenceAssets(
       upsertGeneratedReferenceAsset(nextAssets, assetsById, {
         id: `${job.id}_character_reference`,
         jobId: job.id,
-        label: character ? `${character.name} character design` : "Generated character design",
-        notes: "Used as Seedance reference_image for character identity continuity.",
+        label: character ? `${character.name} 角色设计` : "已生成角色设计",
+        notes: "作为 Seedance reference_image 使用，用来保持角色身份一致。",
         role: "reference_image",
         sceneId: null,
         type: "character_design",
@@ -381,8 +409,8 @@ export function syncCaseReferenceAssets(
         upsertGeneratedReferenceAsset(nextAssets, assetsById, {
           id: `${job.id}_scene_${review.sceneId}_first_frame`,
           jobId: job.id,
-          label: `Scene ${review.sceneId} first frame`,
-          notes: "Generated scene still. Seedance uses this as first_frame for image-to-video.",
+          label: `场景 ${review.sceneId} 首帧`,
+          notes: "已生成场景静帧。Seedance 会把它作为 image-to-video 的 first_frame。",
           role: "first_frame",
           sceneId: review.sceneId,
           type: "first_frame",
@@ -648,7 +676,7 @@ function normalizeProcessRecord(job: AdminJob, record: JobProcessRecord, agents:
 
 function normalizeLegacyStageOutput(stageId: ProductionStageId, output: string, artifactPath: string): string {
   if (stageId === "tts" && output.includes("Local voiceover text artifact")) {
-    return "Voiceover text and SFX cue manifest are ready, but spoken TTS audio has not been generated. Configure OpenAI TTS or ElevenLabs; no mock narration audio was created.";
+    return "旁白文本和音效 cue 清单已准备好，但还没有生成真正的 TTS 配音音频。请配置 OpenAI TTS 或 ElevenLabs；系统不会创建 mock 旁白音频。";
   }
 
   if (stageId !== "image" || !output.includes("local SVG scene placeholders")) {
@@ -662,10 +690,10 @@ function normalizeLegacyStageOutput(stageId: ProductionStageId, output: string, 
   const rasterCount = artifactPaths.filter((artifact) => /\.(png|jpe?g|webp|bmp)(\?|$)/iu.test(artifact)).length;
 
   if (rasterCount > 0) {
-    return `${rasterCount} generated scene image(s) are ready for review. These PNG/JPG assets are the images used by video compose.`;
+    return `${rasterCount} 张生成的场景图片已可审核。这些 PNG/JPG 资产会用于影片合成。`;
   }
 
-  return "Required OpenAI scene images are missing. Click Generate images to create reviewable PNG scene assets.";
+  return "缺少必要的 OpenAI 场景图片。请点击「生成图片」，建立可审核的 PNG/JPG 场景资产。";
 }
 
 function normalizeLegacyStageCost(stageId: ProductionStageId, provider: string, costRM: number, artifactPath: string): number {
@@ -687,11 +715,11 @@ function getDefaultStageInput(job: AdminJob, stageId: ProductionStageId, fallbac
   }
 
   if (stageId === "script") {
-    return `Write the voiceover and hook from this prompt:\n${job.prompt}`;
+    return `根据这个 prompt 写 hook 和旁白：\n${job.prompt}`;
   }
 
   if (stageId === "storyboard") {
-    return `Split the script into ${job.sceneCount} scenes for a ${job.durationSeconds}s Short.`;
+    return `把脚本拆成 ${job.sceneCount} 个场景，用于 ${job.durationSeconds}s 短视频。`;
   }
 
   return fallback;
@@ -699,7 +727,7 @@ function getDefaultStageInput(job: AdminJob, stageId: ProductionStageId, fallbac
 
 function getDefaultStageOutput(job: AdminJob, stageId: ProductionStageId, fallback: string): string {
   if (stageId === "brief") {
-    return `Case created for topic: ${job.topic}`;
+    return `已为主题「${job.topic}」建立 Case。`;
   }
 
   return fallback;

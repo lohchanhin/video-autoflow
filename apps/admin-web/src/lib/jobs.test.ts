@@ -33,6 +33,20 @@ describe("case process records", () => {
     expect(records.find((record) => record.stageId === "publish")?.ownerAgentId).toBe("agent_ai_producer");
   });
 
+  it("keeps inherited reference asset ids on a created case", () => {
+    const job = createJob({
+      topic: "Series episode",
+      prompt: "Use the series asset library.",
+      referenceAssetIds: ["asset_banana_ceo", "asset_sweet_shop", "asset_banana_ceo"],
+      templateType: "comedy_sketch",
+      language: "zh-CN",
+      sceneCount: 5,
+      costLimitRM: 50
+    });
+
+    expect(job.referenceAssetIds).toEqual(["asset_banana_ceo", "asset_sweet_shop"]);
+  });
+
   it("normalizes legacy records without ownerAgentId", () => {
     const job = createJob({
       topic: "Legacy case",
@@ -103,6 +117,24 @@ describe("case process records", () => {
     expect(imageRecord?.provider).toBe("Custom Image Router");
     expect(imageRecord?.queueName).toBe("custom.image.queue");
     expect(videoRecord?.status).toBe("skipped");
+  });
+
+  it("keeps schedule run metadata on scheduled cases", () => {
+    const job = createJob({
+      costLimitRM: 7.5,
+      language: "zh-CN",
+      prompt: "Create scheduled content.",
+      sceneCount: 5,
+      scheduleId: "schedule_daily",
+      scheduleRunId: "run_001",
+      source: "scheduled",
+      templateType: "urban_legend",
+      topic: "Scheduled case"
+    });
+
+    expect(job.source).toBe("scheduled");
+    expect(job.scheduleId).toBe("schedule_daily");
+    expect(job.scheduleRunId).toBe("run_001");
   });
 
   it("creates auditable case activity records", () => {

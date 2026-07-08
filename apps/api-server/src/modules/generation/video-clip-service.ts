@@ -64,10 +64,14 @@ export function createVideoClipGenerationService(options: VideoClipGenerationSer
       const sourceImageUrl = normalizeExternalImageUrl(input.imageUrl);
       const lastFrameImageUrl = normalizeExternalImageUrl(input.lastFrameImageUrl);
       const referenceImageUrls = normalizeExternalImageUrls(input.referenceImageUrls).filter((url) => url !== sourceImageUrl && url !== lastFrameImageUrl);
-      const mode: GenerateVideoClipResponse["clip"]["mode"] = sourceImageUrl ? "image-to-video" : referenceImageUrls.length > 0 ? "reference-to-video" : "text-to-video";
+      const hasFrameInput = Boolean(sourceImageUrl || lastFrameImageUrl);
+      const effectiveReferenceImageUrls = hasFrameInput ? [] : referenceImageUrls;
+      const mode: GenerateVideoClipResponse["clip"]["mode"] = sourceImageUrl ? "image-to-video" : effectiveReferenceImageUrls.length > 0 ? "reference-to-video" : "text-to-video";
       const model = input.model?.trim() || (mode === "image-to-video" ? seedanceConfig.imageToVideoModel : seedanceConfig.textToVideoModel);
-      const fallbackReason = sourceImageUrl
-        ? undefined
+      const fallbackReason = hasFrameInput && referenceImageUrls.length > 0
+        ? "Seedance does not allow first/last frame media to be mixed with reference media. Reference URLs were omitted from the media payload; keep identity and style guidance in the prompt or bake references into the first frame."
+        : sourceImageUrl
+          ? undefined
         : input.imageUrl || input.lastFrameImageUrl || (input.referenceImageUrls?.length ?? 0) > 0
           ? "Some Seedance reference assets were not publicly reachable URLs. Localhost/local upload paths were ignored; use a public uploads URL, GCS signed URL, or HTTPS storage URL for full reference-guided video."
           : "No source image URL was provided, so this run used text-to-video for connection testing.";
@@ -83,7 +87,7 @@ export function createVideoClipGenerationService(options: VideoClipGenerationSer
               model,
               prompt,
               quality: input.quality ?? seedanceConfig.quality,
-              ...([sourceImageUrl, lastFrameImageUrl, ...referenceImageUrls].filter(Boolean).length > 0 ? { image_urls: [sourceImageUrl, lastFrameImageUrl, ...referenceImageUrls].filter(Boolean) } : {})
+              ...([sourceImageUrl, lastFrameImageUrl, ...effectiveReferenceImageUrls].filter(Boolean).length > 0 ? { image_urls: [sourceImageUrl, lastFrameImageUrl, ...effectiveReferenceImageUrls].filter(Boolean) } : {})
             }
           })
         : await submitBytePlusArkTask(fetchFn, {
@@ -96,7 +100,7 @@ export function createVideoClipGenerationService(options: VideoClipGenerationSer
               prompt,
               quality: input.quality ?? seedanceConfig.quality,
               lastFrameImageUrl,
-              referenceImageUrls,
+              referenceImageUrls: effectiveReferenceImageUrls,
               sourceImageUrl
             })
           });
@@ -125,7 +129,7 @@ export function createVideoClipGenerationService(options: VideoClipGenerationSer
           durationSeconds,
           mode,
           prompt,
-          referenceImageUrls,
+          referenceImageUrls: effectiveReferenceImageUrls,
           sceneId,
           lastFrameImageUrl,
           sourceImageUrl,
